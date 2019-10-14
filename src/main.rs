@@ -8,7 +8,6 @@ use nix::pty::{grantpt, posix_openpt, ptsname, unlockpt};
 use nix::sys::stat::Mode;
 use nix::unistd;
 
-use std::collections::LinkedList;
 use std::os::unix::io::RawFd;
 use std::path::Path;
 
@@ -245,78 +244,138 @@ fn start(pty: &PTY) -> Result<(), String> {
                 &ttf_context,
                 Size::new(80, 24),
                 "UbuntuMono-R.ttf",
-                30,
+                25,
             );
-            let mut event_pump = sdl_context.event_pump().unwrap();
+            let mut event_pump = sdl_context.event_pump()?;
+            let event_subsys = sdl_context.event().unwrap();
+            let event_sender = event_subsys.event_sender();
+            let master_readable_event_id = unsafe { event_subsys.register_event().unwrap() };
 
-            'main_loop: loop {
-                let mut readable = nix::sys::select::FdSet::new();
-                readable.insert(pty.master);
+            use std::sync::{
+                atomic::{AtomicBool, Ordering},
+                Arc,
+            };
+            let enqueued_flag = Arc::new(AtomicBool::new(false));
 
-                println!("wait...");
-
-                use nix::sys::time::TimeValLike;
-                conv_err(nix::sys::select::select(
-                    None,
-                    Some(&mut readable),                        // read
-                    None,                                       // write
-                    None,                                       // error
-                    Some(&mut nix::sys::time::TimeVal::zero()), // polling
-                ))?;
-
-                if readable.contains(pty.master) {
-                    let mut buf = [0];
-                    if let Err(e) = nix::unistd::read(pty.master, &mut buf) {
-                        eprintln!("Nothing to read from child: {}", e);
-                        break;
+            // check whether the master FD is readable
+            {
+                let master_fd = pty.master.clone();
+                let enqueued = enqueued_flag.clone();
+                std::thread::spawn(move || loop {
+                    if enqueued.load(Ordering::Relaxed) {
+                        continue;
                     }
-                    println!("buf: {:?}", buf);
-                    console.screen.put_char(char::from(buf[0]));
-                    console.render().unwrap();
-                }
 
-                // read input
-                for event in event_pump.poll_iter() {
-                    match event {
-                        Event::Quit { .. } => break 'main_loop,
-                        Event::KeyDown { keycode: code, .. } => {
-                            let ch = match code {
-                                Some(Keycode::A) => b'a',
-                                Some(Keycode::B) => b'b',
-                                Some(Keycode::C) => b'c',
-                                Some(Keycode::D) => b'd',
-                                Some(Keycode::E) => b'e',
-                                Some(Keycode::F) => b'f',
-                                Some(Keycode::G) => b'g',
-                                Some(Keycode::H) => b'h',
-                                Some(Keycode::I) => b'i',
-                                Some(Keycode::J) => b'j',
-                                Some(Keycode::K) => b'k',
-                                Some(Keycode::L) => b'l',
-                                Some(Keycode::M) => b'm',
-                                Some(Keycode::N) => b'n',
-                                Some(Keycode::O) => b'o',
-                                Some(Keycode::P) => b'p',
-                                Some(Keycode::Q) => b'q',
-                                Some(Keycode::R) => b'r',
-                                Some(Keycode::S) => b's',
-                                Some(Keycode::T) => b't',
-                                Some(Keycode::U) => b'u',
-                                Some(Keycode::V) => b'v',
-                                Some(Keycode::W) => b'w',
-                                Some(Keycode::X) => b'x',
-                                Some(Keycode::Y) => b'y',
-                                Some(Keycode::Z) => b'z',
-                                Some(Keycode::Return) => b'\n',
-                                _ => b'?',
-                            };
-                            conv_err(nix::unistd::write(pty.master, &mut [ch; 1]))?;
-                        }
-                        _ => {}
+                    let mut readable = nix::sys::select::FdSet::new();
+                    readable.insert(master_fd);
+
+                    unsafe {
+                        static mut CNT: i32 = 0;
+                        println!("wait... {}", CNT);
+                        CNT += 1;
                     }
-                }
+
+                    nix::sys::select::select(
+                        None,
+                        Some(&mut readable), // read
+                        None,                // write
+                        None,                // error
+                        None,
+                    )
+                    .unwrap();
+
+                    if readable.contains(master_fd) {
+                        event_sender
+                            .push_event(sdl2::event::Event::User {
+                                timestamp: 0,
+                                window_id: 0,
+                                type_: master_readable_event_id,
+                                code: 0,
+                                data1: 0 as *mut core::ffi::c_void,
+                                data2: 0 as *mut core::ffi::c_void,
+                            })
+                            .unwrap();
+                        enqueued.store(true, Ordering::Relaxed);
+                    }
+                });
             }
 
+            for event in event_pump.wait_iter() {
+                match event {
+                    Event::Quit { .. } => break,
+                    Event::KeyDown { keycode: code, .. } => {
+                        let ch = match code {
+                            Some(Keycode::A) => b'a',
+                            Some(Keycode::B) => b'b',
+                            Some(Keycode::C) => b'c',
+                            Some(Keycode::D) => b'd',
+                            Some(Keycode::E) => b'e',
+                            Some(Keycode::F) => b'f',
+                            Some(Keycode::G) => b'g',
+                            Some(Keycode::H) => b'h',
+                            Some(Keycode::I) => b'i',
+                            Some(Keycode::J) => b'j',
+                            Some(Keycode::K) => b'k',
+                            Some(Keycode::L) => b'l',
+                            Some(Keycode::M) => b'm',
+                            Some(Keycode::N) => b'n',
+                            Some(Keycode::O) => b'o',
+                            Some(Keycode::P) => b'p',
+                            Some(Keycode::Q) => b'q',
+                            Some(Keycode::R) => b'r',
+                            Some(Keycode::S) => b's',
+                            Some(Keycode::T) => b't',
+                            Some(Keycode::U) => b'u',
+                            Some(Keycode::V) => b'v',
+                            Some(Keycode::W) => b'w',
+                            Some(Keycode::X) => b'x',
+                            Some(Keycode::Y) => b'y',
+                            Some(Keycode::Z) => b'z',
+                            Some(Keycode::Space) => b' ',
+                            Some(Keycode::Minus) => b'-',
+                            Some(Keycode::Plus) => b'+',
+                            Some(Keycode::Equals) => b'=',
+                            Some(Keycode::Dollar) => b'$',
+                            Some(Keycode::Return) => b'\n',
+                            _ => b'?',
+                        };
+                        println!("keydown: ch: {}", ch);
+                        conv_err(nix::unistd::write(pty.master, &mut [ch; 1]))?;
+                    }
+                    Event::User {
+                        type_: user_event_id,
+                        ..
+                    } if user_event_id == master_readable_event_id => {
+                        // read from master FD
+                        let mut buf = vec![0; 100];
+                        if let Err(e) = nix::unistd::read(pty.master, &mut buf) {
+                            eprintln!("Nothing to read from child: {}", e);
+                            break;
+                        }
+                        println!("buf: {:?}", buf);
+
+                        'iter_char: for c in buf.iter() {
+                            match *c {
+                                0 => break 'iter_char,
+                                b'\n' => {
+                                    console.screen.cursor.y += 1;
+                                    console.screen.cursor.x = 0;
+                                }
+                                b'\r' => {
+                                    console.screen.cursor.x = 0;
+                                }
+                                x => {
+                                    console.screen.put_char(char::from(x));
+                                }
+                            }
+                        }
+                        console.render()?;
+
+                        enqueued_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    _ => {}
+                }
+            }
             // conv_err(nix::sys::wait::waitpid(child, None))?;
         }
         Ok(unistd::ForkResult::Child) => {

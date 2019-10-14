@@ -199,20 +199,20 @@ dependencies = [
 [[package]]
 name = "sdl2"
 version = "0.32.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/Rust-SDL2/rust-sdl2#0be6aafe8e2a0928006fbd8f6fb7fbe919cbb0a7"
 dependencies = [
  "bitflags 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.62 (registry+https://github.com/rust-lang/crates.io-index)",
  "num 0.1.42 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "sdl2-sys 0.32.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sdl2-sys 0.32.6 (git+https://github.com/Rust-SDL2/rust-sdl2)",
 ]
 
 [[package]]
 name = "sdl2-sys"
 version = "0.32.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/Rust-SDL2/rust-sdl2#0be6aafe8e2a0928006fbd8f6fb7fbe919cbb0a7"
 dependencies = [
  "cfg-if 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.62 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -223,7 +223,7 @@ name = "toyterm"
 version = "0.1.0"
 dependencies = [
  "nix 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "sdl2 0.32.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sdl2 0.32.2 (git+https://github.com/Rust-SDL2/rust-sdl2)",
 ]
 
 [[package]]
@@ -275,8 +275,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum rand_pcg 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "abf9b09b01790cfe0364f52bf32995ea3c39f4d2dd011eac241d2914146d0b44"
 "checksum rand_xorshift 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "cbf7e9e623549b0e21f6e97cf8ecf247c1a8fd2e8a992ae265314300b2455d5c"
 "checksum rdrand 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "678054eb77286b51581ba43620cc911abf02758c91f93f479767aed0f90458b2"
-"checksum sdl2 0.32.2 (registry+https://github.com/rust-lang/crates.io-index)" = "d051a07231e303f5f719da78cb6f7394f6d5b54f733aef5b0b447804a83edd7b"
-"checksum sdl2-sys 0.32.6 (registry+https://github.com/rust-lang/crates.io-index)" = "34e71125077d297d57e4c1acfe8981b5bdfbf5a20e7b589abfdcb33bf1127f86"
+"checksum sdl2 0.32.2 (git+https://github.com/Rust-SDL2/rust-sdl2)" = "<none>"
+"checksum sdl2-sys 0.32.6 (git+https://github.com/Rust-SDL2/rust-sdl2)" = "<none>"
 "checksum void 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 "checksum winapi 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)" = "8093091eeb260906a183e6ae1abdba2ef5ef2257a21801128899c3fc699229c6"
 "checksum winapi-i686-pc-windows-gnu 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"

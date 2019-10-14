@@ -10,6 +10,6 @@ edition = "2018"
 nix = "0.15"
 
 [dependencies.sdl2]
-version = "0.32"
+git = "https://github.com/Rust-SDL2/rust-sdl2"
 default-features = false
-features = ["ttf", "image"]
+features = ["ttf"]
