@@ -172,7 +172,10 @@ fn start(pty: &PTY) -> Result<(), String> {
             conv_err(unistd::execve(
                 &path,
                 &[],
-                &[CString::new("TERM=vt100").unwrap()],
+                &[
+                    CString::new("TERM=vt100").unwrap(),
+                    CString::new("DISPLAY=:0").unwrap(),
+                ],
             ))?;
         }
         Err(e) => return Err(e.to_string()),
