@@ -35,3 +35,15 @@ pub fn parse_int_from_ascii(bytes: &[u8]) -> Option<u32> {
     }
     Some(ret)
 }
+
+pub fn setenv(name: &str, value: &str, overwrite: bool) -> Result<(), String> {
+    let n = err_str(std::ffi::CString::new(name))?;
+    let v = err_str(std::ffi::CString::new(value))?;
+    let r = unsafe { nix::libc::setenv(n.as_ptr(), v.as_ptr(), if overwrite { 1 } else { 0 }) };
+    if r == 0 {
+        Ok(())
+    } else {
+        let en = nix::errno::from_i32(nix::errno::errno());
+        Err(nix::Error::from_errno(en).to_string())
+    }
+}

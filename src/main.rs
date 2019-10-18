@@ -153,15 +153,10 @@ fn main() -> Result<(), String> {
 
             use std::ffi::CString;
             let path = CString::new("/bin/sh").unwrap();
-            err_str(unistd::execve(
-                &path,
-                &[],
-                &[
-                    CString::new("TERM=vt100").unwrap(),
-                    CString::new("DISPLAY=:0").unwrap(),
-                ],
-            ))
-            .map(|_| ())
+
+            setenv("TERM", "vt100", true).unwrap();
+
+            err_str(unistd::execv(&path, &[])).map(|_| ())
         }
         Err(e) => err_str(Err(e)),
     }
