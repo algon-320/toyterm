@@ -1,8 +1,8 @@
 use sdl2::event::Event;
 use sdl2::keyboard::Mod;
-use sdl2::keyboard::{Keycode, Scancode};
+use sdl2::keyboard::Scancode;
 
-pub fn keycode_to_bytes(event: &sdl2::event::Event) -> Option<Vec<u8>> {
+pub fn keyevent_to_bytes(event: &sdl2::event::Event) -> Option<Vec<u8>> {
     // println!("{:?}", event);
     match event {
         Event::TextInput { text: s, .. } => {

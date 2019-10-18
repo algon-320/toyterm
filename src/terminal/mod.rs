@@ -1,50 +1,16 @@
-use nix::fcntl::{open, OFlag};
-use nix::pty::{grantpt, posix_openpt, ptsname, unlockpt};
-use nix::sys::stat::Mode;
-use nix::unistd;
+pub mod pty;
 
-use std::os::unix::io::RawFd;
 use std::path::Path;
 
-use sdl2::event::Event;
-use sdl2::keyboard::{Keycode, Scancode};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::ttf;
 
 use crate::basics::*;
+use crate::utils::*;
 
 mod buffer;
 use buffer::*;
-
-#[derive(Debug, Clone, Copy)]
-pub struct PTY {
-    pub master: RawFd,
-    pub slave: RawFd,
-}
-
-impl PTY {
-    pub fn open() -> Result<Self, String> {
-        // Open a new PTY master
-        let master_fd = conv_err(posix_openpt(OFlag::O_RDWR))?;
-
-        // Allow a slave to be generated for it
-        conv_err(grantpt(&master_fd))?;
-        conv_err(unlockpt(&master_fd))?;
-
-        // Get the name of the slave
-        let slave_name = conv_err(unsafe { ptsname(&master_fd) })?;
-
-        // Try to open the slave
-        let slave_fd = conv_err(open(Path::new(&slave_name), OFlag::O_RDWR, Mode::empty()))?;
-
-        use std::os::unix::io::IntoRawFd;
-        Ok(PTY {
-            master: master_fd.into_raw_fd(),
-            slave: slave_fd.into(),
-        })
-    }
-}
 
 #[derive(Debug)]
 enum ControlOp {
@@ -218,6 +184,7 @@ pub struct Term<'ttf> {
 }
 impl<'ttf> Term<'ttf> {
     pub fn new<P: AsRef<Path>>(
+        title: &str,
         sdl_context: &sdl2::Sdl,
         ttf_context: &'ttf sdl2::ttf::Sdl2TtfContext,
         size: Size<usize>,
@@ -225,15 +192,17 @@ impl<'ttf> Term<'ttf> {
         font_size: u16,
     ) -> Self {
         let font = ttf_context.load_font(font_path, font_size).unwrap();
-        let char_size = font.size_of_char('#').unwrap();
-        let char_size = Size::new(char_size.0 as usize, char_size.1 as usize);
+        let char_size = {
+            let tmp = font.size_of_char('#').unwrap();
+            Size::new(tmp.0 as usize, tmp.1 as usize)
+        };
         println!("font char size: {:?}", char_size);
 
         let window = {
             let video = sdl_context.video().unwrap();
             video
                 .window(
-                    "toyterm",
+                    title,
                     (char_size.width * size.width) as u32,
                     (char_size.height * size.height) as u32,
                 )
@@ -277,14 +246,14 @@ impl<'ttf> Term<'ttf> {
     }
 
     fn draw_char(&mut self, c: char, p: Point<ScreenCell>) -> Result<(), String> {
-        let surface = conv_err(
+        let surface = err_str(
             self.font
                 .render(&c.to_string())
                 .blended(Color::RGB(255, 255, 255)),
         )?;
 
         let tc = self.canvas.texture_creator();
-        let texture = conv_err(tc.create_texture_from_surface(surface))?;
+        let texture = err_str(tc.create_texture_from_surface(surface))?;
         let top_left = self.point_screen_to_pixel(p);
         let rect = Rect::new(
             top_left.x,
@@ -292,7 +261,7 @@ impl<'ttf> Term<'ttf> {
             texture.query().width,
             texture.query().height,
         );
-        conv_err(self.canvas.copy(&texture, None, rect))?;
+        err_str(self.canvas.copy(&texture, None, rect))?;
 
         Ok(())
     }
@@ -412,8 +381,9 @@ impl<'ttf> Term<'ttf> {
                     self.buf.move_cursor(CursorMove::Left);
                 }
 
-                // escape char
                 b'\x1B' => {
+                    // start escape sequence
+
                     use ControlOp::*;
                     match parse_escape_sequence(&mut itr) {
                         (Some(op), _) => {
@@ -520,7 +490,7 @@ impl<'ttf> Term<'ttf> {
                             }
                         }
                         (None, sz) => {
-                            // print sequence
+                            // print sequence as string
                             self.insert_chars(b"^[");
                             self.insert_chars(&itr.as_slice()[..sz]);
                             itr.nth(sz);
