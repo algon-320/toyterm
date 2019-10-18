@@ -1,10 +1,8 @@
-use crate::basics::conv_err;
-use crate::basics::PositionType::{BufferCell, Pixel, ScreenCell};
-use crate::basics::{Position, Size};
+use crate::basics::*;
 
 pub struct Buffer {
     pub(super) width: usize,
-    pub(super) cursor: Position<BufferCell>,
+    pub(super) cursor: Point<BufferCell>,
     pub(super) data: Vec<Vec<char>>,
 }
 pub enum CursorMove {
@@ -21,22 +19,40 @@ impl Buffer {
     pub fn new(width: usize) -> Self {
         let mut b = Buffer {
             width,
-            cursor: Position::new(0, 0),
+            cursor: Point::new(0, 0),
             data: Vec::new(),
         };
         b.add_newline();
         b
     }
 
+    pub fn reset(&mut self) {
+        self.data.clear();
+        self.add_newline();
+        self.cursor = Point::new(0, 0);
+    }
+
     // put a character on the cursor
     pub fn put_char(&mut self, c: char) {
         assert!(self.cursor.y < self.data.len());
-        let line = &mut self.data[self.cursor.y];
+        let line = &mut self.data[self.cursor.y as usize];
         assert!(self.cursor.x < line.len());
         line[self.cursor.x] = c;
     }
-    pub fn set_cursor_pos(&mut self, p: Position<BufferCell>) {
+
+    pub fn clear_line(&mut self, row: usize, range: (usize, usize)) {
+        if row >= self.data.len() {
+            return;
+        }
+        let (l, r) = range;
+        for i in l..r {
+            self.data[row][i] = ' ';
+        }
+    }
+
+    pub fn set_cursor_pos(&mut self, p: Point<BufferCell>) {
         self.cursor = p;
+        self.add_newline();
     }
     pub fn move_cursor(&mut self, m: CursorMove) -> bool {
         use CursorMove::*;

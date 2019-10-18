@@ -9,30 +9,33 @@ impl<T> Size<T> {
     }
 }
 
-use std::marker::PhantomData;
-
-pub mod PositionType {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Pixel;
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct BufferCell;
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct ScreenCell;
+pub trait PointType {
+    type Type;
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pixel;
+impl PointType for Pixel {
+    type Type = i32;
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BufferCell;
+impl PointType for BufferCell {
+    type Type = usize;
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenCell;
+impl PointType for ScreenCell {
+    type Type = isize;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Position<U> {
-    pub x: usize,
-    pub y: usize,
-    _phantom: PhantomData<U>,
+pub struct Point<P: PointType> {
+    pub x: P::Type,
+    pub y: P::Type,
 }
-impl<U> Position<U> {
-    pub fn new(x: usize, y: usize) -> Self {
-        Position {
-            x,
-            y,
-            _phantom: PhantomData,
-        }
+impl<P: PointType> Point<P> {
+    pub fn new(x: P::Type, y: P::Type) -> Self {
+        Point { x, y }
     }
 }
 
@@ -55,4 +58,20 @@ pub fn pretty_format_ascii_bytes(bytes: &[u8]) -> Vec<String> {
                 .unwrap_or_else(|| char::from(*c).to_string())
         })
         .collect()
+}
+
+pub fn parse_int_from_ascii(bytes: &[u8]) -> Option<u32> {
+    if bytes.len() == 0 {
+        return None;
+    }
+    let mut ret = 0;
+    for c in bytes.iter() {
+        ret *= 10;
+        if char::from(*c).is_digit(10) {
+            ret += (*c - b'0') as u32
+        } else {
+            return None;
+        }
+    }
+    Some(ret)
 }

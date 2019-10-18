@@ -6,6 +6,8 @@ extern crate lazy_static;
 
 extern crate sdl2;
 
+extern crate regex;
+
 use nix::fcntl::{open, OFlag};
 use nix::pty::{grantpt, posix_openpt, ptsname, unlockpt};
 use nix::sys::stat::Mode;
@@ -24,13 +26,11 @@ mod basics;
 mod input;
 mod terminal;
 
-use crate::basics::conv_err;
-use crate::basics::PositionType::{BufferCell, Pixel, ScreenCell};
-use crate::basics::{Position, Size};
+use crate::basics::*;
 use terminal::Term;
 use terminal::PTY;
 
-fn set_input_rect(pos: Position<Pixel>) {
+fn set_input_rect(pos: Point<Pixel>) {
     unsafe {
         let mut text_input_rect = sdl2::sys::SDL_Rect {
             x: pos.x as i32,
@@ -137,6 +137,7 @@ fn start(pty: &PTY) -> Result<(), String> {
                             Ok(sz) => sz,
                         };
 
+                        #[cfg(debug_assertions)]
                         println!(
                             "buf: {:?}",
                             basics::pretty_format_ascii_bytes(&buf[..bytes])

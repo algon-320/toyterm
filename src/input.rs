@@ -19,12 +19,12 @@ pub fn keycode_to_bytes(event: &sdl2::event::Event) -> Option<Vec<u8>> {
             None
         }
         Event::KeyDown {
-            scancode: scancode,
+            scancode,
             keymod: state,
             ..
         } => {
             macro_rules! contains_match {
-                ($($x0:expr $(, $x:expr)* => $y:expr),*) => {
+                ($(ANY [$x0:expr $(, $x:expr)*] => $y:expr),*) => {
                     match state {
                         $(tmp if tmp.contains($x0) $(|| tmp.contains($x))* => { $y },)*
                         _ => None,
@@ -34,10 +34,10 @@ pub fn keycode_to_bytes(event: &sdl2::event::Event) -> Option<Vec<u8>> {
             match scancode {
                 Some(code) => match code {
                     Scancode::C => contains_match! {
-                        Mod::LCTRLMOD, Mod::RCTRLMOD => Some(b"\x03".to_vec())
+                        ANY [Mod::LCTRLMOD, Mod::RCTRLMOD] => Some(b"\x03".to_vec())
                     },
                     Scancode::D => contains_match! {
-                        Mod::LCTRLMOD, Mod::RCTRLMOD => Some(b"\x04".to_vec())
+                        ANY [Mod::LCTRLMOD, Mod::RCTRLMOD] => Some(b"\x04".to_vec())
                     },
                     Scancode::LShift | Scancode::RShift => None,
                     Scancode::Home => Some(b"\x1b[1~".to_vec()),
