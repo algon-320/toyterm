@@ -2,7 +2,6 @@
 extern crate nix;
 #[macro_use]
 extern crate lazy_static;
-extern crate regex;
 extern crate sdl2;
 
 mod basics;
@@ -41,6 +40,17 @@ fn main() -> Result<(), String> {
         Ok(unistd::ForkResult::Parent { child, .. }) => {
             err_str(unistd::close(pty.slave))?;
 
+            // set screen size
+            const TIOCSWINSZ: usize = 0x5414;
+            ioctl_write_ptr_bad!(tiocswinsz, TIOCSWINSZ, nix::pty::Winsize);
+            let winsz = nix::pty::Winsize {
+                ws_row: 24,
+                ws_col: 80,
+                ws_xpixel: 0, // unused
+                ws_ypixel: 0, // unused
+            };
+            err_str(unsafe { tiocswinsz(pty.master, &winsz as *const nix::pty::Winsize) })?;
+
             let sdl_context = sdl2::init().unwrap();
             let ttf_context = sdl2::ttf::init().unwrap();
             let mut term = Term::new(
@@ -50,7 +60,7 @@ fn main() -> Result<(), String> {
                 Size::new(80, 24),
                 "./fonts/UbuntuMono-R.ttf",
                 // "./fonts/dos_font.ttf",
-                16,
+                20,
             );
             let mut event_pump = sdl_context.event_pump()?;
             let event_subsys = sdl_context.event().unwrap();

@@ -41,29 +41,40 @@ fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<Cont
             let op = match c {
                 // escape sequences
                 b'[' => {
-                    use regex::bytes::Regex;
-                    lazy_static! {
-                        static ref ARGUMENTS: Regex = Regex::new(r"^(\d*(;\d*)*)?").unwrap();
-                    }
-                    let args = match ARGUMENTS
-                        .captures(itr.as_slice())
-                        .and_then(|cap| cap.get(1))
-                    {
-                        Some(mt) if mt.as_bytes().len() > 0 => {
-                            let bytes = mt.as_bytes();
-                            read_bytes += bytes.len();
-                            itr.nth(bytes.len() - 1); // skip
-                            bytes
-                                .split(|b| *b == b';')
-                                .map(|b| parse_int_from_ascii(b))
-                                .collect::<Vec<_>>()
+                    let (args, fin_char) = {
+                        let mut args = Vec::new();
+                        let mut fin_char = None;
+                        let mut tmp = None;
+                        while let Some(c) = itr.next() {
+                            read_bytes += 1;
+                            match *c {
+                                x if b'0' <= x && x <= b'9' => {
+                                    if tmp.is_none() {
+                                        tmp = Some(0);
+                                    } else {
+                                        tmp = Some(tmp.unwrap() * 10);
+                                    }
+                                    tmp = Some(tmp.unwrap() + (x - b'0') as u32);
+                                }
+                                b';' => {
+                                    args.push(tmp);
+                                    tmp = None;
+                                }
+                                x => {
+                                    fin_char = Some(x);
+                                    break;
+                                }
+                            }
                         }
-                        _ => Vec::new(),
+                        if tmp.is_some() {
+                            args.push(tmp);
+                        }
+                        (args, fin_char)
                     };
                     #[cfg(debug_assertions)]
                     println!("args:{:?}", args);
 
-                    match itr.next() {
+                    match fin_char {
                         // Cursor Home
                         Some(b'f') | Some(b'H') => match args.len() {
                             0 => Some(ControlOp::CursorHome(Point::new(0, 0))),
@@ -142,7 +153,7 @@ fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<Cont
                         },
                         Some(x) => {
                             #[cfg(debug_assertions)]
-                            println!("unsupported: \\E[{}", char::from(*x));
+                            println!("unsupported: \\E[{}", char::from(x));
                             None
                         }
                         None => None,
@@ -493,7 +504,7 @@ impl<'ttf> Term<'ttf> {
                             // print sequence as string
                             self.insert_chars(b"^[");
                             self.insert_chars(&itr.as_slice()[..sz]);
-                            itr.nth(sz);
+                            itr.nth(sz - 1);
                         }
                     }
                 }
