@@ -1,16 +1,20 @@
 pub mod pty;
 
+use std::collections::HashMap;
 use std::path::Path;
 
-use sdl2::pixels::Color;
 use sdl2::rect::Rect;
+use sdl2::render::Texture;
 use sdl2::ttf;
+use sdl2::ttf::FontStyle;
 
 use crate::basics::*;
 use crate::utils::*;
 
 mod buffer;
 use buffer::*;
+mod cell_style;
+use cell_style::*;
 
 #[derive(Debug)]
 enum ControlOp {
@@ -31,6 +35,8 @@ enum ControlOp {
     EraseScreen,
     SetTopBottom(isize, isize),
     Reset,
+    ChangeCellStyle(CellStyle),
+    SetCursorMode(bool),
     Ignore,
 }
 fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<ControlOp>, usize) {
@@ -151,6 +157,43 @@ fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<Cont
                             },
                             _ => None,
                         },
+
+                        Some(b'm') => {
+                            let mut style = CellStyle::default();
+                            for a in args.iter() {
+                                match a {
+                                    Some(0) => {
+                                        // reset
+                                        style = CellStyle::default();
+                                    }
+                                    Some(1) => {
+                                        style.style = Style::Bold;
+                                    }
+                                    Some(4) => {
+                                        style.style = Style::UnderLine;
+                                    }
+                                    Some(5) => {
+                                        style.style = Style::Blink;
+                                    }
+                                    Some(7) => {
+                                        style.style = Style::Reverse;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            Some(ControlOp::ChangeCellStyle(style))
+                        }
+
+                        Some(b'?') => {
+                            read_bytes += 1;
+                            let p = || -> Option<(u8, u8)> { Some((*itr.next()?, *itr.next()?)) }();
+                            match p {
+                                Some((b'1', b'h')) => Some(ControlOp::SetCursorMode(true)),
+                                Some((b'1', b'l')) => Some(ControlOp::SetCursorMode(false)),
+                                _ => None,
+                            }
+                        }
+
                         Some(x) => {
                             #[cfg(debug_assertions)]
                             println!("unsupported: \\E[{}", char::from(x));
@@ -180,9 +223,11 @@ fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<Cont
     }
 }
 
-pub struct Term<'ttf> {
-    canvas: sdl2::render::Canvas<sdl2::video::Window>,
-    font: sdl2::ttf::Font<'ttf, 'static>,
+type raw_pixels = Vec<u32>;
+
+pub struct Term<'a, 'b> {
+    canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>,
+    font: &'a mut sdl2::ttf::Font<'b, 'static>,
     buf: Buffer,
     screen_size: Size<usize>,
     char_size: Size<usize>,
@@ -192,47 +237,31 @@ pub struct Term<'ttf> {
 
     top_line: isize,
     bottom_line: isize,
+    cell_style: CellStyle,
+
+    texture_creator: &'a sdl2::render::TextureCreator<sdl2::video::WindowContext>,
+    render_cache: std::collections::HashMap<(char, CellStyle), Texture<'a>>,
 }
-impl<'ttf> Term<'ttf> {
-    pub fn new<P: AsRef<Path>>(
-        title: &str,
-        sdl_context: &sdl2::Sdl,
-        ttf_context: &'ttf sdl2::ttf::Sdl2TtfContext,
+impl<'a, 'b> Term<'a, 'b> {
+    pub fn new(
+        canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>,
+        texture_creator: &'a mut sdl2::render::TextureCreator<sdl2::video::WindowContext>,
+        font: &'a mut sdl2::ttf::Font<'b, 'static>,
         size: Size<usize>,
-        font_path: P,
-        font_size: u16,
     ) -> Self {
-        let font = ttf_context.load_font(font_path, font_size).unwrap();
         let char_size = {
             let tmp = font.size_of_char('#').unwrap();
             Size::new(tmp.0 as usize, tmp.1 as usize)
         };
         println!("font char size: {:?}", char_size);
 
-        let window = {
-            let video = sdl_context.video().unwrap();
-            video
-                .window(
-                    title,
-                    (char_size.width * size.width) as u32,
-                    (char_size.height * size.height) as u32,
-                )
-                .position_centered()
-                .build()
-                .unwrap()
-        };
-        let canvas = window
-            .into_canvas()
-            .accelerated()
-            .target_texture()
-            .build()
-            .unwrap();
-
         assert!(size.height > 0);
 
         let mut term = Term {
             canvas,
+            texture_creator,
             font,
+
             buf: Buffer::new(size.width),
             screen_size: size,
             screen_begin: 0,
@@ -240,12 +269,27 @@ impl<'ttf> Term<'ttf> {
             saved_cursor_pos: Point::new(0, 0),
             top_line: 0,
             bottom_line: size.height as isize - 1,
+            cell_style: CellStyle::default(),
+
+            render_cache: HashMap::new(),
         };
         term.clear();
         term
     }
+
+    pub fn reset(&mut self) {
+        self.buf.reset();
+        self.screen_begin = 0;
+        self.saved_cursor_pos = Point::new(0, 0);
+        self.top_line = 0;
+        self.bottom_line = self.screen_size.height as isize - 1;
+        self.cell_style = CellStyle::default();
+        self.change_cell_style(CellStyle::default());
+    }
+
     pub fn clear(&mut self) {
-        self.canvas.set_draw_color(Color::RGB(0, 0, 32));
+        self.canvas
+            .set_draw_color(sdl2::pixels::Color::RGB(0, 0, 32));
         self.canvas.clear();
     }
 
@@ -256,21 +300,48 @@ impl<'ttf> Term<'ttf> {
         )
     }
 
-    fn draw_char(&mut self, c: char, p: Point<ScreenCell>) -> Result<(), String> {
-        let surface = err_str(
-            self.font
-                .render(&c.to_string())
-                .blended(Color::RGB(255, 255, 255)),
-        )?;
+    fn change_cell_style(&mut self, cell_style: CellStyle) {
+        self.cell_style = cell_style;
+    }
 
-        let tc = self.canvas.texture_creator();
-        let texture = err_str(tc.create_texture_from_surface(surface))?;
+    fn draw_char(&mut self, c: char, p: Point<ScreenCell>, style: CellStyle) -> Result<(), String> {
+        let mut fg_color = style.fg.to_sdl_color();
+        let mut bg_color = style.bg.to_sdl_color();
+
+        if style.style == Style::Reverse {
+            println!("reversed");
+            std::mem::swap(&mut fg_color, &mut bg_color);
+        }
+
+        // clear
+        self.canvas.set_draw_color(bg_color);
+        let top_left = self.point_screen_to_pixel(p);
+        self.canvas.fill_rect(Some(Rect::new(
+            top_left.x,
+            top_left.y,
+            self.char_size.width as u32,
+            self.char_size.height as u32,
+        )))?;
+
+        if style.style == Style::Bold {
+            self.font.set_style(FontStyle::BOLD);
+        } else {
+            self.font.set_style(FontStyle::NORMAL);
+        }
+
+        // generate texture
+        if !self.render_cache.contains_key(&(c, style)) {
+            let surface = err_str(self.font.render_char(c).blended(fg_color))?;
+            let texture = err_str(self.texture_creator.create_texture_from_surface(surface))?;
+            self.render_cache.insert((c, style), texture);
+        }
+        let texture = &self.render_cache[&(c, style)];
         let top_left = self.point_screen_to_pixel(p);
         let rect = Rect::new(
             top_left.x,
             top_left.y,
-            texture.query().width,
-            texture.query().height,
+            self.char_size.width as u32,
+            self.char_size.height as u32,
         );
         err_str(self.canvas.copy(&texture, None, rect))?;
 
@@ -333,16 +404,14 @@ impl<'ttf> Term<'ttf> {
                 break;
             }
             for c in 0..self.screen_size.width {
-                self.draw_char(
-                    self.buf.data[r + self.screen_begin][c],
-                    Point::new(c as isize, r as isize),
-                )?;
+                let (ch, style) = self.buf.data[r + self.screen_begin][c];
+                self.draw_char(ch, Point::new(c as isize, r as isize), style)?;
             }
         }
 
-        self.canvas.set_draw_color(Color::RGB(200, 200, 200));
-
         // draw cursor
+        self.canvas
+            .set_draw_color(sdl2::pixels::Color::RGB(200, 200, 200));
         let top_left = self.point_screen_to_pixel(self.get_cursor_pos());
         self.canvas.fill_rect(Some(Rect::new(
             top_left.x,
@@ -356,21 +425,13 @@ impl<'ttf> Term<'ttf> {
     }
 
     pub fn insert_char(&mut self, c: u8) {
-        self.buf.put_char(char::from(c));
+        self.buf.put_char(char::from(c), self.cell_style);
         self.buf.move_cursor(CursorMove::Next);
     }
     pub fn insert_chars(&mut self, chars: &[u8]) {
         for c in chars.iter() {
             self.insert_char(*c);
         }
-    }
-
-    pub fn reset(&mut self) {
-        self.buf.reset();
-        self.screen_begin = 0;
-        self.saved_cursor_pos = Point::new(0, 0);
-        self.top_line = 0;
-        self.bottom_line = self.screen_size.height as isize - 1;
     }
 
     pub fn write(&mut self, buf: &[u8]) {
@@ -496,8 +557,23 @@ impl<'ttf> Term<'ttf> {
                                     self.bottom_line = bottom;
                                     // TODO
                                 }
+                                ChangeCellStyle(style) => {
+                                    self.change_cell_style(style);
+                                }
                                 Ignore => {}
-                                _ => unimplemented!(),
+
+                                ScrollDown => {
+                                    self.buf.move_cursor(CursorMove::Down);
+                                }
+                                ScrollUp => {
+                                    self.screen_begin -= 1;
+                                    self.buf.move_cursor(CursorMove::Up);
+                                }
+
+                                SetCursorMode(to_set) => {
+                                    // currently, it is not meaningful
+                                    // TODO
+                                }
                             }
                         }
                         (None, sz) => {

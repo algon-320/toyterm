@@ -45,7 +45,7 @@ pub fn keyevent_to_bytes(event: &sdl2::event::Event) -> Option<Vec<u8>> {
                     Scancode::Backspace => Some(b"\x7F".to_vec()),
                     Scancode::Return => Some(b"\n".to_vec()),
                     _ => {
-                        eprintln!("unsupported key: {:?}", scancode);
+                        // eprintln!("unsupported key: {:?}", scancode);
                         None
                     }
                 },

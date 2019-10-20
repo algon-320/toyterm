@@ -53,14 +53,39 @@ fn main() -> Result<(), String> {
 
             let sdl_context = sdl2::init().unwrap();
             let ttf_context = sdl2::ttf::init().unwrap();
+
+            let mut font = ttf_context
+                .load_font("./fonts/UbuntuMono-R.ttf", 25)
+                .unwrap();
+            let char_size = {
+                let tmp = font.size_of_char('#').unwrap();
+                Size::new(tmp.0 as usize, tmp.1 as usize)
+            };
+            let window = {
+                let video = sdl_context.video().unwrap();
+                video
+                    .window(
+                        "toyterm",
+                        (char_size.width * 80) as u32,
+                        (char_size.height * 24) as u32,
+                    )
+                    .position_centered()
+                    .build()
+                    .unwrap()
+            };
+            let mut canvas = window
+                .into_canvas()
+                .accelerated()
+                .target_texture()
+                .build()
+                .unwrap();
+            let mut texture_creator = canvas.texture_creator();
+
             let mut term = Term::new(
-                "toyterm",
-                &sdl_context,
-                &ttf_context,
+                &mut canvas,
+                &mut texture_creator,
+                &mut font,
                 Size::new(80, 24),
-                "./fonts/UbuntuMono-R.ttf",
-                // "./fonts/dos_font.ttf",
-                20,
             );
             let mut event_pump = sdl_context.event_pump()?;
             let event_subsys = sdl_context.event().unwrap();

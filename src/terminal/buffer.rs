@@ -1,9 +1,11 @@
 use crate::basics::*;
 
+use super::cell_style::CellStyle;
+
 pub struct Buffer {
     pub(super) width: usize,
     pub(super) cursor: Point<BufferCell>,
-    pub(super) data: Vec<Vec<char>>,
+    pub(super) data: Vec<Vec<(char, CellStyle)>>,
 }
 pub enum CursorMove {
     Up,
@@ -33,11 +35,11 @@ impl Buffer {
     }
 
     // put a character on the cursor
-    pub fn put_char(&mut self, c: char) {
+    pub fn put_char(&mut self, c: char, style: CellStyle) {
         assert!(self.cursor.y < self.data.len());
         let line = &mut self.data[self.cursor.y as usize];
         assert!(self.cursor.x < line.len());
-        line[self.cursor.x] = c;
+        line[self.cursor.x] = (c, style);
     }
 
     pub fn clear_line(&mut self, row: usize, range: (usize, usize)) {
@@ -46,7 +48,7 @@ impl Buffer {
         }
         let (l, r) = range;
         for i in l..r {
-            self.data[row][i] = ' ';
+            self.data[row][i] = (' ', CellStyle::default());
         }
     }
 
@@ -113,7 +115,8 @@ impl Buffer {
 
     fn add_newline(&mut self) {
         while self.cursor.y >= self.data.len() {
-            self.data.push(vec![' '; self.width]);
+            self.data
+                .push(vec![(' ', CellStyle::default()); self.width]);
         }
     }
 }
