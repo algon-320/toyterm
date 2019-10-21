@@ -1,3 +1,14 @@
+use std::collections::HashMap;
+
+use sdl2::rect::Rect;
+use sdl2::render::{Canvas, Texture, TextureCreator};
+use sdl2::ttf::Font;
+use sdl2::ttf::FontStyle;
+use sdl2::video::{Window, WindowContext};
+
+use crate::basics::*;
+use crate::utils::*;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
     Black,
@@ -38,17 +49,36 @@ pub enum Style {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CellStyle {
+pub struct CellAttribute {
     pub(crate) style: Style,
     pub(crate) fg: Color,
     pub(crate) bg: Color,
 }
-impl Default for CellStyle {
+impl Default for CellAttribute {
     fn default() -> Self {
-        CellStyle {
+        CellAttribute {
             style: Style::Normal,
-            fg: Color::White,
+            fg: Color::Green,
             bg: Color::Black,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Cell {
+    pub(crate) c: char,
+    pub(crate) attribute: CellAttribute,
+}
+impl Cell {
+    pub fn new(c: char, attr: CellAttribute) -> Self {
+        Cell { c, attribute: attr }
+    }
+}
+impl Default for Cell {
+    fn default() -> Self {
+        Cell {
+            c: ' ',
+            attribute: CellAttribute::default(),
         }
     }
 }

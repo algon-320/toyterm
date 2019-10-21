@@ -25,7 +25,7 @@ impl PointType for BufferCell {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScreenCell;
 impl PointType for ScreenCell {
-    type Type = isize;
+    type Type = usize;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

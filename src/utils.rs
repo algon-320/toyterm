@@ -47,3 +47,9 @@ pub fn setenv(name: &str, value: &str, overwrite: bool) -> Result<(), String> {
         Err(nix::Error::from_errno(en).to_string())
     }
 }
+
+pub fn fill_slice<T: Copy>(buf: &mut [T], v: T) {
+    for x in buf {
+        *x = v;
+    }
+}
