@@ -190,6 +190,8 @@ fn main() -> Result<(), String> {
             let path = CString::new("/bin/sh").unwrap();
 
             setenv("TERM", "vt100", true).unwrap();
+            setenv("COLUMNS", "80", true).unwrap();
+            setenv("LINES", "24", true).unwrap();
 
             err_str(unistd::execv(&path, &[])).map(|_| ())
         }
