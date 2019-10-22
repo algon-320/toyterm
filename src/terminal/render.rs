@@ -58,7 +58,7 @@ impl Default for CellAttribute {
     fn default() -> Self {
         CellAttribute {
             style: Style::Normal,
-            fg: Color::Green,
+            fg: Color::Yellow,
             bg: Color::Black,
         }
     }

@@ -25,7 +25,6 @@ pub enum CursorMove {
 pub struct Term<'a, 'b> {
     canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>,
     font: &'a mut sdl2::ttf::Font<'b, 'static>,
-    texture_creator: &'a sdl2::render::TextureCreator<sdl2::video::WindowContext>,
     render_cache: std::collections::HashMap<Cell, Vec<u8>>,
 
     screen_size: Size<usize>,
@@ -57,18 +56,17 @@ impl<'a, 'b> Term<'a, 'b> {
 
         let width = size.width * char_size.width;
         let height = size.height * char_size.height;
-        let mut screen_texture = texture_creator
+        let screen_texture = texture_creator
             .create_texture_streaming(
                 sdl2::pixels::PixelFormatEnum::ARGB8888,
                 width as u32,
                 height as u32,
             )
             .unwrap();
-        let screen_pixel_buf = vec![0; width * height * 4];
+        let screen_pixel_buf = vec![0u8; width * height * 4];
 
         let mut term = Term {
             canvas,
-            texture_creator,
             font,
             render_cache: HashMap::new(),
 
@@ -91,11 +89,16 @@ impl<'a, 'b> Term<'a, 'b> {
     }
 
     pub fn clear(&mut self) {
-        let bg_color_raw = [0x00, 0x00, 0x00, 0xFF];
-        for (i, x) in self.screen_pixel_buf.iter_mut().enumerate() {
-            *x = bg_color_raw[i % 4];
-        }
-        self.render();
+        self.fill_rect_buf(
+            &Rect::new(
+                0,
+                0,
+                self.screen_size.width as u32,
+                self.screen_size.height as u32,
+            ),
+            &self.cell_attr.bg.clone(),
+        );
+        self.render().unwrap();
     }
 
     pub fn set_cell_attribute(&mut self, cell_attr: CellAttribute) {
@@ -103,8 +106,12 @@ impl<'a, 'b> Term<'a, 'b> {
     }
 
     pub fn draw_char(&mut self, c: char, p: Point<ScreenCell>) -> Result<(), String> {
-        let fg_color = self.cell_attr.fg.to_sdl_color();
-        let bg_color = self.cell_attr.bg.to_sdl_color();
+        let mut fg_color = self.cell_attr.fg.to_sdl_color();
+        let mut bg_color = self.cell_attr.bg.to_sdl_color();
+
+        if self.cell_attr.style == Style::Reverse {
+            std::mem::swap(&mut fg_color, &mut bg_color);
+        }
 
         if self.cell_attr.style == Style::Bold {
             self.font.set_style(FontStyle::BOLD);
@@ -122,7 +129,8 @@ impl<'a, 'b> Term<'a, 'b> {
                     sdl2::pixels::PixelFormatEnum::ARGB8888,
                 )?;
                 let mut cvs = tmp.into_canvas()?;
-                cvs.set_draw_color(bg_color);
+                cvs.set_draw_color(Color::Blue.to_sdl_color());
+                // cvs.set_draw_color(bg_color);
                 cvs.fill_rect(None)?;
                 cvs
             };
@@ -138,14 +146,6 @@ impl<'a, 'b> Term<'a, 'b> {
         let raw_data = &self.render_cache[&cell];
 
         let top_left = self.point_screen_to_pixel(p);
-        // let rect = Rect::new(
-        //     top_left.x,
-        //     top_left.y,
-        //     self.char_size.width as u32,
-        //     self.char_size.height as u32,
-        // );
-        // err_str(self.canvas.copy(&texture, None, rect))?;
-
         assert_eq!(
             self.char_size.width * self.char_size.height * 4,
             raw_data.len()
@@ -224,14 +224,12 @@ impl<'a, 'b> Term<'a, 'b> {
     }
 
     pub fn render(&mut self) -> Result<(), String> {
-        {
-            let src = &self.screen_pixel_buf[..];
-            self.screen_texture
-                .with_lock(None, |dst: &mut [u8], _: usize| unsafe {
-                    std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), dst.len());
-                })
-                .unwrap();
-        }
+        let src = &self.screen_pixel_buf[..];
+        self.screen_texture
+            .with_lock(None, |dst: &mut [u8], _: usize| unsafe {
+                std::ptr::copy(src.as_ptr(), dst.as_mut_ptr(), dst.len());
+            })
+            .unwrap();
 
         err_str(self.canvas.copy(&self.screen_texture, None, None))?;
         self.canvas.present();
@@ -338,12 +336,11 @@ impl<'a, 'b> Term<'a, 'b> {
 
     pub fn insert_char(&mut self, c: u8) {
         self.draw_char(char::from(c), self.cursor).unwrap();
+        self.render();
         self.move_cursor(CursorMove::Next);
     }
     pub fn insert_chars(&mut self, chars: &[u8]) {
-        for c in chars.iter() {
-            self.insert_char(*c);
-        }
+        chars.iter().for_each(|c| self.insert_char(*c));
     }
 
     pub fn write(&mut self, buf: &[u8]) -> Result<(), String> {
@@ -363,15 +360,18 @@ impl<'a, 'b> Term<'a, 'b> {
                 }
 
                 b'\x1B' => {
-                    // start escape sequence
-
+                    // begin of escape sequence
                     use super::parse_escape_sequence;
                     use super::ControlOp::*;
                     match parse_escape_sequence(&mut itr) {
                         (Some(op), _) => {
                             println!("{:?}", op);
                             match op {
-                                CursorHome(p) => self.cursor = Point::new(p.x - 1, p.y - 1),
+                                CursorHome(p) => {
+                                    let x = wrap_range(p.x - 1, 0, self.screen_size.width - 1);
+                                    let y = wrap_range(p.y - 1, 0, self.screen_size.height - 1);
+                                    self.cursor = Point::new(x, y);
+                                }
                                 CursorUp(am) => {
                                     let am = std::cmp::min(am, self.cursor.y as usize);
                                     for _ in 0..am {
@@ -455,10 +455,7 @@ impl<'a, 'b> Term<'a, 'b> {
                                     self.bottom_line = bottom;
                                     // TODO
                                 }
-                                ChangeCellAttribute(mut attr) => {
-                                    if attr.style == Style::Reverse {
-                                        std::mem::swap(&mut attr.bg, &mut attr.fg);
-                                    }
+                                ChangeCellAttribute(attr) => {
                                     self.set_cell_attribute(attr);
                                 }
                                 Ignore => {}
@@ -492,7 +489,9 @@ impl<'a, 'b> Term<'a, 'b> {
                             // print sequence as string
                             self.insert_chars(b"^[");
                             self.insert_chars(&itr.as_slice()[..sz]);
-                            itr.nth(sz - 1);
+                            if sz > 0 {
+                                itr.nth(sz - 1);
+                            }
                         }
                     }
                 }

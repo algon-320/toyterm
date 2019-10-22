@@ -55,8 +55,8 @@ fn main() -> Result<(), String> {
             let ttf_context = sdl2::ttf::init().unwrap();
 
             let mut font = ttf_context
-                .load_font("./fonts/dos_font.ttf", 16)
-                // .load_font("./fonts/UbuntuMono-R.ttf", 25)
+                // .load_font("./fonts/dos_font.ttf", 16)
+                .load_font("./fonts/UbuntuMono-R.ttf", 25)
                 .unwrap();
             let char_size = {
                 let tmp = font.size_of_char('#').unwrap();
