@@ -336,7 +336,6 @@ impl<'a, 'b> Term<'a, 'b> {
 
     pub fn insert_char(&mut self, c: u8) {
         self.draw_char(char::from(c), self.cursor).unwrap();
-        self.render();
         self.move_cursor(CursorMove::Next);
     }
     pub fn insert_chars(&mut self, chars: &[u8]) {
@@ -349,13 +348,24 @@ impl<'a, 'b> Term<'a, 'b> {
             match *c {
                 0 => break,
                 b'\n' => {
-                    self.move_cursor(CursorMove::RightMost);
-                    self.move_cursor(CursorMove::Next);
+                    #[cfg(debug_assertions)]
+                    println!("[next line]");
+                    if !self.move_cursor(CursorMove::Down) {
+                        // next line
+                        let x = self.cursor.x;
+                        self.move_cursor(CursorMove::RightMost);
+                        self.move_cursor(CursorMove::Next);
+                        self.cursor.x = x;
+                    }
                 }
                 b'\r' => {
+                    #[cfg(debug_assertions)]
+                    println!("[move left most]");
                     self.move_cursor(CursorMove::LeftMost);
                 }
                 b'\x08' => {
+                    #[cfg(debug_assertions)]
+                    println!("[back]");
                     self.move_cursor(CursorMove::Left);
                 }
 
@@ -365,6 +375,7 @@ impl<'a, 'b> Term<'a, 'b> {
                     use super::ControlOp::*;
                     match parse_escape_sequence(&mut itr) {
                         (Some(op), _) => {
+                            #[cfg(debug_assertions)]
                             println!("{:?}", op);
                             match op {
                                 CursorHome(p) => {
