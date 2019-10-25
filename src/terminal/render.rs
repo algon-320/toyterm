@@ -85,8 +85,34 @@ impl Default for Cell {
     }
 }
 
+pub struct FontSet<'a> {
+    pub regular: Font<'a, 'static>,
+    pub bold: Font<'a, 'static>,
+    pub char_size: Size<usize>,
+}
+impl<'a> FontSet<'a> {
+    fn new(
+        ttf_context: &'a sdl2::ttf::Sdl2TtfContext,
+        font_name_regular: &str,
+        font_name_bold: &str,
+        font_size: u16,
+    ) -> Self {
+        let regular = ttf_context.load_font(font_name_regular, font_size).unwrap();
+        let bold = ttf_context.load_font(font_name_bold, font_size).unwrap();
+        let char_size = {
+            let tmp = regular.size_of_char('#').unwrap();
+            Size::new(tmp.0 as usize, tmp.1 as usize)
+        };
+        FontSet {
+            regular,
+            bold,
+            char_size,
+        }
+    }
+}
+
 pub struct RenderContext<'a> {
-    pub font: Font<'a, 'static>,
+    pub font: FontSet<'a>,
     pub canvas: Canvas<Window>,
     pub texture_creator: TextureCreator<WindowContext>,
 }
@@ -97,21 +123,19 @@ impl<'a> RenderContext<'a> {
         ttf_context: &'a sdl2::ttf::Sdl2TtfContext,
         screen_size: Size<usize>,
     ) -> Self {
-        let font = ttf_context
-            // .load_font("./fonts/dos_font.ttf", 16)
-            .load_font("./fonts/UbuntuMono-R.ttf", 25)
-            .unwrap();
-        let char_size = {
-            let tmp = font.size_of_char('#').unwrap();
-            Size::new(tmp.0 as usize, tmp.1 as usize)
-        };
+        let font = FontSet::new(
+            ttf_context,
+            "./fonts/UbuntuMono-R.ttf",
+            "./fonts/UbuntuMono-B.ttf",
+            25,
+        );
         let window = {
             let video = sdl_context.video().unwrap();
             video
                 .window(
                     window_title,
-                    (char_size.width * screen_size.width) as u32,
-                    (char_size.height * screen_size.height) as u32,
+                    (font.char_size.width * screen_size.width) as u32,
+                    (font.char_size.height * screen_size.height) as u32,
                 )
                 .position_centered()
                 .build()
@@ -136,7 +160,6 @@ pub struct Renderer<'a, 'b> {
     pub context: &'a mut RenderContext<'b>,
     pub cache: HashMap<Cell, Vec<u8>>,
     pub screen_texture: Texture,
-    pub char_size: Size<usize>,
     pub screen_size: Size<usize>,
     pub screen_pixel_buf: Vec<u8>,
     pub cell_attr: CellAttribute,
@@ -144,10 +167,7 @@ pub struct Renderer<'a, 'b> {
 }
 impl<'a, 'b> Renderer<'a, 'b> {
     pub fn new(render_context: &'a mut RenderContext<'b>, screen_size: Size<usize>) -> Self {
-        let char_size = {
-            let tmp = render_context.font.size_of_char('#').unwrap();
-            Size::new(tmp.0 as usize, tmp.1 as usize)
-        };
+        let char_size = render_context.font.char_size;
         let width = screen_size.width * char_size.width;
         let height = screen_size.height * char_size.height;
         let texture = render_context
@@ -158,12 +178,15 @@ impl<'a, 'b> Renderer<'a, 'b> {
             context: render_context,
             cache: std::collections::HashMap::new(),
             screen_texture: texture,
-            char_size,
             screen_size,
             screen_pixel_buf: vec![0u8; width * height * 4],
             cell_attr: CellAttribute::default(),
             screen_pixel_size: Size::new(width as u32, height as u32),
         }
+    }
+
+    pub fn get_char_size(&self) -> Size<usize> {
+        self.context.font.char_size
     }
 
     pub fn set_cell_attribute(&mut self, cell_attr: CellAttribute) {
@@ -178,19 +201,13 @@ impl<'a, 'b> Renderer<'a, 'b> {
             std::mem::swap(&mut fg_color, &mut bg_color);
         }
 
-        if self.cell_attr.style == Style::Bold {
-            self.context.font.set_style(FontStyle::BOLD);
-        } else {
-            self.context.font.set_style(FontStyle::NORMAL);
-        }
-
         // generate texture
         let cell = Cell::new(c, self.cell_attr);
         if !self.cache.contains_key(&cell) {
             let mut cell_canvas = {
                 let tmp = sdl2::surface::Surface::new(
-                    self.char_size.width as u32,
-                    self.char_size.height as u32,
+                    self.get_char_size().width as u32,
+                    self.get_char_size().height as u32,
                     PixelFormatEnum::ARGB8888,
                 )?;
                 let mut cvs = tmp.into_canvas()?;
@@ -198,7 +215,12 @@ impl<'a, 'b> Renderer<'a, 'b> {
                 cvs.fill_rect(None)?;
                 cvs
             };
-            let surface = err_str(self.context.font.render_char(c).blended(fg_color))?;
+            let f = if self.cell_attr.style == Style::Bold {
+                &self.context.font.bold
+            } else {
+                &self.context.font.regular
+            };
+            let surface = err_str(f.render_char(c).blended(fg_color))?;
             let tc = cell_canvas.texture_creator();
             let texture = err_str(tc.create_texture_from_surface(surface))?;
             cell_canvas.copy(&texture, None, None)?;
@@ -210,13 +232,16 @@ impl<'a, 'b> Renderer<'a, 'b> {
         let raw_data = &self.cache[&cell];
 
         let top_left = self.point_screen_to_pixel(p);
-        assert_eq!(self.char_size.area() * 4, raw_data.len());
+        assert_eq!(self.get_char_size().area() * 4, raw_data.len());
         assert_eq!(
-            self.screen_size.area() * self.char_size.area() * 4,
+            self.screen_size.area() * self.get_char_size().area() * 4,
             self.screen_pixel_buf.len()
         );
-        for i in 0..self.char_size.area() {
-            let (y, x) = (i / self.char_size.width, i % self.char_size.width);
+        for i in 0..self.get_char_size().area() {
+            let (y, x) = (
+                i / self.get_char_size().width,
+                i % self.get_char_size().width,
+            );
             let (abs_y, abs_x) = (y + top_left.y as usize, x + top_left.x as usize);
             for k in 0..4 {
                 self.screen_pixel_buf
@@ -228,7 +253,7 @@ impl<'a, 'b> Renderer<'a, 'b> {
         Ok(())
     }
 
-    pub fn render(&mut self) -> Result<(), String> {
+    pub fn render(&mut self, cursor_pos: Option<&Point<ScreenCell>>) -> Result<(), String> {
         let src = &self.screen_pixel_buf[..];
         self.screen_texture
             .with_lock(None, |dst: &mut [u8], _: usize| unsafe {
@@ -237,11 +262,22 @@ impl<'a, 'b> Renderer<'a, 'b> {
             .unwrap();
 
         err_str(self.context.canvas.copy(&self.screen_texture, None, None))?;
+        if let Some(c) = cursor_pos {
+            let rect = Rect::new(
+                (self.get_char_size().width * c.x) as i32,
+                (self.get_char_size().height * c.y) as i32,
+                self.get_char_size().width as u32,
+                self.get_char_size().height as u32,
+            );
+            let col = self.cell_attr.fg.to_sdl_color();
+            self.context.canvas.set_draw_color(col);
+            self.context.canvas.fill_rect(rect);
+        }
         self.context.canvas.present();
         Ok(())
     }
 
-    pub fn fill_rect_buf(&mut self, rect: &Rect, c: &Color) {
+    fn fill_rect_buf(&mut self, rect: &Rect, c: &Color) {
         let c = c.to_sdl_color();
         let pix = [c.b, c.g, c.r, 0xFF];
         for y in 0..rect.h {
@@ -266,17 +302,17 @@ impl<'a, 'b> Renderer<'a, 'b> {
             ),
             &self.cell_attr.bg.clone(),
         );
-        self.render().unwrap();
+        self.render(None).unwrap();
     }
 
-    pub fn clear_cell(&mut self, p: Point<ScreenCell>) -> Result<(), String> {
+    fn clear_cell(&mut self, p: Point<ScreenCell>) -> Result<(), String> {
         let bg = self.cell_attr.bg;
         let top_left = self.point_screen_to_pixel(p);
         let rect = Rect::new(
             top_left.x,
             top_left.y,
-            self.char_size.width as u32,
-            self.char_size.height as u32,
+            self.get_char_size().width as u32,
+            self.get_char_size().height as u32,
         );
         self.fill_rect_buf(&rect, &bg);
         Ok(())
@@ -287,17 +323,17 @@ impl<'a, 'b> Renderer<'a, 'b> {
             let top_left = self.point_screen_to_pixel(Point::new(0, row));
             if let Some(r) = range {
                 Rect::new(
-                    (self.char_size.width * r.0) as i32,
+                    (self.get_char_size().width * r.0) as i32,
                     top_left.y,
-                    (self.char_size.width * (r.1 - r.0)) as u32,
-                    self.char_size.height as u32,
+                    (self.get_char_size().width * (r.1 - r.0)) as u32,
+                    self.get_char_size().height as u32,
                 )
             } else {
                 Rect::new(
                     top_left.x,
                     top_left.y,
                     self.screen_pixel_size.width as u32,
-                    self.char_size.height as u32,
+                    self.get_char_size().height as u32,
                 )
             }
         };
@@ -308,8 +344,34 @@ impl<'a, 'b> Renderer<'a, 'b> {
 
     fn point_screen_to_pixel(&self, sp: Point<ScreenCell>) -> Point<Pixel> {
         Point::new(
-            sp.x as i32 * self.char_size.width as i32,
-            sp.y as i32 * self.char_size.height as i32,
+            sp.x as i32 * self.get_char_size().width as i32,
+            sp.y as i32 * self.get_char_size().height as i32,
         )
+    }
+
+    pub fn scroll_up(&mut self) {
+        // scroll up
+        let line_px = self.screen_size.width * self.get_char_size().width * 4;
+        let char_height = self.get_char_size().height;
+        unsafe {
+            std::ptr::copy(
+                self.screen_pixel_buf[line_px * char_height..].as_ptr(),
+                self.screen_pixel_buf[0..].as_mut_ptr(),
+                line_px * char_height * (self.screen_size.height - 1),
+            );
+        }
+        self.clear_line(self.screen_size.height - 1, None).unwrap();
+    }
+    pub fn scroll_down(&mut self) {
+        let line_px = self.screen_size.width * self.get_char_size().width * 4;
+        let char_height = self.get_char_size().height;
+        unsafe {
+            std::ptr::copy(
+                self.screen_pixel_buf[0..].as_ptr(),
+                self.screen_pixel_buf[line_px * char_height..].as_mut_ptr(),
+                line_px * char_height * (self.screen_size.height - 1),
+            );
+        }
+        self.clear_line(0, None).unwrap();
     }
 }

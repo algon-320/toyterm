@@ -46,7 +46,7 @@ impl<'a, 'b> Term<'a, 'b> {
     }
 
     pub fn render(&mut self) -> Result<(), String> {
-        self.renderer.render()
+        self.renderer.render(Some(&self.cursor))
     }
 
     pub fn reset(&mut self) {
@@ -104,22 +104,7 @@ impl<'a, 'b> Term<'a, 'b> {
                 if !self.move_cursor(Right) {
                     self.move_cursor(LeftMost);
                     if !self.move_cursor(Down) {
-                        // scroll up
-                        let line_px = self.screen_size.width * self.renderer.char_size.width * 4;
-                        unsafe {
-                            std::ptr::copy(
-                                self.renderer.screen_pixel_buf
-                                    [line_px * self.renderer.char_size.height..]
-                                    .as_ptr(),
-                                self.renderer.screen_pixel_buf[0..].as_mut_ptr(),
-                                line_px
-                                    * self.renderer.char_size.height
-                                    * (self.screen_size.height - 1),
-                            );
-                        }
-                        self.renderer
-                            .clear_line(self.screen_size.height - 1, None)
-                            .unwrap();
+                        self.renderer.scroll_up();
                     }
                 }
                 true
@@ -128,20 +113,7 @@ impl<'a, 'b> Term<'a, 'b> {
                 if !self.move_cursor(Left) {
                     self.move_cursor(RightMost);
                     if !self.move_cursor(Up) {
-                        // scroll down
-                        let line_px = self.screen_size.width * self.renderer.char_size.width * 4;
-                        unsafe {
-                            std::ptr::copy(
-                                self.renderer.screen_pixel_buf[0..].as_ptr(),
-                                self.renderer.screen_pixel_buf
-                                    [line_px * self.renderer.char_size.height..]
-                                    .as_mut_ptr(),
-                                line_px
-                                    * self.renderer.char_size.height
-                                    * (self.screen_size.height - 1),
-                            );
-                        }
-                        self.renderer.clear_line(0, None).unwrap();
+                        self.renderer.scroll_down();
                     }
                 }
                 true
