@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-
 use crate::basics::*;
 use crate::utils::*;
 
+use super::control::parse_escape_sequence;
+use super::control::ControlOp;
 use super::render::*;
 
 pub enum CursorMove {
@@ -161,8 +161,7 @@ impl<'a, 'b> Term<'a, 'b> {
 
                 b'\x1B' => {
                     // begin of escape sequence
-                    use super::parse_escape_sequence;
-                    use super::ControlOp::*;
+                    use ControlOp::*;
                     match parse_escape_sequence(&mut itr) {
                         (Some(op), _) => {
                             #[cfg(debug_assertions)]

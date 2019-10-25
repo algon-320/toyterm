@@ -39,6 +39,9 @@ pub fn keyevent_to_bytes(event: &sdl2::event::Event) -> Option<Vec<u8>> {
                     Scancode::D => contains_match! {
                         ANY [Mod::LCTRLMOD, Mod::RCTRLMOD] => Some(b"\x04".to_vec())
                     },
+                    Scancode::K => contains_match! {
+                        ANY [Mod::LCTRLMOD, Mod::RCTRLMOD] => Some(b"\x04".to_vec())
+                    },
                     Scancode::LShift | Scancode::RShift => None,
                     Scancode::Home => Some(b"\x1b[1~".to_vec()),
                     Scancode::End => Some(b"\x1b[4~".to_vec()),

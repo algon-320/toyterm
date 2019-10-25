@@ -4,12 +4,12 @@ use sdl2::pixels::PixelFormatEnum;
 use sdl2::rect::Rect;
 use sdl2::render::{Canvas, Texture, TextureCreator};
 use sdl2::ttf::Font;
-use sdl2::ttf::FontStyle;
 use sdl2::video::{Window, WindowContext};
 
 use crate::basics::*;
 use crate::utils::*;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
     Black,
@@ -271,7 +271,7 @@ impl<'a, 'b> Renderer<'a, 'b> {
             );
             let col = self.cell_attr.fg.to_sdl_color();
             self.context.canvas.set_draw_color(col);
-            self.context.canvas.fill_rect(rect);
+            self.context.canvas.fill_rect(rect)?;
         }
         self.context.canvas.present();
         Ok(())
@@ -305,7 +305,7 @@ impl<'a, 'b> Renderer<'a, 'b> {
         self.render(None).unwrap();
     }
 
-    fn clear_cell(&mut self, p: Point<ScreenCell>) -> Result<(), String> {
+    fn clear_cell(&mut self, p: Point<ScreenCell>) {
         let bg = self.cell_attr.bg;
         let top_left = self.point_screen_to_pixel(p);
         let rect = Rect::new(
@@ -315,7 +315,6 @@ impl<'a, 'b> Renderer<'a, 'b> {
             self.get_char_size().height as u32,
         );
         self.fill_rect_buf(&rect, &bg);
-        Ok(())
     }
     // range: [l, r)
     pub fn clear_line(&mut self, row: usize, range: Option<(usize, usize)>) -> Result<(), String> {
