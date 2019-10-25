@@ -1,17 +1,9 @@
 pub mod pty;
 
-use std::collections::HashMap;
-use std::path::Path;
-
-use sdl2::rect::Rect;
-use sdl2::render::Texture;
-use sdl2::ttf;
-use sdl2::ttf::FontStyle;
-
 use crate::basics::*;
 use crate::utils::*;
 
-mod render;
+pub mod render;
 use render::*;
 
 mod term;

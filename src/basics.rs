@@ -3,9 +3,13 @@ pub struct Size<T> {
     pub width: T,
     pub height: T,
 }
-impl<T> Size<T> {
+use std::ops::Mul;
+impl<T: Mul> Size<T> {
     pub fn new(width: T, height: T) -> Self {
         Size { width, height }
+    }
+    pub fn area(self) -> T::Output {
+        self.width * self.height
     }
 }
 

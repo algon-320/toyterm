@@ -13,4 +13,4 @@ lazy_static = "1.4.0"
 [dependencies.sdl2]
 git = "https://github.com/Rust-SDL2/rust-sdl2"
 default-features = false
-features = ["ttf"]
+features = ["ttf", "unsafe_textures"]

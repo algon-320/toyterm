@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use sdl2::pixels::PixelFormatEnum;
 use sdl2::rect::Rect;
 use sdl2::render::{Canvas, Texture, TextureCreator};
 use sdl2::ttf::Font;
@@ -24,17 +25,18 @@ pub enum Color {
 }
 impl Color {
     pub fn to_sdl_color(self) -> sdl2::pixels::Color {
+        use sdl2::pixels::Color as Sdl2Color;
         match self {
-            Color::Black => sdl2::pixels::Color::RGB(0, 0, 0),
-            Color::White => sdl2::pixels::Color::RGB(255, 255, 255),
-            Color::Red => sdl2::pixels::Color::RGB(255, 0, 0),
-            Color::Green => sdl2::pixels::Color::RGB(0, 255, 0),
-            Color::Blue => sdl2::pixels::Color::RGB(0, 0, 255),
-            Color::Cyan => sdl2::pixels::Color::RGB(0, 255, 255),
-            Color::Magenta => sdl2::pixels::Color::RGB(255, 0, 255),
-            Color::Yellow => sdl2::pixels::Color::RGB(255, 255, 0),
-            Color::Gray => sdl2::pixels::Color::RGB(120, 120, 120),
-            Color::RGB(r, g, b) => sdl2::pixels::Color::RGB(r, g, b),
+            Color::Black => Sdl2Color::RGB(0, 0, 0),
+            Color::White => Sdl2Color::RGB(255, 255, 255),
+            Color::Red => Sdl2Color::RGB(255, 0, 0),
+            Color::Green => Sdl2Color::RGB(0, 255, 0),
+            Color::Blue => Sdl2Color::RGB(0, 0, 255),
+            Color::Cyan => Sdl2Color::RGB(0, 255, 255),
+            Color::Magenta => Sdl2Color::RGB(255, 0, 255),
+            Color::Yellow => Sdl2Color::RGB(255, 255, 0),
+            Color::Gray => Sdl2Color::RGB(120, 120, 120),
+            Color::RGB(r, g, b) => Sdl2Color::RGB(r, g, b),
         }
     }
 }
@@ -50,24 +52,24 @@ pub enum Style {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CellAttribute {
-    pub(crate) style: Style,
-    pub(crate) fg: Color,
-    pub(crate) bg: Color,
+    pub style: Style,
+    pub fg: Color,
+    pub bg: Color,
 }
 impl Default for CellAttribute {
     fn default() -> Self {
         CellAttribute {
             style: Style::Normal,
             fg: Color::Yellow,
-            bg: Color::Black,
+            bg: Color::Blue,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Cell {
-    pub(crate) c: char,
-    pub(crate) attribute: CellAttribute,
+    pub c: char,
+    pub attribute: CellAttribute,
 }
 impl Cell {
     pub fn new(c: char, attr: CellAttribute) -> Self {
@@ -80,5 +82,234 @@ impl Default for Cell {
             c: ' ',
             attribute: CellAttribute::default(),
         }
+    }
+}
+
+pub struct RenderContext<'a> {
+    pub font: Font<'a, 'static>,
+    pub canvas: Canvas<Window>,
+    pub texture_creator: TextureCreator<WindowContext>,
+}
+impl<'a> RenderContext<'a> {
+    pub fn new(
+        window_title: &str,
+        sdl_context: &sdl2::Sdl,
+        ttf_context: &'a sdl2::ttf::Sdl2TtfContext,
+        screen_size: Size<usize>,
+    ) -> Self {
+        let font = ttf_context
+            // .load_font("./fonts/dos_font.ttf", 16)
+            .load_font("./fonts/UbuntuMono-R.ttf", 25)
+            .unwrap();
+        let char_size = {
+            let tmp = font.size_of_char('#').unwrap();
+            Size::new(tmp.0 as usize, tmp.1 as usize)
+        };
+        let window = {
+            let video = sdl_context.video().unwrap();
+            video
+                .window(
+                    window_title,
+                    (char_size.width * screen_size.width) as u32,
+                    (char_size.height * screen_size.height) as u32,
+                )
+                .position_centered()
+                .build()
+                .unwrap()
+        };
+        let canvas = window
+            .into_canvas()
+            .accelerated()
+            .target_texture()
+            .build()
+            .unwrap();
+        let texture_creator = canvas.texture_creator();
+        RenderContext {
+            font,
+            canvas,
+            texture_creator,
+        }
+    }
+}
+
+pub struct Renderer<'a, 'b> {
+    pub context: &'a mut RenderContext<'b>,
+    pub cache: HashMap<Cell, Vec<u8>>,
+    pub screen_texture: Texture,
+    pub char_size: Size<usize>,
+    pub screen_size: Size<usize>,
+    pub screen_pixel_buf: Vec<u8>,
+    pub cell_attr: CellAttribute,
+    pub screen_pixel_size: Size<u32>,
+}
+impl<'a, 'b> Renderer<'a, 'b> {
+    pub fn new(render_context: &'a mut RenderContext<'b>, screen_size: Size<usize>) -> Self {
+        let char_size = {
+            let tmp = render_context.font.size_of_char('#').unwrap();
+            Size::new(tmp.0 as usize, tmp.1 as usize)
+        };
+        let width = screen_size.width * char_size.width;
+        let height = screen_size.height * char_size.height;
+        let texture = render_context
+            .texture_creator
+            .create_texture_streaming(PixelFormatEnum::ARGB8888, width as u32, height as u32)
+            .unwrap();
+        Renderer {
+            context: render_context,
+            cache: std::collections::HashMap::new(),
+            screen_texture: texture,
+            char_size,
+            screen_size,
+            screen_pixel_buf: vec![0u8; width * height * 4],
+            cell_attr: CellAttribute::default(),
+            screen_pixel_size: Size::new(width as u32, height as u32),
+        }
+    }
+
+    pub fn set_cell_attribute(&mut self, cell_attr: CellAttribute) {
+        self.cell_attr = cell_attr;
+    }
+
+    pub fn draw_char(&mut self, c: char, p: Point<ScreenCell>) -> Result<(), String> {
+        let mut fg_color = self.cell_attr.fg.to_sdl_color();
+        let mut bg_color = self.cell_attr.bg.to_sdl_color();
+
+        if self.cell_attr.style == Style::Reverse {
+            std::mem::swap(&mut fg_color, &mut bg_color);
+        }
+
+        if self.cell_attr.style == Style::Bold {
+            self.context.font.set_style(FontStyle::BOLD);
+        } else {
+            self.context.font.set_style(FontStyle::NORMAL);
+        }
+
+        // generate texture
+        let cell = Cell::new(c, self.cell_attr);
+        if !self.cache.contains_key(&cell) {
+            let mut cell_canvas = {
+                let tmp = sdl2::surface::Surface::new(
+                    self.char_size.width as u32,
+                    self.char_size.height as u32,
+                    PixelFormatEnum::ARGB8888,
+                )?;
+                let mut cvs = tmp.into_canvas()?;
+                cvs.set_draw_color(bg_color);
+                cvs.fill_rect(None)?;
+                cvs
+            };
+            let surface = err_str(self.context.font.render_char(c).blended(fg_color))?;
+            let tc = cell_canvas.texture_creator();
+            let texture = err_str(tc.create_texture_from_surface(surface))?;
+            cell_canvas.copy(&texture, None, None)?;
+            self.cache.insert(
+                cell.clone(),
+                cell_canvas.read_pixels(None, PixelFormatEnum::ARGB8888)?,
+            );
+        }
+        let raw_data = &self.cache[&cell];
+
+        let top_left = self.point_screen_to_pixel(p);
+        assert_eq!(self.char_size.area() * 4, raw_data.len());
+        assert_eq!(
+            self.screen_size.area() * self.char_size.area() * 4,
+            self.screen_pixel_buf.len()
+        );
+        for i in 0..self.char_size.area() {
+            let (y, x) = (i / self.char_size.width, i % self.char_size.width);
+            let (abs_y, abs_x) = (y + top_left.y as usize, x + top_left.x as usize);
+            for k in 0..4 {
+                self.screen_pixel_buf
+                    [(abs_y * self.screen_pixel_size.width as usize + abs_x) * 4 + k] =
+                    raw_data[i * 4 + k];
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn render(&mut self) -> Result<(), String> {
+        let src = &self.screen_pixel_buf[..];
+        self.screen_texture
+            .with_lock(None, |dst: &mut [u8], _: usize| unsafe {
+                std::ptr::copy(src.as_ptr(), dst.as_mut_ptr(), dst.len());
+            })
+            .unwrap();
+
+        err_str(self.context.canvas.copy(&self.screen_texture, None, None))?;
+        self.context.canvas.present();
+        Ok(())
+    }
+
+    pub fn fill_rect_buf(&mut self, rect: &Rect, c: &Color) {
+        let c = c.to_sdl_color();
+        let pix = [c.b, c.g, c.r, 0xFF];
+        for y in 0..rect.h {
+            let y = (y + rect.y) as usize;
+            for x in 0..rect.w {
+                let x = (x + rect.x) as usize;
+                for k in 0..4 {
+                    self.screen_pixel_buf
+                        [(y * self.screen_pixel_size.width as usize + x) * 4 + k] = pix[k];
+                }
+            }
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.fill_rect_buf(
+            &Rect::new(
+                0,
+                0,
+                self.screen_pixel_size.width,
+                self.screen_pixel_size.height,
+            ),
+            &self.cell_attr.bg.clone(),
+        );
+        self.render().unwrap();
+    }
+
+    pub fn clear_cell(&mut self, p: Point<ScreenCell>) -> Result<(), String> {
+        let bg = self.cell_attr.bg;
+        let top_left = self.point_screen_to_pixel(p);
+        let rect = Rect::new(
+            top_left.x,
+            top_left.y,
+            self.char_size.width as u32,
+            self.char_size.height as u32,
+        );
+        self.fill_rect_buf(&rect, &bg);
+        Ok(())
+    }
+    // range: [l, r)
+    pub fn clear_line(&mut self, row: usize, range: Option<(usize, usize)>) -> Result<(), String> {
+        let rect = {
+            let top_left = self.point_screen_to_pixel(Point::new(0, row));
+            if let Some(r) = range {
+                Rect::new(
+                    (self.char_size.width * r.0) as i32,
+                    top_left.y,
+                    (self.char_size.width * (r.1 - r.0)) as u32,
+                    self.char_size.height as u32,
+                )
+            } else {
+                Rect::new(
+                    top_left.x,
+                    top_left.y,
+                    self.screen_pixel_size.width as u32,
+                    self.char_size.height as u32,
+                )
+            }
+        };
+        let bg = self.cell_attr.bg;
+        self.fill_rect_buf(&rect, &bg);
+        Ok(())
+    }
+
+    fn point_screen_to_pixel(&self, sp: Point<ScreenCell>) -> Point<Pixel> {
+        Point::new(
+            sp.x as i32 * self.char_size.width as i32,
+            sp.y as i32 * self.char_size.height as i32,
+        )
     }
 }

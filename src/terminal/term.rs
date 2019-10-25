@@ -1,10 +1,4 @@
 use std::collections::HashMap;
-use std::path::Path;
-
-use sdl2::rect::Rect;
-use sdl2::render::Texture;
-use sdl2::ttf;
-use sdl2::ttf::FontStyle;
 
 use crate::basics::*;
 use crate::utils::*;
@@ -23,224 +17,36 @@ pub enum CursorMove {
 }
 
 pub struct Term<'a, 'b> {
-    canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>,
-    font: &'a mut sdl2::ttf::Font<'b, 'static>,
-    render_cache: std::collections::HashMap<Cell, Vec<u8>>,
+    renderer: Renderer<'a, 'b>,
 
     screen_size: Size<usize>,
     screen_begin: usize,
     cursor: Point<ScreenCell>,
     saved_cursor_pos: Point<ScreenCell>,
 
-    cell_attr: CellAttribute,
-    char_size: Size<usize>,
-    screen_pixel_buf: Vec<u8>,
-    screen_texture: Texture<'a>,
-
     top_line: isize,
     bottom_line: isize,
 }
 impl<'a, 'b> Term<'a, 'b> {
-    pub fn new(
-        canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>,
-        texture_creator: &'a mut sdl2::render::TextureCreator<sdl2::video::WindowContext>,
-        font: &'a mut sdl2::ttf::Font<'b, 'static>,
-        size: Size<usize>,
-    ) -> Self {
+    pub fn new(render_context: &'a mut RenderContext<'b>, size: Size<usize>) -> Self {
         assert!(size.height > 0);
-
-        let char_size = {
-            let tmp = font.size_of_char('#').unwrap();
-            Size::new(tmp.0 as usize, tmp.1 as usize)
-        };
-
-        let width = size.width * char_size.width;
-        let height = size.height * char_size.height;
-        let screen_texture = texture_creator
-            .create_texture_streaming(
-                sdl2::pixels::PixelFormatEnum::ARGB8888,
-                width as u32,
-                height as u32,
-            )
-            .unwrap();
-        let screen_pixel_buf = vec![0u8; width * height * 4];
-
         let mut term = Term {
-            canvas,
-            font,
-            render_cache: HashMap::new(),
+            renderer: Renderer::new(render_context, size),
 
             screen_size: size,
             screen_begin: 0,
             cursor: Point::new(0, 0),
             saved_cursor_pos: Point::new(0, 0),
 
-            cell_attr: CellAttribute::default(),
-            char_size,
-
-            screen_texture,
-            screen_pixel_buf,
-
             top_line: 0,
             bottom_line: size.height as isize - 1,
         };
-        term.clear();
+        term.renderer.clear();
         term
     }
 
-    pub fn clear(&mut self) {
-        self.fill_rect_buf(
-            &Rect::new(
-                0,
-                0,
-                self.screen_size.width as u32,
-                self.screen_size.height as u32,
-            ),
-            &self.cell_attr.bg.clone(),
-        );
-        self.render().unwrap();
-    }
-
-    pub fn set_cell_attribute(&mut self, cell_attr: CellAttribute) {
-        self.cell_attr = cell_attr;
-    }
-
-    pub fn draw_char(&mut self, c: char, p: Point<ScreenCell>) -> Result<(), String> {
-        let mut fg_color = self.cell_attr.fg.to_sdl_color();
-        let mut bg_color = self.cell_attr.bg.to_sdl_color();
-
-        if self.cell_attr.style == Style::Reverse {
-            std::mem::swap(&mut fg_color, &mut bg_color);
-        }
-
-        if self.cell_attr.style == Style::Bold {
-            self.font.set_style(FontStyle::BOLD);
-        } else {
-            self.font.set_style(FontStyle::NORMAL);
-        }
-
-        // generate texture
-        let cell = Cell::new(c, self.cell_attr);
-        if !self.render_cache.contains_key(&cell) {
-            let mut cell_canvas = {
-                let tmp = sdl2::surface::Surface::new(
-                    self.char_size.width as u32,
-                    self.char_size.height as u32,
-                    sdl2::pixels::PixelFormatEnum::ARGB8888,
-                )?;
-                let mut cvs = tmp.into_canvas()?;
-                cvs.set_draw_color(Color::Blue.to_sdl_color());
-                // cvs.set_draw_color(bg_color);
-                cvs.fill_rect(None)?;
-                cvs
-            };
-            let surface = err_str(self.font.render_char(c).blended(fg_color))?;
-            let tc = cell_canvas.texture_creator();
-            let texture = err_str(tc.create_texture_from_surface(surface))?;
-            cell_canvas.copy(&texture, None, None)?;
-            self.render_cache.insert(
-                cell.clone(),
-                cell_canvas.read_pixels(None, sdl2::pixels::PixelFormatEnum::ARGB8888)?,
-            );
-        }
-        let raw_data = &self.render_cache[&cell];
-
-        let top_left = self.point_screen_to_pixel(p);
-        assert_eq!(
-            self.char_size.width * self.char_size.height * 4,
-            raw_data.len()
-        );
-        assert_eq!(
-            self.screen_size.width
-                * self.screen_size.height
-                * self.char_size.width
-                * self.char_size.height
-                * 4,
-            self.screen_pixel_buf.len()
-        );
-        for i in 0..self.char_size.width * self.char_size.height {
-            let (y, x) = (i / self.char_size.width, i % self.char_size.width);
-            let (abs_y, abs_x) = (y + top_left.y as usize, x + top_left.x as usize);
-            for k in 0..4 {
-                self.screen_pixel_buf
-                    [(abs_y * self.screen_size.width * self.char_size.width + abs_x) * 4 + k] =
-                    raw_data[i * 4 + k];
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn fill_rect_buf(&mut self, rect: &Rect, c: &Color) {
-        let c = c.to_sdl_color();
-        let pix = [c.b, c.g, c.r, 0xFF];
-        for y in 0..rect.h {
-            let y = (y + rect.y) as usize;
-            for x in 0..rect.w {
-                let x = (x + rect.x) as usize;
-                for k in 0..4 {
-                    self.screen_pixel_buf
-                        [(y * self.screen_size.width * self.char_size.width + x) * 4 + k] = pix[k];
-                }
-            }
-        }
-    }
-
-    pub fn clear_cell(&mut self, p: Point<ScreenCell>) -> Result<(), String> {
-        let bg = self.cell_attr.bg;
-        let top_left = self.point_screen_to_pixel(p);
-        let rect = Rect::new(
-            top_left.x,
-            top_left.y,
-            self.char_size.width as u32,
-            self.char_size.height as u32,
-        );
-        self.fill_rect_buf(&rect, &bg);
-        Ok(())
-    }
-    // range: [l, r)
-    pub fn clear_line(&mut self, row: usize, range: Option<(usize, usize)>) -> Result<(), String> {
-        let rect = {
-            let top_left = self.point_screen_to_pixel(Point::new(0, row));
-            if let Some(r) = range {
-                Rect::new(
-                    (self.char_size.width * r.0) as i32,
-                    top_left.y,
-                    (self.char_size.width * (r.1 - r.0)) as u32,
-                    self.char_size.height as u32,
-                )
-            } else {
-                Rect::new(
-                    top_left.x,
-                    top_left.y,
-                    (self.char_size.width * self.screen_size.width) as u32,
-                    self.char_size.height as u32,
-                )
-            }
-        };
-        let bg = self.cell_attr.bg;
-        self.fill_rect_buf(&rect, &bg);
-        Ok(())
-    }
-
     pub fn render(&mut self) -> Result<(), String> {
-        let src = &self.screen_pixel_buf[..];
-        self.screen_texture
-            .with_lock(None, |dst: &mut [u8], _: usize| unsafe {
-                std::ptr::copy(src.as_ptr(), dst.as_mut_ptr(), dst.len());
-            })
-            .unwrap();
-
-        err_str(self.canvas.copy(&self.screen_texture, None, None))?;
-        self.canvas.present();
-        Ok(())
-    }
-
-    fn point_screen_to_pixel(&self, sp: Point<ScreenCell>) -> Point<Pixel> {
-        Point::new(
-            sp.x as i32 * self.char_size.width as i32,
-            sp.y as i32 * self.char_size.height as i32,
-        )
+        self.renderer.render()
     }
 
     pub fn reset(&mut self) {
@@ -248,7 +54,7 @@ impl<'a, 'b> Term<'a, 'b> {
         self.saved_cursor_pos = Point::new(0, 0);
         self.top_line = 0;
         self.bottom_line = self.screen_size.height as isize - 1;
-        self.clear();
+        self.renderer.clear();
     }
 
     pub fn move_cursor(&mut self, m: CursorMove) -> bool {
@@ -299,15 +105,21 @@ impl<'a, 'b> Term<'a, 'b> {
                     self.move_cursor(LeftMost);
                     if !self.move_cursor(Down) {
                         // scroll up
-                        let line_px = self.screen_size.width * self.char_size.width * 4;
+                        let line_px = self.screen_size.width * self.renderer.char_size.width * 4;
                         unsafe {
                             std::ptr::copy(
-                                self.screen_pixel_buf[line_px * self.char_size.height..].as_ptr(),
-                                self.screen_pixel_buf[0..].as_mut_ptr(),
-                                line_px * self.char_size.height * (self.screen_size.height - 1),
+                                self.renderer.screen_pixel_buf
+                                    [line_px * self.renderer.char_size.height..]
+                                    .as_ptr(),
+                                self.renderer.screen_pixel_buf[0..].as_mut_ptr(),
+                                line_px
+                                    * self.renderer.char_size.height
+                                    * (self.screen_size.height - 1),
                             );
                         }
-                        self.clear_line(self.screen_size.height - 1, None).unwrap();
+                        self.renderer
+                            .clear_line(self.screen_size.height - 1, None)
+                            .unwrap();
                     }
                 }
                 true
@@ -317,16 +129,19 @@ impl<'a, 'b> Term<'a, 'b> {
                     self.move_cursor(RightMost);
                     if !self.move_cursor(Up) {
                         // scroll down
-                        let line_px = self.screen_size.width * self.char_size.width * 4;
+                        let line_px = self.screen_size.width * self.renderer.char_size.width * 4;
                         unsafe {
                             std::ptr::copy(
-                                self.screen_pixel_buf[0..].as_ptr(),
-                                self.screen_pixel_buf[line_px * self.char_size.height..]
+                                self.renderer.screen_pixel_buf[0..].as_ptr(),
+                                self.renderer.screen_pixel_buf
+                                    [line_px * self.renderer.char_size.height..]
                                     .as_mut_ptr(),
-                                line_px * self.char_size.height * (self.screen_size.height - 1),
+                                line_px
+                                    * self.renderer.char_size.height
+                                    * (self.screen_size.height - 1),
                             );
                         }
-                        self.clear_line(0, None).unwrap();
+                        self.renderer.clear_line(0, None).unwrap();
                     }
                 }
                 true
@@ -335,7 +150,7 @@ impl<'a, 'b> Term<'a, 'b> {
     }
 
     pub fn insert_char(&mut self, c: u8) {
-        self.draw_char(char::from(c), self.cursor).unwrap();
+        self.renderer.draw_char(char::from(c), self.cursor).unwrap();
         self.move_cursor(CursorMove::Next);
     }
     pub fn insert_chars(&mut self, chars: &[u8]) {
@@ -347,6 +162,9 @@ impl<'a, 'b> Term<'a, 'b> {
         while let Some(c) = itr.next() {
             match *c {
                 0 => break,
+                b'\x07' => {
+                    // bell
+                }
                 b'\n' => {
                     #[cfg(debug_assertions)]
                     println!("[next line]");
@@ -422,40 +240,42 @@ impl<'a, 'b> Term<'a, 'b> {
                                 }
 
                                 EraseEndOfLine => {
-                                    self.clear_line(
+                                    self.renderer.clear_line(
                                         self.cursor.y,
                                         Some((self.cursor.x, self.screen_size.width)),
                                     )?;
                                 }
                                 EraseStartOfLine => {
-                                    self.clear_line(self.cursor.y, Some((0, self.cursor.x + 1)))?;
+                                    self.renderer
+                                        .clear_line(self.cursor.y, Some((0, self.cursor.x + 1)))?;
                                 }
                                 EraseLine => {
-                                    self.clear_line(self.cursor.y, None)?;
+                                    self.renderer.clear_line(self.cursor.y, None)?;
                                 }
                                 EraseDown => {
                                     // erase end of line
-                                    self.clear_line(
+                                    self.renderer.clear_line(
                                         self.cursor.y,
                                         Some((self.cursor.x, self.screen_size.width)),
                                     )?;
                                     // erase down
                                     for row in self.cursor.y + 1..self.screen_size.height {
-                                        self.clear_line(row, None)?;
+                                        self.renderer.clear_line(row, None)?;
                                     }
                                 }
                                 EraseUp => {
                                     // erase start of line
-                                    self.clear_line(self.cursor.y, Some((0, self.cursor.x + 1)))?;
+                                    self.renderer
+                                        .clear_line(self.cursor.y, Some((0, self.cursor.x + 1)))?;
                                     // erase up
                                     for row in 0..self.cursor.y {
-                                        self.clear_line(row, None)?;
+                                        self.renderer.clear_line(row, None)?;
                                     }
                                 }
                                 EraseScreen => {
                                     // erase entire screen
                                     for row in 0..self.screen_size.height {
-                                        self.clear_line(row, None)?;
+                                        self.renderer.clear_line(row, None)?;
                                     }
                                 }
                                 Reset => {
@@ -467,7 +287,7 @@ impl<'a, 'b> Term<'a, 'b> {
                                     // TODO
                                 }
                                 ChangeCellAttribute(attr) => {
-                                    self.set_cell_attribute(attr);
+                                    self.renderer.set_cell_attribute(attr);
                                 }
                                 Ignore => {}
 

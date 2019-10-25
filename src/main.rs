@@ -22,18 +22,6 @@ use utils::*;
 
 const BUFFER_SIZE: usize = 1024 * 10;
 
-fn set_input_rect(pos: Point<Pixel>) {
-    unsafe {
-        let mut text_input_rect = sdl2::sys::SDL_Rect {
-            x: pos.x as i32,
-            y: pos.y as i32,
-            w: 0,
-            h: 0,
-        };
-        sdl2::sys::SDL_SetTextInputRect(&mut text_input_rect as *mut sdl2::sys::SDL_Rect);
-    }
-}
-
 fn main() -> Result<(), String> {
     let pty = terminal::pty::PTY::open().unwrap();
     match unistd::fork() {
@@ -53,41 +41,14 @@ fn main() -> Result<(), String> {
 
             let sdl_context = sdl2::init().unwrap();
             let ttf_context = sdl2::ttf::init().unwrap();
-
-            let mut font = ttf_context
-                // .load_font("./fonts/dos_font.ttf", 16)
-                .load_font("./fonts/UbuntuMono-R.ttf", 25)
-                .unwrap();
-            let char_size = {
-                let tmp = font.size_of_char('#').unwrap();
-                Size::new(tmp.0 as usize, tmp.1 as usize)
-            };
-            let window = {
-                let video = sdl_context.video().unwrap();
-                video
-                    .window(
-                        "toyterm",
-                        (char_size.width * 80) as u32,
-                        (char_size.height * 24) as u32,
-                    )
-                    .position_centered()
-                    .build()
-                    .unwrap()
-            };
-            let mut canvas = window
-                .into_canvas()
-                .accelerated()
-                .target_texture()
-                .build()
-                .unwrap();
-            let mut texture_creator = canvas.texture_creator();
-
-            let mut term = Term::new(
-                &mut canvas,
-                &mut texture_creator,
-                &mut font,
+            let mut render_context = terminal::render::RenderContext::new(
+                "toyterm",
+                &sdl_context,
+                &ttf_context,
                 Size::new(80, 24),
             );
+            let mut term = Term::new(&mut render_context, Size::new(80, 24));
+
             let mut event_pump = sdl_context.event_pump()?;
             let event_subsys = sdl_context.event().unwrap();
             let event_sender = event_subsys.event_sender();
@@ -161,7 +122,7 @@ fn main() -> Result<(), String> {
                         #[cfg(debug_assertions)]
                         println!("buf: {:?}", utils::pretty_format_ascii_bytes(&buf[..bytes]));
 
-                        term.write(&buf[..bytes]);
+                        term.write(&buf[..bytes])?;
                         term.render()?;
 
                         enqueued_flag.store(false, Ordering::Relaxed);
@@ -188,11 +149,12 @@ fn main() -> Result<(), String> {
             err_str(unistd::close(pty.slave))?;
 
             use std::ffi::CString;
-            let path = CString::new("/bin/sh").unwrap();
+            let path = CString::new("/bin/bash").unwrap();
 
             setenv("TERM", "vt100", true).unwrap();
             setenv("COLUMNS", "80", true).unwrap();
             setenv("LINES", "24", true).unwrap();
+            setenv("LANG", "en_US.utf8", true).unwrap();
 
             err_str(unistd::execv(&path, &[])).map(|_| ())
         }
