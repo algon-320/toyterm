@@ -24,8 +24,10 @@ pub struct Term<'a, 'b> {
     cursor: Point<ScreenCell>,
     saved_cursor_pos: Point<ScreenCell>,
 
-    top_line: isize,
-    bottom_line: isize,
+    top_line: usize,
+    bottom_line: usize,
+    left_column: usize,
+    right_column: usize,
 }
 impl<'a, 'b> Term<'a, 'b> {
     pub fn new(render_context: &'a mut RenderContext<'b>, size: Size<usize>) -> Self {
@@ -39,7 +41,9 @@ impl<'a, 'b> Term<'a, 'b> {
             saved_cursor_pos: Point::new(0, 0),
 
             top_line: 0,
-            bottom_line: size.height as isize - 1,
+            bottom_line: size.height - 1,
+            left_column: 0,
+            right_column: size.width - 1,
         };
         term.renderer.clear();
         term
@@ -52,8 +56,12 @@ impl<'a, 'b> Term<'a, 'b> {
     pub fn reset(&mut self) {
         self.screen_begin = 0;
         self.saved_cursor_pos = Point::new(0, 0);
+
         self.top_line = 0;
-        self.bottom_line = self.screen_size.height as isize - 1;
+        self.bottom_line = self.screen_size.height - 1;
+        self.left_column = 0;
+        self.right_column = self.screen_size.width - 1;
+
         self.renderer.clear();
     }
 
@@ -61,7 +69,7 @@ impl<'a, 'b> Term<'a, 'b> {
         use CursorMove::*;
         match m {
             Up => {
-                if self.cursor.y > 0 {
+                if self.cursor.y > self.top_line {
                     self.cursor.y -= 1;
                     true
                 } else {
@@ -69,7 +77,7 @@ impl<'a, 'b> Term<'a, 'b> {
                 }
             }
             Down => {
-                if self.cursor.y + 1 < self.screen_size.height {
+                if self.cursor.y < self.bottom_line {
                     self.cursor.y += 1;
                     true
                 } else {
@@ -77,7 +85,7 @@ impl<'a, 'b> Term<'a, 'b> {
                 }
             }
             Left => {
-                if self.cursor.x > 0 {
+                if self.cursor.x > self.left_column {
                     self.cursor.x -= 1;
                     true
                 } else {
@@ -85,15 +93,15 @@ impl<'a, 'b> Term<'a, 'b> {
                 }
             }
             LeftMost => {
-                self.cursor.x = 0;
+                self.cursor.x = self.left_column;
                 true
             }
             RightMost => {
-                self.cursor.x = self.screen_size.width - 1;
+                self.cursor.x = self.right_column;
                 true
             }
             Right => {
-                if self.cursor.x + 1 < self.screen_size.width {
+                if self.cursor.x < self.right_column {
                     self.cursor.x += 1;
                     true
                 } else {
@@ -104,7 +112,7 @@ impl<'a, 'b> Term<'a, 'b> {
                 if !self.move_cursor(Right) {
                     self.move_cursor(LeftMost);
                     if !self.move_cursor(Down) {
-                        self.renderer.scroll_up();
+                        self.renderer.scroll_up(self.top_line, self.bottom_line);
                     }
                 }
                 true
@@ -113,7 +121,7 @@ impl<'a, 'b> Term<'a, 'b> {
                 if !self.move_cursor(Left) {
                     self.move_cursor(RightMost);
                     if !self.move_cursor(Up) {
-                        self.renderer.scroll_down();
+                        self.renderer.scroll_down(self.top_line, self.bottom_line);
                     }
                 }
                 true
@@ -173,31 +181,25 @@ impl<'a, 'b> Term<'a, 'b> {
                                     self.cursor = Point::new(x, y);
                                 }
                                 CursorUp(am) => {
-                                    let am = std::cmp::min(am, self.cursor.y as usize);
+                                    let am = std::cmp::min(am, self.cursor.y - self.top_line);
                                     for _ in 0..am {
                                         self.move_cursor(CursorMove::Up);
                                     }
                                 }
                                 CursorDown(am) => {
-                                    let am = std::cmp::min(
-                                        am,
-                                        self.screen_size.height - 1 - self.cursor.y as usize,
-                                    );
+                                    let am = std::cmp::min(am, self.bottom_line - self.cursor.y);
                                     for _ in 0..am {
                                         self.move_cursor(CursorMove::Down);
                                     }
                                 }
                                 CursorForward(am) => {
-                                    let am = std::cmp::min(
-                                        am,
-                                        self.screen_size.width - 1 - self.cursor.x as usize,
-                                    );
+                                    let am = std::cmp::min(am, self.right_column - self.cursor.x);
                                     for _ in 0..am {
                                         self.move_cursor(CursorMove::Right);
                                     }
                                 }
                                 CursorBackward(am) => {
-                                    let am = std::cmp::min(am, self.cursor.x as usize);
+                                    let am = std::cmp::min(am, self.cursor.x - self.left_column);
                                     for _ in 0..am {
                                         self.move_cursor(CursorMove::Left);
                                     }
@@ -253,9 +255,12 @@ impl<'a, 'b> Term<'a, 'b> {
                                     self.reset();
                                 }
                                 SetTopBottom(top, bottom) => {
-                                    self.top_line = top;
-                                    self.bottom_line = bottom;
-                                    // TODO
+                                    self.top_line = top - 1;
+                                    self.bottom_line = bottom - 1;
+                                    // set cursor to home position
+                                    let x = wrap_range(0, 0, self.screen_size.width - 1);
+                                    let y = wrap_range(0, 0, self.screen_size.height - 1);
+                                    self.cursor = Point::new(x, y);
                                 }
                                 ChangeCellAttribute(attr) => {
                                     self.renderer.set_cell_attribute(attr);

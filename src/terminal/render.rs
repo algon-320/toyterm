@@ -348,29 +348,30 @@ impl<'a, 'b> Renderer<'a, 'b> {
         )
     }
 
-    pub fn scroll_up(&mut self) {
-        // scroll up
-        let line_px = self.screen_size.width * self.get_char_size().width * 4;
-        let char_height = self.get_char_size().height;
+    pub fn scroll_up(&mut self, top_line: usize, bottom_line: usize) {
+        let line_bytes = (self.screen_pixel_size.width * 4) as usize;
+        let row_block = line_bytes * self.get_char_size().height;
         unsafe {
             std::ptr::copy(
-                self.screen_pixel_buf[line_px * char_height..].as_ptr(),
-                self.screen_pixel_buf[0..].as_mut_ptr(),
-                line_px * char_height * (self.screen_size.height - 1),
+                self.screen_pixel_buf
+                    [((top_line + 1) * row_block)..((bottom_line + 1) * row_block)]
+                    .as_ptr(),
+                self.screen_pixel_buf[(top_line * row_block)..].as_mut_ptr(),
+                row_block * (bottom_line - top_line),
             );
         }
-        self.clear_line(self.screen_size.height - 1, None).unwrap();
+        self.clear_line(bottom_line, None).unwrap();
     }
-    pub fn scroll_down(&mut self) {
-        let line_px = self.screen_size.width * self.get_char_size().width * 4;
-        let char_height = self.get_char_size().height;
+    pub fn scroll_down(&mut self, top_line: usize, bottom_line: usize) {
+        let line_bytes = (self.screen_pixel_size.width * 4) as usize;
+        let row_block = line_bytes * self.get_char_size().height;
         unsafe {
             std::ptr::copy(
-                self.screen_pixel_buf[0..].as_ptr(),
-                self.screen_pixel_buf[line_px * char_height..].as_mut_ptr(),
-                line_px * char_height * (self.screen_size.height - 1),
+                self.screen_pixel_buf[(top_line * row_block)..(bottom_line * row_block)].as_ptr(),
+                self.screen_pixel_buf[((top_line + 1) * row_block)..].as_mut_ptr(),
+                row_block * (bottom_line - top_line),
             );
         }
-        self.clear_line(0, None).unwrap();
+        self.clear_line(top_line, None).unwrap();
     }
 }

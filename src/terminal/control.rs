@@ -18,7 +18,7 @@ pub enum ControlOp {
     EraseDown,
     EraseUp,
     EraseScreen,
-    SetTopBottom(isize, isize),
+    SetTopBottom(usize, usize),
     Reset,
     ChangeCellAttribute(CellAttribute),
     SetCursorMode(bool),
@@ -137,7 +137,7 @@ pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<
                         Some(b'r') => match args.len() {
                             2 => match (args[0], args[1]) {
                                 (Some(x), Some(y)) => {
-                                    Some(ControlOp::SetTopBottom(x as isize, y as isize))
+                                    Some(ControlOp::SetTopBottom(x as usize, y as usize))
                                 }
                                 _ => None,
                             },
