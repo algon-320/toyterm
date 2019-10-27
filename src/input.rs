@@ -23,32 +23,43 @@ pub fn keyevent_to_bytes(event: &sdl2::event::Event) -> Option<Vec<u8>> {
             keymod: state,
             ..
         } => {
-            macro_rules! contains_match {
-                ($(ANY [$x0:expr $(, $x:expr)*] => $y:expr),*) => {
-                    match state {
-                        $(tmp if tmp.contains($x0) $(|| tmp.contains($x))* => { $y },)*
+            let ctrl = state.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD);
+            let shift = state.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD);
+            let alt = state.intersects(Mod::LALTMOD | Mod::RALTMOD);
+            macro_rules! deco {
+                (CTRL) => {
+                    (true, false, false)
+                };
+                (SHIFT) => {
+                    (false, true, false)
+                };
+                (ALT) => {
+                    (false, false, true)
+                };
+            }
+            fn wrap(bytes: &[u8]) -> Option<Vec<u8>> {
+                Some(bytes.to_vec())
+            }
+            macro_rules! gen_match {
+                ($([$p:pat, $e:expr]),*) => {
+                    match (ctrl, shift, alt) {
+                        $($p => wrap($e),)*
                         _ => None,
                     }
                 };
             }
             match scancode {
                 Some(code) => match code {
-                    Scancode::C => contains_match! {
-                        ANY [Mod::LCTRLMOD, Mod::RCTRLMOD] => Some(b"\x03".to_vec())
-                    },
-                    Scancode::D => contains_match! {
-                        ANY [Mod::LCTRLMOD, Mod::RCTRLMOD] => Some(b"\x04".to_vec())
-                    },
-                    Scancode::K => contains_match! {
-                        ANY [Mod::LCTRLMOD, Mod::RCTRLMOD] => Some(b"\x04".to_vec())
-                    },
+                    Scancode::C => gen_match!([deco!(CTRL), b"\x03"]),
+                    Scancode::D => gen_match!([deco!(CTRL), b"\x04"]),
+                    Scancode::M => gen_match!([deco!(CTRL), b"\r"]),
                     Scancode::LShift | Scancode::RShift => None,
-                    Scancode::Home => Some(b"\x1b[1~".to_vec()),
-                    Scancode::End => Some(b"\x1b[4~".to_vec()),
-                    Scancode::Backspace => Some(b"\x7F".to_vec()),
-                    Scancode::Return => Some(b"\n".to_vec()),
-                    Scancode::Escape => Some(b"\x1b".to_vec()),
-                    Scancode::Tab => Some(b"\t".to_vec()),
+                    Scancode::Home => wrap(b"\x1b[1~"),
+                    Scancode::End => wrap(b"\x1b[4~"),
+                    Scancode::Backspace => wrap(b"\x7F"),
+                    Scancode::Return => wrap(b"\n"),
+                    Scancode::Escape => wrap(b"\x1b"),
+                    Scancode::Tab => wrap(b"\t"),
                     _ => None,
                 },
                 None => None,
