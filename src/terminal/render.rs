@@ -60,8 +60,8 @@ impl Default for CellAttribute {
     fn default() -> Self {
         CellAttribute {
             style: Style::Normal,
-            fg: Color::Yellow,
-            bg: Color::Blue,
+            fg: Color::RGB(0xA6, 0xFF, 0x00),
+            bg: Color::RGB(0, 0, 0),
         }
     }
 }
@@ -305,17 +305,6 @@ impl<'a, 'b> Renderer<'a, 'b> {
         self.render(None).unwrap();
     }
 
-    fn clear_cell(&mut self, p: Point<ScreenCell>) {
-        let bg = self.cell_attr.bg;
-        let top_left = self.point_screen_to_pixel(p);
-        let rect = Rect::new(
-            top_left.x,
-            top_left.y,
-            self.get_char_size().width as u32,
-            self.get_char_size().height as u32,
-        );
-        self.fill_rect_buf(&rect, &bg);
-    }
     // range: [l, r)
     pub fn clear_line(&mut self, row: usize, range: Option<(usize, usize)>) -> Result<(), String> {
         let rect = {

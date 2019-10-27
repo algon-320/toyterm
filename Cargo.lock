@@ -222,7 +222,6 @@ dependencies = [
 name = "toyterm"
 version = "0.1.0"
 dependencies = [
- "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "nix 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sdl2 0.32.2 (git+https://github.com/Rust-SDL2/rust-sdl2)",
 ]

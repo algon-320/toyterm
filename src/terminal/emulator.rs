@@ -293,7 +293,7 @@ impl<'a, 'b> Term<'a, 'b> {
                                     }
                                 }
 
-                                SetCursorMode(to_set) => {
+                                SetCursorMode(_to_set) => {
                                     // currently, it is not meaningful
                                     // TODO
                                 }

@@ -1,18 +1,18 @@
 #[macro_use]
 extern crate nix;
-#[macro_use]
-extern crate lazy_static;
 extern crate sdl2;
 
 mod basics;
 mod input;
 mod terminal;
+#[allow(dead_code)]
 mod utils;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use nix::sys::select;
+use nix::sys::signal;
 use nix::unistd;
 use sdl2::event::Event;
 
