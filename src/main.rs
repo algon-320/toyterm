@@ -112,8 +112,7 @@ fn main() -> Result<(), String> {
                     } if user_event_id == master_readable_event_id => {
                         // read from master FD
                         let bytes = match nix::unistd::read(pty.master, &mut buf) {
-                            Err(e) => {
-                                eprintln!("Nothing to read from child: {}", e);
+                            Err(_) => {
                                 break;
                             }
                             Ok(sz) => sz,
@@ -130,7 +129,8 @@ fn main() -> Result<(), String> {
                     _ => {}
                 }
             }
-            // err_str(nix::sys::wait::waitpid(child, None))?;
+            err_str(signal::kill(child, signal::Signal::SIGHUP))?;
+            err_str(nix::sys::wait::waitpid(child, None))?;
             Ok(())
         }
         Ok(unistd::ForkResult::Child) => {
