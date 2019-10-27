@@ -161,6 +161,13 @@ impl<'a, 'b> Term<'a, 'b> {
                     println!("[move left most]");
                     self.move_cursor(CursorMove::LeftMost);
                 }
+                b'\t' => {
+                    #[cfg(debug_assertions)]
+                    println!("[TAB]");
+                    while self.cursor.x % 8 > 0 {
+                        self.move_cursor(CursorMove::Right);
+                    }
+                }
                 b'\x08' => {
                     #[cfg(debug_assertions)]
                     println!("[back]");
