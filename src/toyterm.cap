@@ -1,0 +1,17 @@
+tt|toyterm-color|toyterm (partially support vt100 control sequences):\
+	:am:bs:ms:\
+	:Co#256:co#80:it#8:li#24:\
+	:AB=\E[48;5;%dm:AF=\E[38;5;%dm:\
+	:AB=\E[4%dm:AF=\E[3%dm:\
+	:DO=\E[%dB:\
+	:LE=\E[%dD:RI=\E[%dC:UP=\E[%dA:\
+	:cb=\E[1K:cd=\E[J:ce=\E[K:cl=\E[H\E[J:\
+	:cm=\E[%i%d;%dH:cr=^M:cs=\E[%i%d;%dr:\
+	:ho=\E[H:\
+	:k1=\EOP:k2=\EOQ:k3=\EOR:k4=\EOS:k5=\EOt:k6=\EOu:k7=\EOv:k8=\EOl:k9=\EOw:k;=\EOx:\
+	:kb=^H:\
+	:ku=\EOA:kd=\EOB:kl=\EOD:kr=\EOC:\
+	:le=\E[D:md=\E[1m:me=\E[m:mr=\E[7m:\
+	:nd=\E[C:r1=\Ec:sc=\E[s:rc=\E[u:\
+	:sf=^J:so=\E[7m:sr=\EM:\
+	:up=\E[A:\

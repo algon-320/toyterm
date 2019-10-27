@@ -13,14 +13,21 @@ use crate::utils::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
     Black,
-    White,
     Red,
     Green,
-    Blue,
-    Cyan,
-    Magenta,
     Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    White,
     Gray,
+    LightRed,
+    LightGreen,
+    LightYellow,
+    LightBlue,
+    LightMagenta,
+    LightCyan,
+    LightWhite,
     RGB(u8, u8, u8),
 }
 impl Color {
@@ -28,15 +35,43 @@ impl Color {
         use sdl2::pixels::Color as Sdl2Color;
         match self {
             Color::Black => Sdl2Color::RGB(0, 0, 0),
-            Color::White => Sdl2Color::RGB(255, 255, 255),
-            Color::Red => Sdl2Color::RGB(255, 0, 0),
-            Color::Green => Sdl2Color::RGB(0, 255, 0),
-            Color::Blue => Sdl2Color::RGB(0, 0, 255),
-            Color::Cyan => Sdl2Color::RGB(0, 255, 255),
-            Color::Magenta => Sdl2Color::RGB(255, 0, 255),
-            Color::Yellow => Sdl2Color::RGB(255, 255, 0),
+            Color::Red => Sdl2Color::RGB(200, 0, 0),
+            Color::Yellow => Sdl2Color::RGB(200, 200, 0),
+            Color::Green => Sdl2Color::RGB(0, 200, 0),
+            Color::Blue => Sdl2Color::RGB(0, 0, 200),
+            Color::Magenta => Sdl2Color::RGB(200, 0, 200),
+            Color::Cyan => Sdl2Color::RGB(0, 200, 200),
+            Color::White => Sdl2Color::RGB(200, 200, 200),
             Color::Gray => Sdl2Color::RGB(120, 120, 120),
+            Color::LightRed => Sdl2Color::RGB(255, 0, 0),
+            Color::LightYellow => Sdl2Color::RGB(255, 255, 0),
+            Color::LightGreen => Sdl2Color::RGB(0, 255, 0),
+            Color::LightBlue => Sdl2Color::RGB(0, 0, 255),
+            Color::LightMagenta => Sdl2Color::RGB(255, 0, 255),
+            Color::LightCyan => Sdl2Color::RGB(0, 255, 255),
+            Color::LightWhite => Sdl2Color::RGB(255, 255, 255),
             Color::RGB(r, g, b) => Sdl2Color::RGB(r, g, b),
+        }
+    }
+    pub fn from_index(index: u8) -> Self {
+        match index {
+            0 => Color::Black,
+            1 => Color::Red,
+            2 => Color::Yellow,
+            3 => Color::Green,
+            4 => Color::Blue,
+            5 => Color::Magenta,
+            6 => Color::Cyan,
+            7 => Color::White,
+            8 => Color::Gray,
+            9 => Color::LightRed,
+            10 => Color::LightYellow,
+            11 => Color::LightGreen,
+            12 => Color::LightBlue,
+            13 => Color::LightMagenta,
+            14 => Color::LightCyan,
+            15 => Color::LightWhite,
+            _ => Color::LightWhite,
         }
     }
 }
@@ -60,8 +95,8 @@ impl Default for CellAttribute {
     fn default() -> Self {
         CellAttribute {
             style: Style::Normal,
-            fg: Color::RGB(0xA6, 0xFF, 0x00),
-            bg: Color::RGB(0, 0, 0),
+            fg: Color::LightWhite,
+            bg: Color::Black,
         }
     }
 }

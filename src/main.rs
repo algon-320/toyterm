@@ -151,7 +151,7 @@ fn main() -> Result<(), String> {
             use std::ffi::CString;
             let path = CString::new("/bin/bash").unwrap();
 
-            setenv("TERM", "vt100", true).unwrap();
+            setenv("TERM", "toyterm-color", true).unwrap();
             setenv("COLUMNS", "80", true).unwrap();
             setenv("LINES", "24", true).unwrap();
             setenv("LANG", "en_US.utf8", true).unwrap();

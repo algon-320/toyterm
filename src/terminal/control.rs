@@ -1,4 +1,4 @@
-use super::render::{CellAttribute, Style};
+use super::render::{CellAttribute, Color, Style};
 use crate::basics::*;
 
 #[derive(Debug)]
@@ -146,7 +146,8 @@ pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<
 
                         Some(b'm') => {
                             let mut style = CellAttribute::default();
-                            for a in args.iter() {
+                            let mut itr = args.iter();
+                            while let Some(a) = itr.next() {
                                 match a {
                                     Some(0) => {
                                         // reset
@@ -163,6 +164,58 @@ pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<
                                     }
                                     Some(7) => {
                                         style.style = Style::Reverse;
+                                    }
+                                    Some(x) if *x == 38 || *x == 48 => {
+                                        let color = match (itr.next(), itr.next()) {
+                                            (Some(Some(5)), Some(Some(x))) if (*x <= 15) => {
+                                                Color::from_index(*x as u8)
+                                            }
+                                            (Some(Some(5)), Some(Some(x))) if (232 <= *x) => {
+                                                let x = x - 232;
+                                                let v = (x * 11) as u8;
+                                                Color::RGB(v, v, v)
+                                            }
+                                            (Some(Some(5)), Some(Some(x))) => {
+                                                let x = x - 16;
+                                                let r = (x / 36) as u8;
+                                                let g = ((x % 36) / 6) as u8;
+                                                let b = (x % 6) as u8;
+                                                Color::RGB(r * 51, g * 51, b * 51)
+                                            }
+                                            _ => Color::White,
+                                        };
+                                        if *x == 38 {
+                                            style.fg = color;
+                                        } else if *x == 48 {
+                                            style.bg = color;
+                                        }
+                                        read_bytes += 2;
+                                    }
+                                    // foreground color
+                                    Some(x) if (31 <= *x && *x <= 39) => {
+                                        let c = x % 10;
+                                        style.fg = match c {
+                                            1 => Color::Red,
+                                            2 => Color::Green,
+                                            3 => Color::Yellow,
+                                            4 => Color::Blue,
+                                            5 => Color::Magenta,
+                                            6 => Color::Cyan,
+                                            _ => Color::White,
+                                        };
+                                    }
+                                    // background color
+                                    Some(x) if (41 <= *x && *x <= 49) => {
+                                        let c = x % 10;
+                                        style.bg = match c {
+                                            1 => Color::Red,
+                                            2 => Color::Green,
+                                            3 => Color::Yellow,
+                                            4 => Color::Blue,
+                                            5 => Color::Magenta,
+                                            6 => Color::Cyan,
+                                            _ => Color::White,
+                                        };
                                     }
                                     _ => {}
                                 }
