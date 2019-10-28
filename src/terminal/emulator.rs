@@ -129,23 +129,26 @@ impl<'a, 'b> Term<'a, 'b> {
         }
     }
 
-    pub fn insert_char(&mut self, c: u8) {
-        self.renderer.draw_char(char::from(c), self.cursor).unwrap();
-        self.move_cursor(CursorMove::Next);
+    pub fn insert_char(&mut self, c: char) {
+        let cols = self.renderer.draw_char(c, self.cursor).unwrap();
+        for _ in 0..cols {
+            self.move_cursor(CursorMove::Next);
+        }
     }
-    pub fn insert_chars(&mut self, chars: &[u8]) {
+    pub fn insert_chars(&mut self, chars: &[char]) {
         chars.iter().for_each(|c| self.insert_char(*c));
     }
 
     pub fn write(&mut self, buf: &[u8]) -> Result<(), String> {
+        let buf: Vec<char> = std::str::from_utf8(buf).unwrap().chars().collect();
         let mut itr = buf.iter();
         while let Some(c) = itr.next() {
             match *c {
-                0 => break,
-                b'\x07' => {
+                '\x00' => break,
+                '\x07' => {
                     // bell
                 }
-                b'\n' => {
+                '\n' => {
                     #[cfg(debug_assertions)]
                     println!("[next line]");
                     if !self.move_cursor(CursorMove::Down) {
@@ -156,25 +159,25 @@ impl<'a, 'b> Term<'a, 'b> {
                         self.cursor.x = x;
                     }
                 }
-                b'\r' => {
+                '\r' => {
                     #[cfg(debug_assertions)]
                     println!("[move left most]");
                     self.move_cursor(CursorMove::LeftMost);
                 }
-                b'\t' => {
+                '\t' => {
                     #[cfg(debug_assertions)]
                     println!("[TAB]");
                     while self.cursor.x % 8 > 0 {
                         self.move_cursor(CursorMove::Right);
                     }
                 }
-                b'\x08' => {
+                '\x08' => {
                     #[cfg(debug_assertions)]
                     println!("[back]");
                     self.move_cursor(CursorMove::Left);
                 }
 
-                b'\x1B' => {
+                '\x1B' => {
                     // begin of escape sequence
                     use ControlOp::*;
                     match parse_escape_sequence(&mut itr) {
@@ -301,7 +304,7 @@ impl<'a, 'b> Term<'a, 'b> {
                         }
                         (None, sz) => {
                             // print sequence as string
-                            self.insert_chars(b"^[");
+                            self.insert_chars(&['^', '[']);
                             self.insert_chars(&itr.as_slice()[..sz]);
                             if sz > 0 {
                                 itr.nth(sz - 1);

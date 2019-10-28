@@ -25,14 +25,16 @@ pub enum ControlOp {
     Ignore,
 }
 
-pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<ControlOp>, usize) {
+pub fn parse_escape_sequence<'a>(
+    itr: &mut std::slice::Iter<'a, char>,
+) -> (Option<ControlOp>, usize) {
     let backup = itr.clone();
     match itr.next() {
         Some(c) => {
             let mut read_bytes = 1;
             let op = match c {
                 // escape sequences
-                b'[' => {
+                '[' => {
                     let (args, fin_char) = {
                         let mut args = Vec::new();
                         let mut fin_char = None;
@@ -40,15 +42,15 @@ pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<
                         while let Some(c) = itr.next() {
                             read_bytes += 1;
                             match *c {
-                                x if b'0' <= x && x <= b'9' => {
+                                x if '0' <= x && x <= '9' => {
                                     if tmp.is_none() {
                                         tmp = Some(0);
                                     } else {
                                         tmp = Some(tmp.unwrap() * 10);
                                     }
-                                    tmp = Some(tmp.unwrap() + (x - b'0') as u32);
+                                    tmp = Some(tmp.unwrap() + x.to_digit(10).unwrap());
                                 }
-                                b';' => {
+                                ';' => {
                                     args.push(tmp);
                                     tmp = None;
                                 }
@@ -68,7 +70,7 @@ pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<
 
                     match fin_char {
                         // Cursor Home
-                        Some(b'f') | Some(b'H') => match args.len() {
+                        Some('f') | Some('H') => match args.len() {
                             0 => Some(ControlOp::CursorHome(Point::new(1, 1))),
                             2 => Some(ControlOp::CursorHome(Point::new(
                                 args[1].unwrap_or(1) as usize,
@@ -77,43 +79,43 @@ pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<
                             _ => None,
                         },
                         // Cursor Up
-                        Some(b'A') => match args.len() {
+                        Some('A') => match args.len() {
                             0 => Some(ControlOp::CursorUp(1)),
                             1 => Some(ControlOp::CursorUp(args[0].unwrap_or(1) as usize)),
                             _ => None,
                         },
                         // Cursor Down
-                        Some(b'B') => match args.len() {
+                        Some('B') => match args.len() {
                             0 => Some(ControlOp::CursorDown(1)),
                             1 => Some(ControlOp::CursorDown(args[0].unwrap_or(1) as usize)),
                             _ => None,
                         },
                         // Cursor Forward
-                        Some(b'C') => match args.len() {
+                        Some('C') => match args.len() {
                             0 => Some(ControlOp::CursorForward(1)),
                             1 => Some(ControlOp::CursorForward(args[0].unwrap_or(1) as usize)),
                             _ => None,
                         },
                         // Cursor Backward
-                        Some(b'D') => match args.len() {
+                        Some('D') => match args.len() {
                             0 => Some(ControlOp::CursorBackward(1)),
                             1 => Some(ControlOp::CursorBackward(args[0].unwrap_or(1) as usize)),
                             _ => None,
                         },
 
                         // Save cursor position
-                        Some(b's') => match args.len() {
+                        Some('s') => match args.len() {
                             0 => Some(ControlOp::SaveCursor),
                             _ => None,
                         },
                         // Restore cursor position
-                        Some(b'u') => match args.len() {
+                        Some('u') => match args.len() {
                             0 => Some(ControlOp::RestoreCursor),
                             _ => None,
                         },
 
                         // Erase end of line
-                        Some(b'K') => match args.len() {
+                        Some('K') => match args.len() {
                             0 => Some(ControlOp::EraseEndOfLine),
                             1 => match args[0] {
                                 Some(0) => Some(ControlOp::EraseEndOfLine),
@@ -123,7 +125,7 @@ pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<
                             },
                             _ => None,
                         },
-                        Some(b'J') => match args.len() {
+                        Some('J') => match args.len() {
                             0 => Some(ControlOp::EraseDown),
                             1 => match args[0] {
                                 Some(0) => Some(ControlOp::EraseDown),
@@ -134,7 +136,7 @@ pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<
                             _ => None,
                         },
 
-                        Some(b'r') => match args.len() {
+                        Some('r') => match args.len() {
                             2 => match (args[0], args[1]) {
                                 (Some(x), Some(y)) => {
                                     Some(ControlOp::SetTopBottom(x as usize, y as usize))
@@ -144,7 +146,7 @@ pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<
                             _ => None,
                         },
 
-                        Some(b'm') => {
+                        Some('m') => {
                             let mut style = CellAttribute::default();
                             let mut itr = args.iter();
                             while let Some(a) = itr.next() {
@@ -223,12 +225,13 @@ pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<
                             Some(ControlOp::ChangeCellAttribute(style))
                         }
 
-                        Some(b'?') => {
+                        Some('?') => {
                             read_bytes += 1;
-                            let p = || -> Option<(u8, u8)> { Some((*itr.next()?, *itr.next()?)) }();
+                            let p =
+                                || -> Option<(char, char)> { Some((*itr.next()?, *itr.next()?)) }();
                             match p {
-                                Some((b'1', b'h')) => Some(ControlOp::SetCursorMode(true)),
-                                Some((b'1', b'l')) => Some(ControlOp::SetCursorMode(false)),
+                                Some(('1', 'h')) => Some(ControlOp::SetCursorMode(true)),
+                                Some(('1', 'l')) => Some(ControlOp::SetCursorMode(false)),
                                 _ => None,
                             }
                         }
@@ -241,11 +244,11 @@ pub fn parse_escape_sequence<'a>(itr: &mut std::slice::Iter<'a, u8>) -> (Option<
                         None => None,
                     }
                 }
-                b'D' => Some(ControlOp::ScrollDown),
-                b'M' => Some(ControlOp::ScrollUp),
-                b'=' => Some(ControlOp::Ignore),
-                b'>' => Some(ControlOp::Ignore),
-                b'c' => Some(ControlOp::Reset),
+                'D' => Some(ControlOp::ScrollDown),
+                'M' => Some(ControlOp::ScrollUp),
+                '=' => Some(ControlOp::Ignore),
+                '>' => Some(ControlOp::Ignore),
+                'c' => Some(ControlOp::Reset),
                 x => {
                     #[cfg(debug_assertions)]
                     println!("unsupported: \\E{}", char::from(*x));

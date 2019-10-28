@@ -160,9 +160,9 @@ impl<'a> RenderContext<'a> {
     ) -> Self {
         let font = FontSet::new(
             ttf_context,
-            "./fonts/UbuntuMono-R.ttf",
-            "./fonts/UbuntuMono-B.ttf",
-            25,
+            "/usr/share/fonts/truetype/ricty-diminished/RictyDiminished-Regular.ttf",
+            "/usr/share/fonts/truetype/ricty-diminished/RictyDiminished-Bold.ttf",
+            10 * 2,
         );
         let window = {
             let video = sdl_context.video().unwrap();
@@ -193,7 +193,7 @@ impl<'a> RenderContext<'a> {
 
 pub struct Renderer<'a, 'b> {
     pub context: &'a mut RenderContext<'b>,
-    pub cache: HashMap<Cell, Vec<u8>>,
+    pub cache: HashMap<Cell, (usize, Vec<u8>)>,
     pub screen_texture: Texture,
     pub screen_size: Size<usize>,
     pub screen_pixel_buf: Vec<u8>,
@@ -228,7 +228,8 @@ impl<'a, 'b> Renderer<'a, 'b> {
         self.cell_attr = cell_attr;
     }
 
-    pub fn draw_char(&mut self, c: char, p: Point<ScreenCell>) -> Result<(), String> {
+    // return char width
+    pub fn draw_char(&mut self, c: char, p: Point<ScreenCell>) -> Result<usize, String> {
         let mut fg_color = self.cell_attr.fg.to_sdl_color();
         let mut bg_color = self.cell_attr.bg.to_sdl_color();
 
@@ -239,9 +240,16 @@ impl<'a, 'b> Renderer<'a, 'b> {
         // generate texture
         let cell = Cell::new(c, self.cell_attr);
         if !self.cache.contains_key(&cell) {
+            let f = if self.cell_attr.style == Style::Bold {
+                &self.context.font.bold
+            } else {
+                &self.context.font.regular
+            };
+            let surface = err_str(f.render_char(c).blended(fg_color))?;
+            let cols = f.size_of_char(c).unwrap().0 as usize / self.get_char_size().width;
             let mut cell_canvas = {
                 let tmp = sdl2::surface::Surface::new(
-                    self.get_char_size().width as u32,
+                    (self.get_char_size().width * cols) as u32,
                     self.get_char_size().height as u32,
                     PixelFormatEnum::ARGB8888,
                 )?;
@@ -250,33 +258,24 @@ impl<'a, 'b> Renderer<'a, 'b> {
                 cvs.fill_rect(None)?;
                 cvs
             };
-            let f = if self.cell_attr.style == Style::Bold {
-                &self.context.font.bold
-            } else {
-                &self.context.font.regular
-            };
-            let surface = err_str(f.render_char(c).blended(fg_color))?;
             let tc = cell_canvas.texture_creator();
             let texture = err_str(tc.create_texture_from_surface(surface))?;
             cell_canvas.copy(&texture, None, None)?;
             self.cache.insert(
                 cell.clone(),
-                cell_canvas.read_pixels(None, PixelFormatEnum::ARGB8888)?,
+                (
+                    cols,
+                    cell_canvas.read_pixels(None, PixelFormatEnum::ARGB8888)?,
+                ),
             );
         }
-        let raw_data = &self.cache[&cell];
+        let (cols, raw_data) = &self.cache[&cell];
 
         let top_left = self.point_screen_to_pixel(p);
-        assert_eq!(self.get_char_size().area() * 4, raw_data.len());
-        assert_eq!(
-            self.screen_size.area() * self.get_char_size().area() * 4,
-            self.screen_pixel_buf.len()
-        );
-        for i in 0..self.get_char_size().area() {
-            let (y, x) = (
-                i / self.get_char_size().width,
-                i % self.get_char_size().width,
-            );
+        assert_eq!(self.get_char_size().area() * 4 * cols, raw_data.len());
+        let width_px = self.get_char_size().width * cols;
+        for i in 0..self.get_char_size().area() * cols {
+            let (y, x) = (i / width_px, i % width_px);
             let (abs_y, abs_x) = (y + top_left.y as usize, x + top_left.x as usize);
             for k in 0..4 {
                 self.screen_pixel_buf
@@ -285,7 +284,7 @@ impl<'a, 'b> Renderer<'a, 'b> {
             }
         }
 
-        Ok(())
+        Ok(*cols)
     }
 
     pub fn render(&mut self, cursor_pos: Option<&Point<ScreenCell>>) -> Result<(), String> {

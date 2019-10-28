@@ -154,7 +154,6 @@ fn main() -> Result<(), String> {
             setenv("TERM", "toyterm-color", true).unwrap();
             setenv("COLUMNS", "80", true).unwrap();
             setenv("LINES", "24", true).unwrap();
-            setenv("LANG", "en_US.utf8", true).unwrap();
 
             err_str(unistd::execv(&path, &[])).map(|_| ())
         }
