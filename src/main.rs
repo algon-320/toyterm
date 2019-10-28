@@ -1,18 +1,18 @@
 #[macro_use]
 extern crate nix;
-#[macro_use]
-extern crate lazy_static;
 extern crate sdl2;
 
 mod basics;
 mod input;
 mod terminal;
+#[allow(dead_code)]
 mod utils;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use nix::sys::select;
+use nix::sys::signal;
 use nix::unistd;
 use sdl2::event::Event;
 
@@ -21,18 +21,6 @@ use terminal::Term;
 use utils::*;
 
 const BUFFER_SIZE: usize = 1024 * 10;
-
-fn set_input_rect(pos: Point<Pixel>) {
-    unsafe {
-        let mut text_input_rect = sdl2::sys::SDL_Rect {
-            x: pos.x as i32,
-            y: pos.y as i32,
-            w: 0,
-            h: 0,
-        };
-        sdl2::sys::SDL_SetTextInputRect(&mut text_input_rect as *mut sdl2::sys::SDL_Rect);
-    }
-}
 
 fn main() -> Result<(), String> {
     let pty = terminal::pty::PTY::open().unwrap();
@@ -53,40 +41,14 @@ fn main() -> Result<(), String> {
 
             let sdl_context = sdl2::init().unwrap();
             let ttf_context = sdl2::ttf::init().unwrap();
-
-            let mut font = ttf_context
-                .load_font("./fonts/UbuntuMono-R.ttf", 25)
-                .unwrap();
-            let char_size = {
-                let tmp = font.size_of_char('#').unwrap();
-                Size::new(tmp.0 as usize, tmp.1 as usize)
-            };
-            let window = {
-                let video = sdl_context.video().unwrap();
-                video
-                    .window(
-                        "toyterm",
-                        (char_size.width * 80) as u32,
-                        (char_size.height * 24) as u32,
-                    )
-                    .position_centered()
-                    .build()
-                    .unwrap()
-            };
-            let mut canvas = window
-                .into_canvas()
-                .accelerated()
-                .target_texture()
-                .build()
-                .unwrap();
-            let mut texture_creator = canvas.texture_creator();
-
-            let mut term = Term::new(
-                &mut canvas,
-                &mut texture_creator,
-                &mut font,
+            let mut render_context = terminal::render::RenderContext::new(
+                "toyterm",
+                &sdl_context,
+                &ttf_context,
                 Size::new(80, 24),
             );
+            let mut term = Term::new(&mut render_context, Size::new(80, 24));
+
             let mut event_pump = sdl_context.event_pump()?;
             let event_subsys = sdl_context.event().unwrap();
             let event_sender = event_subsys.event_sender();
@@ -150,8 +112,7 @@ fn main() -> Result<(), String> {
                     } if user_event_id == master_readable_event_id => {
                         // read from master FD
                         let bytes = match nix::unistd::read(pty.master, &mut buf) {
-                            Err(e) => {
-                                eprintln!("Nothing to read from child: {}", e);
+                            Err(_) => {
                                 break;
                             }
                             Ok(sz) => sz,
@@ -160,15 +121,16 @@ fn main() -> Result<(), String> {
                         #[cfg(debug_assertions)]
                         println!("buf: {:?}", utils::pretty_format_ascii_bytes(&buf[..bytes]));
 
-                        term.write(&buf[..bytes]);
-                        term.render_all()?;
+                        term.write(&buf[..bytes])?;
+                        term.render()?;
 
                         enqueued_flag.store(false, Ordering::Relaxed);
                     }
                     _ => {}
                 }
             }
-            // err_str(nix::sys::wait::waitpid(child, None))?;
+            err_str(signal::kill(child, signal::Signal::SIGHUP))?;
+            err_str(nix::sys::wait::waitpid(child, None))?;
             Ok(())
         }
         Ok(unistd::ForkResult::Child) => {
@@ -186,13 +148,13 @@ fn main() -> Result<(), String> {
             err_str(unistd::dup2(pty.slave, 2))?; // stderr
             err_str(unistd::close(pty.slave))?;
 
+            std::env::set_var("TERM", "toyterm-color");
+            std::env::set_var("COLUMNS", "80");
+            std::env::set_var("LINES", "80");
+
             use std::ffi::CString;
-            let path = CString::new("/bin/sh").unwrap();
-
-            setenv("TERM", "vt100", true).unwrap();
-            setenv("COLUMNS", "80", true).unwrap();
-            setenv("LINES", "24", true).unwrap();
-
+            let shell = std::env::var("SHELL").unwrap_or("/bin/sh".to_string());
+            let path = CString::new(shell).unwrap();
             err_str(unistd::execv(&path, &[])).map(|_| ())
         }
         Err(e) => err_str(Err(e)),
