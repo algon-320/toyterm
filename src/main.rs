@@ -148,13 +148,13 @@ fn main() -> Result<(), String> {
             err_str(unistd::dup2(pty.slave, 2))?; // stderr
             err_str(unistd::close(pty.slave))?;
 
+            std::env::set_var("TERM", "toyterm-color");
+            std::env::set_var("COLUMNS", "80");
+            std::env::set_var("LINES", "80");
+
             use std::ffi::CString;
-            let path = CString::new("/bin/bash").unwrap();
-
-            setenv("TERM", "toyterm-color", true).unwrap();
-            setenv("COLUMNS", "80", true).unwrap();
-            setenv("LINES", "24", true).unwrap();
-
+            let shell = std::env::var("SHELL").unwrap_or("/bin/sh".to_string());
+            let path = CString::new(shell).unwrap();
             err_str(unistd::execv(&path, &[])).map(|_| ())
         }
         Err(e) => err_str(Err(e)),
