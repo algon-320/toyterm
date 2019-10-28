@@ -272,7 +272,17 @@ impl<'a, 'b> Term<'a, 'b> {
                                     let y = wrap_range(0, 0, self.screen_size.height - 1);
                                     self.cursor = Point::new(x, y);
                                 }
-                                ChangeCellAttribute(attr) => {
+                                ChangeCellAttribute(style, fg, bg) => {
+                                    let mut attr = self.renderer.get_cell_attribute();
+                                    if let Some(s) = style {
+                                        attr.style = s;
+                                    }
+                                    if let Some(f) = fg {
+                                        attr.fg = f;
+                                    }
+                                    if let Some(b) = bg {
+                                        attr.bg = b;
+                                    }
                                     self.renderer.set_cell_attribute(attr);
                                 }
                                 Ignore => {}

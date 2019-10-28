@@ -32,24 +32,45 @@ pub enum Color {
 }
 impl Color {
     pub fn to_sdl_color(self) -> sdl2::pixels::Color {
+        lazy_static! {
+            static ref COLOR_CONFIG_TABLE: Option<std::collections::HashMap<String, config::Value>> = {
+                let mut tmp = config::Config::default();
+                tmp.merge(config::File::with_name("settings.toml")).ok()?;
+                tmp.get_table("color_scheme").ok()
+            };
+        }
+        fn get_config(key: &str) -> Option<Sdl2Color> {
+            let mut col = COLOR_CONFIG_TABLE
+                .as_ref()?
+                .get(key)?
+                .clone()
+                .into_array()
+                .ok()?;
+            let b = col.pop()?.into_int().ok()?;
+            let g = col.pop()?.into_int().ok()?;
+            let r = col.pop()?.into_int().ok()?;
+            Some(Sdl2Color::RGB(r as u8, g as u8, b as u8))
+        }
         use sdl2::pixels::Color as Sdl2Color;
         match self {
-            Color::Black => Sdl2Color::RGB(0, 0, 0),
-            Color::Red => Sdl2Color::RGB(200, 0, 0),
-            Color::Yellow => Sdl2Color::RGB(200, 200, 0),
-            Color::Green => Sdl2Color::RGB(0, 200, 0),
-            Color::Blue => Sdl2Color::RGB(0, 0, 200),
-            Color::Magenta => Sdl2Color::RGB(200, 0, 200),
-            Color::Cyan => Sdl2Color::RGB(0, 200, 200),
-            Color::White => Sdl2Color::RGB(200, 200, 200),
-            Color::Gray => Sdl2Color::RGB(120, 120, 120),
-            Color::LightRed => Sdl2Color::RGB(255, 0, 0),
-            Color::LightYellow => Sdl2Color::RGB(255, 255, 0),
-            Color::LightGreen => Sdl2Color::RGB(0, 255, 0),
-            Color::LightBlue => Sdl2Color::RGB(0, 0, 255),
-            Color::LightMagenta => Sdl2Color::RGB(255, 0, 255),
-            Color::LightCyan => Sdl2Color::RGB(0, 255, 255),
-            Color::LightWhite => Sdl2Color::RGB(255, 255, 255),
+            Color::Black => get_config("black").unwrap_or(Sdl2Color::RGB(0, 0, 0)),
+            Color::Red => get_config("red").unwrap_or(Sdl2Color::RGB(200, 0, 0)),
+            Color::Yellow => get_config("yellow").unwrap_or(Sdl2Color::RGB(200, 200, 0)),
+            Color::Green => get_config("green").unwrap_or(Sdl2Color::RGB(0, 200, 0)),
+            Color::Blue => get_config("blue").unwrap_or(Sdl2Color::RGB(0, 0, 200)),
+            Color::Magenta => get_config("magenta").unwrap_or(Sdl2Color::RGB(200, 0, 200)),
+            Color::Cyan => get_config("cyan").unwrap_or(Sdl2Color::RGB(0, 200, 200)),
+            Color::White => get_config("white").unwrap_or(Sdl2Color::RGB(200, 200, 200)),
+            Color::Gray => get_config("gray").unwrap_or(Sdl2Color::RGB(120, 120, 120)),
+            Color::LightRed => get_config("light_red").unwrap_or(Sdl2Color::RGB(255, 0, 0)),
+            Color::LightYellow => get_config("light_yellow").unwrap_or(Sdl2Color::RGB(255, 255, 0)),
+            Color::LightGreen => get_config("light_green").unwrap_or(Sdl2Color::RGB(0, 255, 0)),
+            Color::LightBlue => get_config("light_blue").unwrap_or(Sdl2Color::RGB(0, 0, 255)),
+            Color::LightMagenta => {
+                get_config("light_magenta").unwrap_or(Sdl2Color::RGB(255, 0, 255))
+            }
+            Color::LightCyan => get_config("light_cyan").unwrap_or(Sdl2Color::RGB(0, 255, 255)),
+            Color::LightWhite => get_config("light_white").unwrap_or(Sdl2Color::RGB(255, 255, 255)),
             Color::RGB(r, g, b) => Sdl2Color::RGB(r, g, b),
         }
     }
@@ -226,6 +247,9 @@ impl<'a, 'b> Renderer<'a, 'b> {
 
     pub fn set_cell_attribute(&mut self, cell_attr: CellAttribute) {
         self.cell_attr = cell_attr;
+    }
+    pub fn get_cell_attribute(&self) -> CellAttribute {
+        self.cell_attr
     }
 
     // return char width

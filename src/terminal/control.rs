@@ -20,7 +20,7 @@ pub enum ControlOp {
     EraseScreen,
     SetTopBottom(usize, usize),
     Reset,
-    ChangeCellAttribute(CellAttribute),
+    ChangeCellAttribute(Option<Style>, Option<Color>, Option<Color>),
     SetCursorMode(bool),
     Ignore,
 }
@@ -147,56 +147,78 @@ pub fn parse_escape_sequence<'a>(
                         },
 
                         Some('m') => {
-                            let mut style = CellAttribute::default();
-                            let mut itr = args.iter();
+                            let mut style = None;
+                            let mut fg = None;
+                            let mut bg = None;
+
+                            // reset
+                            if args.is_empty() {
+                                let def = CellAttribute::default();
+                                style = Some(def.style);
+                                fg = Some(def.fg);
+                                bg = Some(def.bg);
+                            }
+
+                            let mut itr = args.into_iter();
                             while let Some(a) = itr.next() {
                                 match a {
                                     Some(0) => {
                                         // reset
-                                        style = CellAttribute::default();
+                                        let def = CellAttribute::default();
+                                        style = Some(def.style);
+                                        fg = Some(def.fg);
+                                        bg = Some(def.bg);
                                     }
                                     Some(1) => {
-                                        style.style = Style::Bold;
+                                        style = Some(Style::Bold);
                                     }
                                     Some(4) => {
-                                        style.style = Style::UnderLine;
+                                        style = Some(Style::UnderLine);
                                     }
                                     Some(5) => {
-                                        style.style = Style::Blink;
+                                        style = Some(Style::Blink);
                                     }
                                     Some(7) => {
-                                        style.style = Style::Reverse;
+                                        style = Some(Style::Reverse);
                                     }
-                                    Some(x) if *x == 38 || *x == 48 => {
+                                    Some(x) if x == 38 || x == 48 => {
                                         let color = match (itr.next(), itr.next()) {
-                                            (Some(Some(5)), Some(Some(x))) if (*x <= 15) => {
-                                                Color::from_index(*x as u8)
+                                            (Some(Some(5)), Some(Some(x))) if (x <= 15) => {
+                                                Color::from_index(x as u8)
                                             }
-                                            (Some(Some(5)), Some(Some(x))) if (232 <= *x) => {
+                                            (Some(Some(5)), Some(Some(x))) if (232 <= x) => {
                                                 let x = x - 232;
                                                 let v = (x * 11) as u8;
                                                 Color::RGB(v, v, v)
                                             }
-                                            (Some(Some(5)), Some(Some(x))) => {
+                                            (Some(Some(5)), Some(Some(x))) if (x <= 255) => {
                                                 let x = x - 16;
                                                 let r = (x / 36) as u8;
                                                 let g = ((x % 36) / 6) as u8;
                                                 let b = (x % 6) as u8;
                                                 Color::RGB(r * 51, g * 51, b * 51)
                                             }
+                                            (Some(Some(2)), Some(Some(r))) => {
+                                                use std::convert::identity as e;
+                                                let g = itr.next().and_then(e).unwrap_or(255);
+                                                let b = itr.next().and_then(e).unwrap_or(255);
+                                                println!("r, g, b = {}, {}, {}", r, g, b);
+                                                read_bytes += 2;
+                                                Color::RGB(r as u8, g as u8, b as u8)
+                                            }
                                             _ => Color::White,
                                         };
-                                        if *x == 38 {
-                                            style.fg = color;
-                                        } else if *x == 48 {
-                                            style.bg = color;
+                                        if x == 38 {
+                                            fg = Some(color);
+                                        } else if x == 48 {
+                                            bg = Some(color);
                                         }
                                         read_bytes += 2;
                                     }
                                     // foreground color
-                                    Some(x) if (31 <= *x && *x <= 39) => {
+                                    Some(x) if (31 <= x && x <= 39) => {
                                         let c = x % 10;
-                                        style.fg = match c {
+                                        fg = Some(match c {
                                             1 => Color::Red,
                                             2 => Color::Green,
                                             3 => Color::Yellow,
@@ -204,12 +226,12 @@ pub fn parse_escape_sequence<'a>(
                                             5 => Color::Magenta,
                                             6 => Color::Cyan,
                                             _ => Color::White,
-                                        };
+                                        });
                                     }
                                     // background color
-                                    Some(x) if (41 <= *x && *x <= 49) => {
+                                    Some(x) if (41 <= x && x <= 49) => {
                                         let c = x % 10;
-                                        style.bg = match c {
+                                        bg = Some(match c {
                                             1 => Color::Red,
                                             2 => Color::Green,
                                             3 => Color::Yellow,
@@ -217,12 +239,12 @@ pub fn parse_escape_sequence<'a>(
                                             5 => Color::Magenta,
                                             6 => Color::Cyan,
                                             _ => Color::White,
-                                        };
+                                        });
                                     }
                                     _ => {}
                                 }
                             }
-                            Some(ControlOp::ChangeCellAttribute(style))
+                            Some(ControlOp::ChangeCellAttribute(style, fg, bg))
                         }
 
                         Some('?') => {

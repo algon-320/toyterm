@@ -1,5 +1,8 @@
 #[macro_use]
 extern crate nix;
+#[macro_use]
+extern crate lazy_static;
+extern crate config;
 extern crate sdl2;
 
 mod basics;
