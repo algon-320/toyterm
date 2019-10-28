@@ -1,4 +1,4 @@
-tt|toyterm-color|toyterm (partially support vt100 control sequences):\
+tt|toyterm-256color|toyterm (partially support vt100 control sequences):\
 	:am:bs:ms:\
 	:Co#256:co#80:it#8:li#24:\
 	:AB=\E[48;5;%dm:AF=\E[38;5;%dm:\

@@ -148,7 +148,7 @@ fn main() -> Result<(), String> {
             err_str(unistd::dup2(pty.slave, 2))?; // stderr
             err_str(unistd::close(pty.slave))?;
 
-            std::env::set_var("TERM", "toyterm-color");
+            std::env::set_var("TERM", "toyterm-256color");
             std::env::set_var("COLUMNS", "80");
             std::env::set_var("LINES", "80");
 
