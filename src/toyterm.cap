@@ -1,5 +1,5 @@
 tt|toyterm-256color|toyterm (partially support vt100 control sequences):\
-	:am:bs:ms:\
+	:am:bs:ms:ul:\
 	:Co#256:co#80:it#8:li#24:\
 	:AB=\E[48;5;%dm:AF=\E[38;5;%dm:\
 	:AB=\E[4%dm:AF=\E[3%dm:\
@@ -13,5 +13,5 @@ tt|toyterm-256color|toyterm (partially support vt100 control sequences):\
 	:ku=\EOA:kd=\EOB:kl=\EOD:kr=\EOC:\
 	:le=\E[D:md=\E[1m:me=\E[m:mr=\E[7m:\
 	:nd=\E[C:r1=\Ec:sc=\E[s:rc=\E[u:\
-	:sf=^J:so=\E[7m:sr=\EM:\
+	:sf=^J:us=\E[4m:so=\E[7m:sr=\EM:\
 	:up=\E[A:\

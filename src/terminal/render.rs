@@ -310,6 +310,19 @@ impl<'a, 'b> Renderer<'a, 'b> {
             let tc = cell_canvas.texture_creator();
             let texture = err_str(tc.create_texture_from_surface(surface)).unwrap();
             cell_canvas.copy(&texture, None, None).unwrap();
+
+            // draw under line
+            if self.cell_attr.style == Style::UnderLine {
+                let sz = self.get_char_size();
+                cell_canvas.set_draw_color(fg_color);
+                cell_canvas
+                    .draw_line(
+                        sdl2::rect::Point::new(0, sz.height as i32 - 3),
+                        sdl2::rect::Point::new(sz.width as i32 - 1, sz.height as i32 - 3),
+                    )
+                    .unwrap();
+            }
+
             self.cache.insert(
                 cell.clone(),
                 (
