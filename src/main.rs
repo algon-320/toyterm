@@ -26,6 +26,22 @@ use utils::*;
 const BUFFER_SIZE: usize = 1024 * 10;
 
 fn main() -> Result<(), String> {
+    let config = || -> Option<std::collections::HashMap<String, config::Value>> {
+        let mut tmp = config::Config::default();
+        tmp.merge(config::File::with_name("settings.toml")).ok()?;
+        tmp.get_table("general").ok()
+    }();
+    macro_rules! find_config {
+        ($key:expr, $func:path) => {
+            config
+                .as_ref()
+                .and_then(|t| $func(t.get($key)?.clone()).ok())
+        };
+    }
+
+    let rows = find_config!("rows", config::Value::into_int).unwrap_or(24) as usize;
+    let columns = find_config!("columns", config::Value::into_int).unwrap_or(80) as usize;
+
     let pty = terminal::pty::PTY::open().unwrap();
     match unistd::fork() {
         Ok(unistd::ForkResult::Parent { child, .. }) => {
@@ -35,8 +51,8 @@ fn main() -> Result<(), String> {
             const TIOCSWINSZ: usize = 0x5414;
             ioctl_write_ptr_bad!(tiocswinsz, TIOCSWINSZ, nix::pty::Winsize);
             let winsz = nix::pty::Winsize {
-                ws_row: 24,
-                ws_col: 80,
+                ws_row: rows as u16,
+                ws_col: columns as u16,
                 ws_xpixel: 0, // unused
                 ws_ypixel: 0, // unused
             };
@@ -48,9 +64,9 @@ fn main() -> Result<(), String> {
                 "toyterm",
                 &sdl_context,
                 &ttf_context,
-                Size::new(80, 24),
+                Size::new(columns, rows),
             );
-            let mut term = Term::new(&mut render_context, Size::new(80, 24));
+            let mut term = Term::new(&mut render_context, Size::new(columns, rows));
 
             let mut event_pump = sdl_context.event_pump()?;
             let event_subsys = sdl_context.event().unwrap();
@@ -140,19 +156,6 @@ fn main() -> Result<(), String> {
             err_str(unistd::close(pty.master))?;
 
             use std::ffi::CString;
-            let config = || -> Option<std::collections::HashMap<String, config::Value>> {
-                let mut tmp = config::Config::default();
-                tmp.merge(config::File::with_name("settings.toml")).ok()?;
-                tmp.get_table("general").ok()
-            }();
-            macro_rules! find_config {
-                ($key:expr, $func:path) => {
-                    config
-                        .as_ref()
-                        .and_then(|t| $func(t.get($key)?.clone()).ok())
-                };
-            }
-
             let shell = {
                 find_config!("shell", config::Value::into_str)
                     .and_then(|s| if s.is_empty() { None } else { Some(s) })
@@ -186,8 +189,8 @@ fn main() -> Result<(), String> {
 
             std::env::set_var("TERM", "toyterm-256color");
             std::env::set_var("COLORTERM", "truecolor");
-            std::env::set_var("COLUMNS", "80");
-            std::env::set_var("LINES", "24");
+            std::env::set_var("COLUMNS", &columns.to_string());
+            std::env::set_var("LINES", &rows.to_string());
 
             err_str(unistd::execv(&path, &args)).map(|_| ())
         }
