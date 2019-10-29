@@ -153,8 +153,16 @@ impl<'a> FontSet<'a> {
         font_name_bold: &str,
         font_size: u16,
     ) -> Self {
-        let regular = ttf_context.load_font(font_name_regular, font_size).unwrap();
-        let bold = ttf_context.load_font(font_name_bold, font_size).unwrap();
+        let regular = ttf_context
+            .load_font(font_name_regular, font_size)
+            .map_err(|_| {
+                "Cannot open the regular font: please check your `settings.toml`".to_string()
+            })
+            .unwrap();
+        let bold = ttf_context
+            .load_font(font_name_bold, font_size)
+            .map_err(|_| "Cannot open the bold font: please check your `settings.toml`".to_string())
+            .unwrap();
         let char_size = {
             let tmp = regular.size_of_char('#').unwrap();
             Size::new(tmp.0 as usize, tmp.1 as usize)
