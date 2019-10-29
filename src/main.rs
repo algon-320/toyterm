@@ -187,7 +187,7 @@ fn main() -> Result<(), String> {
             std::env::set_var("TERM", "toyterm-256color");
             std::env::set_var("COLORTERM", "truecolor");
             std::env::set_var("COLUMNS", "80");
-            std::env::set_var("LINES", "80");
+            std::env::set_var("LINES", "24");
 
             err_str(unistd::execv(&path, &args)).map(|_| ())
         }

@@ -202,7 +202,6 @@ pub fn parse_escape_sequence<'a>(
                                                 use std::convert::identity as e;
                                                 let g = itr.next().and_then(e).unwrap_or(255);
                                                 let b = itr.next().and_then(e).unwrap_or(255);
-                                                println!("r, g, b = {}, {}, {}", r, g, b);
                                                 read_bytes += 2;
                                                 Color::RGB(r as u8, g as u8, b as u8)
                                             }
