@@ -269,6 +269,8 @@ impl<'a, 'b> Renderer<'a, 'b> {
             } else {
                 &self.context.font.regular
             };
+            // draw □ if the font doesn't have this glyph
+            let c = if f.find_glyph(c).is_none() { '□' } else { c };
             let surface = err_str(f.render_char(c).blended(fg_color))?;
             let cols = f.size_of_char(c).unwrap().0 as usize / self.get_char_size().width;
             let mut cell_canvas = {
@@ -277,19 +279,21 @@ impl<'a, 'b> Renderer<'a, 'b> {
                     self.get_char_size().height as u32,
                     PixelFormatEnum::ARGB8888,
                 )?;
-                let mut cvs = tmp.into_canvas()?;
+                let mut cvs = tmp.into_canvas().unwrap();
                 cvs.set_draw_color(bg_color);
-                cvs.fill_rect(None)?;
+                cvs.fill_rect(None).unwrap();
                 cvs
             };
             let tc = cell_canvas.texture_creator();
-            let texture = err_str(tc.create_texture_from_surface(surface))?;
-            cell_canvas.copy(&texture, None, None)?;
+            let texture = err_str(tc.create_texture_from_surface(surface)).unwrap();
+            cell_canvas.copy(&texture, None, None).unwrap();
             self.cache.insert(
                 cell.clone(),
                 (
                     cols,
-                    cell_canvas.read_pixels(None, PixelFormatEnum::ARGB8888)?,
+                    cell_canvas
+                        .read_pixels(None, PixelFormatEnum::ARGB8888)
+                        .unwrap(),
                 ),
             );
         }

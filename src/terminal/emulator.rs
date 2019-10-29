@@ -129,14 +129,21 @@ impl<'a, 'b> Term<'a, 'b> {
         }
     }
 
-    pub fn insert_char(&mut self, c: char) {
-        let cols = self.renderer.draw_char(c, self.cursor).unwrap();
+    pub fn insert_char(&mut self, c: char) -> Result<(), String> {
+        let cols = self
+            .renderer
+            .draw_char(c, self.cursor)
+            .map_err(|e| format!("insert_char: c={}, error: {}", c, e))?;
         for _ in 0..cols {
             self.move_cursor(CursorMove::Next);
         }
+        Ok(())
     }
-    pub fn insert_chars(&mut self, chars: &[char]) {
-        chars.iter().for_each(|c| self.insert_char(*c));
+    pub fn insert_chars(&mut self, chars: &[char]) -> Result<(), String> {
+        for c in chars.iter() {
+            self.insert_char(*c)?;
+        }
+        Ok(())
     }
 
     pub fn write(&mut self, buf: &[u8]) -> Result<(), String> {
@@ -314,15 +321,15 @@ impl<'a, 'b> Term<'a, 'b> {
                         }
                         (None, sz) => {
                             // print sequence as string
-                            self.insert_chars(&['^', '[']);
-                            self.insert_chars(&itr.as_slice()[..sz]);
+                            self.insert_chars(&['^', '['])?;
+                            self.insert_chars(&itr.as_slice()[..sz])?;
                             if sz > 0 {
                                 itr.nth(sz - 1);
                             }
                         }
                     }
                 }
-                x => self.insert_char(x),
+                x => self.insert_char(x)?,
             }
         }
         Ok(())
