@@ -179,12 +179,27 @@ impl<'a> RenderContext<'a> {
         ttf_context: &'a sdl2::ttf::Sdl2TtfContext,
         screen_size: Size<usize>,
     ) -> Self {
-        let font = FontSet::new(
-            ttf_context,
-            "/usr/share/fonts/truetype/ricty-diminished/RictyDiminished-Regular.ttf",
-            "/usr/share/fonts/truetype/ricty-diminished/RictyDiminished-Bold.ttf",
-            10 * 2,
-        );
+        let font = {
+            let font_config = || -> Option<HashMap<String, config::Value>> {
+                let mut tmp = config::Config::default();
+                tmp.merge(config::File::with_name("settings.toml")).ok()?;
+                tmp.get_table("font").ok()
+            }();
+            macro_rules! find_config {
+                ($key:expr, $func:path) => {
+                    font_config
+                        .as_ref()
+                        .and_then(|t| $func(t.get($key)?.clone()).ok())
+                };
+            }
+            use config::Value;
+            FontSet::new(
+                ttf_context,
+                &find_config!("regular", Value::into_str).unwrap_or(format!("")),
+                &find_config!("bold", Value::into_str).unwrap_or(format!("")),
+                2 * find_config!("size", Value::into_int).unwrap_or(10) as u16,
+            )
+        };
         let window = {
             let video = sdl_context.video().unwrap();
             video

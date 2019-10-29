@@ -139,6 +139,39 @@ fn main() -> Result<(), String> {
         Ok(unistd::ForkResult::Child) => {
             err_str(unistd::close(pty.master))?;
 
+            use std::ffi::CString;
+            let config = || -> Option<std::collections::HashMap<String, config::Value>> {
+                let mut tmp = config::Config::default();
+                tmp.merge(config::File::with_name("settings.toml")).ok()?;
+                tmp.get_table("general").ok()
+            }();
+            macro_rules! find_config {
+                ($key:expr, $func:path) => {
+                    config
+                        .as_ref()
+                        .and_then(|t| $func(t.get($key)?.clone()).ok())
+                };
+            }
+
+            let shell = {
+                find_config!("shell", config::Value::into_str)
+                    .and_then(|s| if s.is_empty() { None } else { Some(s) })
+                    .unwrap_or(std::env::var("SHELL").unwrap_or("/bin/sh".to_string()))
+            };
+            let path = CString::new(shell.clone()).unwrap();
+            let args: Vec<_> = {
+                let mut ret = Vec::new();
+                ret.push(path.clone());
+                ret.append(
+                    &mut find_config!("shell_args", config::Value::into_array)
+                        .unwrap_or(Vec::new())
+                        .into_iter()
+                        .map(|v| CString::new(v.into_str().unwrap()).unwrap())
+                        .collect::<Vec<_>>(),
+                );
+                ret
+            };
+
             // create process group
             err_str(unistd::setsid())?;
 
@@ -156,10 +189,7 @@ fn main() -> Result<(), String> {
             std::env::set_var("COLUMNS", "80");
             std::env::set_var("LINES", "80");
 
-            use std::ffi::CString;
-            let shell = std::env::var("SHELL").unwrap_or("/bin/sh".to_string());
-            let path = CString::new(shell).unwrap();
-            err_str(unistd::execv(&path, &[])).map(|_| ())
+            err_str(unistd::execv(&path, &args)).map(|_| ())
         }
         Err(e) => err_str(Err(e)),
     }
