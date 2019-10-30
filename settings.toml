@@ -3,7 +3,7 @@
 shell = "" # path to shell
 shell_args = [] # arguments passed to the shell
 columns = 80
-rows = 40
+rows = 24
 
 
 [color_scheme]
