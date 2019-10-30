@@ -120,6 +120,7 @@ fn main() -> Result<(), String> {
                         match input::keyevent_to_bytes(&event) {
                             None => continue,
                             Some(bytes) => {
+                                #[cfg(debug_assertions)]
                                 println!("keydown: bytes: {:?}", bytes);
                                 err_str(nix::unistd::write(pty.master, bytes.as_slice()))?;
                             }
