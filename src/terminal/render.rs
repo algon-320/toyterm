@@ -32,12 +32,45 @@ pub enum Color {
 }
 impl Color {
     pub fn to_sdl_color(self) -> sdl2::pixels::Color {
+        use sdl2::pixels::Color as Sdl2Color;
         lazy_static! {
             static ref COLOR_CONFIG_TABLE: Option<std::collections::HashMap<String, config::Value>> = {
                 let mut tmp = config::Config::default();
                 tmp.merge(config::File::with_name("settings.toml")).ok()?;
                 tmp.get_table("color_scheme").ok()
             };
+            static ref COLOR_BLACK: Sdl2Color =
+                get_config("black").unwrap_or(Sdl2Color::RGB(0, 0, 0));
+            static ref COLOR_RED: Sdl2Color =
+                get_config("red").unwrap_or(Sdl2Color::RGB(200, 0, 0));
+            static ref COLOR_YELLOW: Sdl2Color =
+                get_config("yellow").unwrap_or(Sdl2Color::RGB(200, 200, 0));
+            static ref COLOR_GREEN: Sdl2Color =
+                get_config("green").unwrap_or(Sdl2Color::RGB(0, 200, 0));
+            static ref COLOR_BLUE: Sdl2Color =
+                get_config("blue").unwrap_or(Sdl2Color::RGB(0, 0, 200));
+            static ref COLOR_MAGENTA: Sdl2Color =
+                get_config("magenta").unwrap_or(Sdl2Color::RGB(200, 0, 200));
+            static ref COLOR_CYAN: Sdl2Color =
+                get_config("cyan").unwrap_or(Sdl2Color::RGB(0, 200, 200));
+            static ref COLOR_WHITE: Sdl2Color =
+                get_config("white").unwrap_or(Sdl2Color::RGB(200, 200, 200));
+            static ref COLOR_GRAY: Sdl2Color =
+                get_config("gray").unwrap_or(Sdl2Color::RGB(120, 120, 120));
+            static ref COLOR_LIGHTRED: Sdl2Color =
+                get_config("light_red").unwrap_or(Sdl2Color::RGB(255, 0, 0));
+            static ref COLOR_LIGHTYELLOW: Sdl2Color =
+                get_config("light_yellow").unwrap_or(Sdl2Color::RGB(255, 255, 0));
+            static ref COLOR_LIGHTGREEN: Sdl2Color =
+                get_config("light_green").unwrap_or(Sdl2Color::RGB(0, 255, 0));
+            static ref COLOR_LIGHTBLUE: Sdl2Color =
+                get_config("light_blue").unwrap_or(Sdl2Color::RGB(0, 0, 255));
+            static ref COLOR_LIGHTMAGENTA: Sdl2Color =
+                get_config("light_magenta").unwrap_or(Sdl2Color::RGB(255, 0, 255));
+            static ref COLOR_LIGHTCYAN: Sdl2Color =
+                get_config("light_cyan").unwrap_or(Sdl2Color::RGB(0, 255, 255));
+            static ref COLOR_LIGHTWHITE: Sdl2Color =
+                get_config("light_white").unwrap_or(Sdl2Color::RGB(0, 255, 255));
         }
         fn get_config(key: &str) -> Option<Sdl2Color> {
             let mut col = COLOR_CONFIG_TABLE
@@ -51,26 +84,24 @@ impl Color {
             let r = col.pop()?.into_int().ok()?;
             Some(Sdl2Color::RGB(r as u8, g as u8, b as u8))
         }
-        use sdl2::pixels::Color as Sdl2Color;
+
         match self {
-            Color::Black => get_config("black").unwrap_or(Sdl2Color::RGB(0, 0, 0)),
-            Color::Red => get_config("red").unwrap_or(Sdl2Color::RGB(200, 0, 0)),
-            Color::Yellow => get_config("yellow").unwrap_or(Sdl2Color::RGB(200, 200, 0)),
-            Color::Green => get_config("green").unwrap_or(Sdl2Color::RGB(0, 200, 0)),
-            Color::Blue => get_config("blue").unwrap_or(Sdl2Color::RGB(0, 0, 200)),
-            Color::Magenta => get_config("magenta").unwrap_or(Sdl2Color::RGB(200, 0, 200)),
-            Color::Cyan => get_config("cyan").unwrap_or(Sdl2Color::RGB(0, 200, 200)),
-            Color::White => get_config("white").unwrap_or(Sdl2Color::RGB(200, 200, 200)),
-            Color::Gray => get_config("gray").unwrap_or(Sdl2Color::RGB(120, 120, 120)),
-            Color::LightRed => get_config("light_red").unwrap_or(Sdl2Color::RGB(255, 0, 0)),
-            Color::LightYellow => get_config("light_yellow").unwrap_or(Sdl2Color::RGB(255, 255, 0)),
-            Color::LightGreen => get_config("light_green").unwrap_or(Sdl2Color::RGB(0, 255, 0)),
-            Color::LightBlue => get_config("light_blue").unwrap_or(Sdl2Color::RGB(0, 0, 255)),
-            Color::LightMagenta => {
-                get_config("light_magenta").unwrap_or(Sdl2Color::RGB(255, 0, 255))
-            }
-            Color::LightCyan => get_config("light_cyan").unwrap_or(Sdl2Color::RGB(0, 255, 255)),
-            Color::LightWhite => get_config("light_white").unwrap_or(Sdl2Color::RGB(255, 255, 255)),
+            Color::Black => *COLOR_BLACK,
+            Color::Red => *COLOR_RED,
+            Color::Yellow => *COLOR_YELLOW,
+            Color::Green => *COLOR_GREEN,
+            Color::Blue => *COLOR_BLUE,
+            Color::Magenta => *COLOR_MAGENTA,
+            Color::Cyan => *COLOR_CYAN,
+            Color::White => *COLOR_WHITE,
+            Color::Gray => *COLOR_GRAY,
+            Color::LightRed => *COLOR_LIGHTRED,
+            Color::LightYellow => *COLOR_LIGHTYELLOW,
+            Color::LightGreen => *COLOR_LIGHTGREEN,
+            Color::LightBlue => *COLOR_LIGHTBLUE,
+            Color::LightMagenta => *COLOR_LIGHTMAGENTA,
+            Color::LightCyan => *COLOR_LIGHTCYAN,
+            Color::LightWhite => *COLOR_LIGHTWHITE,
             Color::RGB(r, g, b) => Sdl2Color::RGB(r, g, b),
         }
     }
