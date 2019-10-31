@@ -153,16 +153,18 @@ impl<'a> FontSet<'a> {
         font_name_bold: &str,
         font_size: u16,
     ) -> Self {
-        let regular = ttf_context
+        let mut regular = ttf_context
             .load_font(font_name_regular, font_size)
             .map_err(|_| {
                 "Cannot open the regular font: please check your `settings.toml`".to_string()
             })
             .unwrap();
-        let bold = ttf_context
+        regular.set_hinting(sdl2::ttf::Hinting::Light);
+        let mut bold = ttf_context
             .load_font(font_name_bold, font_size)
             .map_err(|_| "Cannot open the bold font: please check your `settings.toml`".to_string())
             .unwrap();
+        bold.set_hinting(sdl2::ttf::Hinting::Light);
         let char_size = {
             let tmp = regular.size_of_char('#').unwrap();
             Size::new(tmp.0 as usize, tmp.1 as usize)
@@ -235,6 +237,27 @@ impl<'a> RenderContext<'a> {
     }
 }
 
+pub enum CharWidth {
+    Half,
+    Full,
+}
+impl CharWidth {
+    pub fn from_char(c: char) -> Self {
+        use ucd::tables::misc::EastAsianWidth::*;
+        use ucd::Codepoint;
+        match c.east_asian_width() {
+            Ambiguous | Neutral | HalfWidth | Narrow => CharWidth::Half,
+            FullWidth | Wide => CharWidth::Full,
+        }
+    }
+    pub fn columns(self) -> usize {
+        match self {
+            CharWidth::Half => 1,
+            CharWidth::Full => 2,
+        }
+    }
+}
+
 pub struct Renderer<'a, 'b> {
     pub context: &'a mut RenderContext<'b>,
     pub cache: HashMap<Cell, (usize, Vec<u8>)>,
@@ -295,7 +318,8 @@ impl<'a, 'b> Renderer<'a, 'b> {
             // draw □ if the font doesn't have this glyph
             let c = if f.find_glyph(c).is_none() { '□' } else { c };
             let surface = err_str(f.render_char(c).blended(fg_color))?;
-            let cols = f.size_of_char(c).unwrap().0 as usize / self.get_char_size().width;
+
+            let cols = CharWidth::from_char(c).columns();
             let mut cell_canvas = {
                 let tmp = sdl2::surface::Surface::new(
                     (self.get_char_size().width * cols) as u32,

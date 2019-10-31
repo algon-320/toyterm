@@ -5,6 +5,7 @@ use super::control::parse_escape_sequence;
 use super::control::ControlOp;
 use super::render::*;
 
+#[derive(Debug, Clone, Copy, Hash)]
 pub enum CursorMove {
     Up,
     Down,
@@ -14,6 +15,7 @@ pub enum CursorMove {
     Prev,
     LeftMost,
     RightMost,
+    NewLine,
 }
 
 pub struct Term<'a, 'b> {
@@ -65,6 +67,13 @@ impl<'a, 'b> Term<'a, 'b> {
         self.renderer.clear();
     }
 
+    pub fn move_cursor_repeat(&mut self, m: CursorMove, repeat: usize) -> bool {
+        let mut last = false;
+        for _ in 0..repeat {
+            last = self.move_cursor(m);
+        }
+        last
+    }
     pub fn move_cursor(&mut self, m: CursorMove) -> bool {
         use CursorMove::*;
         match m {
@@ -126,10 +135,25 @@ impl<'a, 'b> Term<'a, 'b> {
                 }
                 true
             }
+            NewLine => {
+                if !self.move_cursor(CursorMove::Down) {
+                    // scroll
+                    let x = self.cursor.x;
+                    self.move_cursor(CursorMove::RightMost);
+                    self.move_cursor(CursorMove::Next);
+                    self.cursor.x = x;
+                }
+                true
+            }
         }
     }
 
     pub fn insert_char(&mut self, c: char) -> Result<(), String> {
+        if self.cursor.x + CharWidth::from_char(c).columns() > self.right_column + 1 {
+            self.move_cursor(CursorMove::NewLine);
+            self.move_cursor(CursorMove::LeftMost);
+        }
+
         let cols = self
             .renderer
             .draw_char(c, self.cursor)
@@ -158,13 +182,7 @@ impl<'a, 'b> Term<'a, 'b> {
                 '\n' => {
                     #[cfg(debug_assertions)]
                     println!("[next line]");
-                    if !self.move_cursor(CursorMove::Down) {
-                        // next line
-                        let x = self.cursor.x;
-                        self.move_cursor(CursorMove::RightMost);
-                        self.move_cursor(CursorMove::Next);
-                        self.cursor.x = x;
-                    }
+                    self.move_cursor(CursorMove::NewLine);
                 }
                 '\r' => {
                     #[cfg(debug_assertions)]
@@ -199,27 +217,19 @@ impl<'a, 'b> Term<'a, 'b> {
                                 }
                                 CursorUp(am) => {
                                     let am = std::cmp::min(am, self.cursor.y - self.top_line);
-                                    for _ in 0..am {
-                                        self.move_cursor(CursorMove::Up);
-                                    }
+                                    self.move_cursor_repeat(CursorMove::Up, am);
                                 }
                                 CursorDown(am) => {
                                     let am = std::cmp::min(am, self.bottom_line - self.cursor.y);
-                                    for _ in 0..am {
-                                        self.move_cursor(CursorMove::Down);
-                                    }
+                                    self.move_cursor_repeat(CursorMove::Down, am);
                                 }
                                 CursorForward(am) => {
                                     let am = std::cmp::min(am, self.right_column - self.cursor.x);
-                                    for _ in 0..am {
-                                        self.move_cursor(CursorMove::Right);
-                                    }
+                                    self.move_cursor_repeat(CursorMove::Right, am);
                                 }
                                 CursorBackward(am) => {
                                     let am = std::cmp::min(am, self.cursor.x - self.left_column);
-                                    for _ in 0..am {
-                                        self.move_cursor(CursorMove::Left);
-                                    }
+                                    self.move_cursor_repeat(CursorMove::Left, am);
                                 }
 
                                 SaveCursor => {

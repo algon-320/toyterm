@@ -10,6 +10,7 @@ edition = "2018"
 nix = "0.15"
 config = "0.9.3"
 lazy_static = "1.4.0"
+ucd = "0.1.1"
 
 [dependencies.sdl2]
 git = "https://github.com/Rust-SDL2/rust-sdl2"

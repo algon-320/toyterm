@@ -4,6 +4,7 @@ extern crate nix;
 extern crate lazy_static;
 extern crate config;
 extern crate sdl2;
+extern crate ucd;
 
 mod basics;
 mod input;
