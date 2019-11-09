@@ -3,6 +3,11 @@
 toyterm is a toy terminal emulator.
 
 
+## Demo
+
+![demo1.png](./demo/demo1.png)
+![demo2.gif](./demo/demo2.gif)
+
 ## Features
 
 - on Linux
