@@ -1,6 +1,7 @@
 use super::Color;
 use super::Op;
 use std::iter::Peekable;
+use std::str::Chars;
 
 fn numeric<I>(seq: &mut Peekable<I>) -> u64
 where
@@ -248,11 +249,11 @@ fn test_parse_set_color() {
         parse::<Chars>(&mut itr),
         Some(Op::SetColor(0, Color::new(0, 0, 0)))
     );
-    let b = "#1;2;123;45;67";
+    let b = "#1;2;100;100;100";
     let mut itr = b.chars().peekable();
     assert_eq!(
         parse::<Chars>(&mut itr),
-        Some(Op::SetColor(1, Color::new(123, 45, 67)))
+        Some(Op::SetColor(1, Color::new(255, 255, 255)))
     );
 }
 #[test]
@@ -261,7 +262,7 @@ fn test_parse() {
     let mut itr = b.chars().peekable();
     assert_eq!(parse(&mut itr), Some(Op::Finish));
 
-    let b = "\"1;1;10;10#0;2;255;0;0#1;2;0;255;0#2;2;0;0;255#0~~-#1~~-#2~~\x1b\\xyz";
+    let b = "\"1;1;10;10#0;2;100;0;0#1;2;0;100;0#2;2;0;0;100#0~~-#1~~-#2~~\x1b\\xyz";
     let mut itr = b.chars().peekable();
     let mut ops: Vec<Op> = vec![];
     while let Some(op) = parse(&mut itr) {

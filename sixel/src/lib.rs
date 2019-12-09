@@ -1,6 +1,11 @@
 #![allow(dead_code)]
 
+mod parser;
+
 type SixelSeq = Vec<u8>;
+
+const SIX: usize = 6;
+const EACH_PIXEL: usize = 4;
 
 #[derive(Debug)]
 pub struct Image {
@@ -16,9 +21,11 @@ impl Image {
             buf: Vec::new(),
         }
     }
+    fn resize(&mut self) {
+        self.buf
+            .resize_with(self.height * self.width * EACH_PIXEL, Default::default);
+    }
 }
-
-mod parser;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub(crate) enum Op {
@@ -57,7 +64,7 @@ impl Default for Color {
 // decode sixel sequence to bitmap image
 pub fn decode<I>(
     seq: &mut I,
-    argb_ord: [usize; 4],
+    argb_ord: [usize; EACH_PIXEL],
     image_width: usize,
     image_height: Option<usize>,
 ) -> Image
@@ -67,15 +74,16 @@ where
     let mut img = Image::new();
     img.buf = vec![];
     img.width = image_width;
-
-    // allocate buffer
     img.height = if let Some(h) = image_height {
-        (h + 5) / 6 * 6
+        (h + SIX - 1) / SIX * SIX
     } else {
-        6
+        SIX
     };
-    img.buf
-        .resize_with(img.width * 4 * img.height, Default::default);
+    #[cfg(debug_assertions)]
+    println!("w={}, h={}", img.width, img.height);
+
+    img.resize(); // allocate buffer
+
     let mut itr = seq.peekable();
     let mut y = 0;
     let mut x = 0;
@@ -83,21 +91,26 @@ where
     let mut palette: Vec<Color> = Vec::new();
     palette.resize_with(256, Default::default);
 
+    let mut pixel_w = 1;
+    let mut pixel_h = 1;
+
     while let Some(op) = parser::parse(&mut itr) {
-        println!("{:?}", op);
         match op {
             Op::RasterAttributes(pan, pad, ph, pv) => {
-                img.height = (pan * pv + 5) as usize / 6 * 6;
-                img.width = (pad * ph) as usize;
-                println!("w={}, h={}", img.width, img.height);
-                img.buf
-                    .resize_with(img.width * img.height * 4, Default::default);
+                pixel_h = pan as usize;
+                pixel_w = pad as usize;
+                img.height = (pixel_h * pv as usize + SIX - 1) / SIX * SIX;
+                img.width = pixel_w * ph as usize;
+
+                #[cfg(debug_assertions)]
+                println!("buffer size changed: w={}, h={}", img.width, img.height);
+                img.resize();
             }
             Op::CarriageReturn => {
                 x = 0;
             }
             Op::NextLine => {
-                y += 6;
+                y += SIX * pixel_h;
                 x = 0;
             }
             Op::Finish => {
@@ -110,19 +123,24 @@ where
                 color = palette[reg as usize];
             }
             Op::Sixel { bits: b, rep: r } => {
-                if img.buf.len() <= img.height * img.width {
-                    img.height +=
-                        (img.height * img.width - img.buf.len() + img.width - 1) / img.width;
-                    img.buf
-                        .resize_with(img.width * img.height * 4, Default::default);
+                let required_buf = (y + SIX * pixel_h) * img.width * EACH_PIXEL;
+                if img.buf.len() < required_buf {
+                    let each_line = img.width * EACH_PIXEL;
+                    img.height += (required_buf - img.buf.len() + each_line - 1) / each_line;
+                    #[cfg(debug_assertions)]
+                    println!("buffer size changed: h={}", img.height);
+                    img.resize();
                 }
-                for _ in 0..r {
-                    for i in 0..6 {
+                for _ in 0..r as usize * pixel_w {
+                    for i in 0..SIX {
                         if ((b >> i) & 1) > 0 {
-                            img.buf[((y + i) * img.width + x) * 4 + argb_ord[0]] = color.a;
-                            img.buf[((y + i) * img.width + x) * 4 + argb_ord[1]] += color.r;
-                            img.buf[((y + i) * img.width + x) * 4 + argb_ord[2]] += color.g;
-                            img.buf[((y + i) * img.width + x) * 4 + argb_ord[3]] += color.b;
+                            for k in 0..pixel_h {
+                                let pos = (y + i * pixel_h + k) * img.width + x;
+                                img.buf[pos * EACH_PIXEL + argb_ord[0]] = color.a; // TODO
+                                img.buf[pos * EACH_PIXEL + argb_ord[1]] += color.r;
+                                img.buf[pos * EACH_PIXEL + argb_ord[2]] += color.g;
+                                img.buf[pos * EACH_PIXEL + argb_ord[3]] += color.b;
+                            }
                         }
                     }
                     x += 1;
@@ -131,13 +149,12 @@ where
             _ => panic!("unsupported"),
         }
     }
-    assert_eq!(img.buf.len(), 4 * img.width * img.height);
     img
 }
 
 #[test]
 fn test_decode() {
-    let b = "\"1;1;6;6#0;2;255;0;0#1;2;0;255;0#2;2;0;0;255#0~~!4?$#1??!2~??$#2????~~\x1b\\";
+    let b = "\"1;1;6;6#0;2;100;0;0#1;2;0;100;0#2;2;0;0;100#0~~!4?$#1??!2~??$#2????~~\x1b\\";
     let mut itr = b.chars();
     let image = decode(&mut itr, [0, 1, 2, 3], 6, None);
     assert_eq!(image.width, 6);
@@ -156,9 +173,33 @@ fn test_decode() {
         ]
     );
 
-    let b = "\"1;1;10;10#0;2;6;25;44#1;2;9;22;41#2;2;16;9;31#3;2;22;6;25#4;2;16;19;31#5;2;9;35;41#6;2;22;16;25#7;2;16;31;31#8;2;31;13;16#9;2;22;28;25#10;2;16;44;31#11;2;31;25;16#12;2;22;41;25#13;2;38;22;9#14;2;31;38;16#15;2;25;50;25#16;2;38;35;9#0BB#1FB@#2@B@$#5[K#4?CME#11__$#10__#9?_oo#3?AFF$#7?OwW#6?G[K$#8!7?Oww-#15KKG#14KME#13??FN$#10B@#9??@#16GKKG$#12?AFB#11?@BB\x1b\\";
+    let b = "\"1;1;10;10\x1b\\";
     let mut itr = b.chars();
     let image = decode(&mut itr, [0, 1, 2, 3], 6, None);
     assert_eq!(image.width, 10);
     assert_eq!(image.height, 12);
+
+    let b = "~~~~~~-~~~~~~\x1b\\";
+    let mut itr = b.chars();
+    let image = decode(&mut itr, [0, 1, 2, 3], 6, None);
+    assert_eq!(image.width, 6);
+    assert_eq!(image.height, 12);
+
+    let b = "\"1;1;6;6~~~~~~-~~~~~~-???-!6~\x1b\\";
+    let mut itr = b.chars();
+    let image = decode(&mut itr, [0, 1, 2, 3], 6, None);
+    assert_eq!(image.width, 6);
+    assert_eq!(image.height, 24);
+
+    let b = "\"2;2;10;10\x1b\\";
+    let mut itr = b.chars();
+    let image = decode(&mut itr, [0, 1, 2, 3], 6, None);
+    assert_eq!(image.width, 20);
+    assert_eq!(image.height, 24);
+
+    let b = "\"2;3;6;6~~~~~~-~~~~~~-???-!6~\x1b\\";
+    let mut itr = b.chars();
+    let image = decode(&mut itr, [0, 1, 2, 3], 6, None);
+    assert_eq!(image.width, 18);
+    assert_eq!(image.height, 48);
 }
