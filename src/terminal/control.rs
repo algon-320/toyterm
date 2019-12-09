@@ -22,12 +22,14 @@ pub enum ControlOp {
     Reset,
     ChangeCellAttribute(Option<Style>, Option<Color>, Option<Color>),
     SetCursorMode(bool),
+    Sixel(sixel::Image),
     Ignore,
 }
 
-pub fn parse_escape_sequence<'a>(
-    itr: &mut std::slice::Iter<'a, char>,
-) -> (Option<ControlOp>, usize) {
+pub fn parse_escape_sequence<'a, I>(itr: &mut I) -> (Option<ControlOp>, usize)
+where
+    I: Iterator<Item = char> + Clone,
+{
     let backup = itr.clone();
     match itr.next() {
         Some(c) => {
@@ -41,7 +43,7 @@ pub fn parse_escape_sequence<'a>(
                         let mut tmp = None;
                         while let Some(c) = itr.next() {
                             read_bytes += 1;
-                            match *c {
+                            match c {
                                 x if '0' <= x && x <= '9' => {
                                     if tmp.is_none() {
                                         tmp = Some(0);
@@ -249,7 +251,7 @@ pub fn parse_escape_sequence<'a>(
                         Some('?') => {
                             read_bytes += 1;
                             let p =
-                                || -> Option<(char, char)> { Some((*itr.next()?, *itr.next()?)) }();
+                                || -> Option<(char, char)> { Some((itr.next()?, itr.next()?)) }();
                             match p {
                                 Some(('1', 'h')) => Some(ControlOp::SetCursorMode(true)),
                                 Some(('1', 'l')) => Some(ControlOp::SetCursorMode(false)),
@@ -258,7 +260,7 @@ pub fn parse_escape_sequence<'a>(
                         }
 
                         Some(x) => {
-                            #[cfg(debug_assertions)]
+                            // #[cfg(debug_assertions)]
                             println!("unsupported: \\E[{}", char::from(x));
                             None
                         }
@@ -267,12 +269,22 @@ pub fn parse_escape_sequence<'a>(
                 }
                 'D' => Some(ControlOp::ScrollDown),
                 'M' => Some(ControlOp::ScrollUp),
+                'P' => {
+                    while let Some(x) = itr.next() {
+                        if x == 'q' {
+                            break;
+                        }
+                        read_bytes += 1;
+                    }
+                    let img = sixel::decode(itr, [3, 2, 1, 0], 0, None);
+                    Some(ControlOp::Sixel(img))
+                }
                 '=' => Some(ControlOp::Ignore),
                 '>' => Some(ControlOp::Ignore),
                 'c' => Some(ControlOp::Reset),
                 x => {
-                    #[cfg(debug_assertions)]
-                    println!("unsupported: \\E{}", char::from(*x));
+                    // #[cfg(debug_assertions)]
+                    println!("unsupported: \\E{}", x);
                     None
                 }
             };

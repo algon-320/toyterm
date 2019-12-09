@@ -6,6 +6,8 @@ extern crate config;
 extern crate sdl2;
 extern crate ucd;
 
+extern crate sixel;
+
 mod basics;
 mod input;
 mod terminal;

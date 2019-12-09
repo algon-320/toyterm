@@ -445,6 +445,18 @@ impl<'a, 'b> Renderer<'a, 'b> {
         }
     }
 
+    // draw sixel graphic on the screen texture
+    pub fn draw_sixel(&mut self, img: &sixel::Image) {
+        for iy in 0..img.height {
+            let src = &img.buf[iy * img.width * 4..(iy + 1) * img.width * 4];
+            // println!("src={:?}", src);
+            let dst = &mut self.screen_pixel_buf[iy * self.screen_pixel_size.width as usize * 4..];
+            unsafe {
+                std::ptr::copy(src.as_ptr(), dst.as_mut_ptr(), img.width * 4);
+            }
+        }
+    }
+
     pub fn clear(&mut self) {
         self.fill_rect_buf(
             &Rect::new(

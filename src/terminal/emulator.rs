@@ -172,9 +172,9 @@ impl<'a, 'b> Term<'a, 'b> {
 
     pub fn write(&mut self, buf: &[u8]) -> Result<(), String> {
         let buf: Vec<char> = std::str::from_utf8(buf).unwrap().chars().collect();
-        let mut itr = buf.iter();
+        let mut itr = buf.into_iter();
         while let Some(c) = itr.next() {
-            match *c {
+            match c {
                 '\x00' => break,
                 '\x07' => {
                     // bell
@@ -326,6 +326,12 @@ impl<'a, 'b> Term<'a, 'b> {
                                 SetCursorMode(_to_set) => {
                                     // currently, it is not meaningful
                                     // TODO
+                                }
+
+                                Sixel(img) => {
+                                    #[cfg(debug_assertions)]
+                                    println!("sixel: h={}, w={}", img.height, img.width);
+                                    self.renderer.draw_sixel(&img);
                                 }
                             }
                         }
