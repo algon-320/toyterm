@@ -1,7 +1,6 @@
 use super::Color;
 use super::Op;
 use std::iter::Peekable;
-use std::str::Chars;
 
 fn numeric<I>(seq: &mut Peekable<I>) -> u64
 where
@@ -66,9 +65,6 @@ where
                         match typ {
                             1 => {
                                 // HLS
-                                let h = ps[2] as u16;
-                                let l = ps[3] as u16;
-                                let s = ps[4] as u16;
                                 unimplemented!();
                             }
                             2 => {
@@ -119,6 +115,9 @@ where
         None => None,
     }
 }
+
+#[cfg(test)]
+use std::str::Chars;
 
 #[test]
 fn test_parse_numeric() {

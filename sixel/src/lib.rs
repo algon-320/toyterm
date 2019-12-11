@@ -146,7 +146,6 @@ where
                     x += 1;
                 }
             }
-            _ => panic!("unsupported"),
         }
     }
     img
