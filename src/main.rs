@@ -46,7 +46,7 @@ fn main() -> Result<(), String> {
     let columns = find_config!("columns", config::Value::into_int).unwrap_or(80) as usize;
 
     let pty = terminal::pty::PTY::open().unwrap();
-    match unistd::fork() {
+    match unsafe { unistd::fork() } {
         Ok(unistd::ForkResult::Parent { child, .. }) => {
             err_str(unistd::close(pty.slave))?;
 
