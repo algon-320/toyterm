@@ -212,7 +212,10 @@ impl<'a> FontSet<'a> {
 
         let char_size = {
             let tmp = regular.size_of_char('#').unwrap();
-            Size::new(tmp.0 as usize, tmp.1 as usize)
+            Size {
+                width: tmp.0 as usize,
+                height: tmp.1 as usize,
+            }
         };
 
         FontSet {
@@ -329,7 +332,10 @@ impl<'a, 'b> Renderer<'a, 'b> {
             screen_size,
             screen_pixel_buf: vec![0u8; width * height * 4],
             cell_attr: CellAttribute::default(),
-            screen_pixel_size: Size::new(width as u32, height as u32),
+            screen_pixel_size: Size {
+                width: width as u32,
+                height: height as u32,
+            },
         }
     }
 
@@ -488,7 +494,7 @@ impl<'a, 'b> Renderer<'a, 'b> {
     // range: [l, r)
     pub fn clear_line(&mut self, row: usize, range: Option<(usize, usize)>) -> Result<(), String> {
         let rect = {
-            let top_left = self.point_screen_to_pixel(Point::new(0, row));
+            let top_left = self.point_screen_to_pixel(Point { x: 0, y: row });
             if let Some(r) = range {
                 Rect::new(
                     (self.get_char_size().width * r.0) as i32,
@@ -511,10 +517,10 @@ impl<'a, 'b> Renderer<'a, 'b> {
     }
 
     fn point_screen_to_pixel(&self, sp: Point<ScreenCell>) -> Point<Pixel> {
-        Point::new(
-            sp.x as i32 * self.get_char_size().width as i32,
-            sp.y as i32 * self.get_char_size().height as i32,
-        )
+        Point {
+            x: sp.x as i32 * self.get_char_size().width as i32,
+            y: sp.y as i32 * self.get_char_size().height as i32,
+        }
     }
 
     pub fn scroll_up(&mut self, top_line: usize, bottom_line: usize) {

@@ -73,11 +73,11 @@ where
                     match fin_char {
                         // Cursor Home
                         Some('f') | Some('H') => match args.len() {
-                            0 => Some(ControlOp::CursorHome(Point::new(1, 1))),
-                            2 => Some(ControlOp::CursorHome(Point::new(
-                                args[1].unwrap_or(1) as usize,
-                                args[0].unwrap_or(1) as usize,
-                            ))),
+                            0 => Some(ControlOp::CursorHome(Point { x: 1, y: 1 })),
+                            2 => Some(ControlOp::CursorHome(Point {
+                                x: args[1].unwrap_or(1) as usize,
+                                y: args[0].unwrap_or(1) as usize,
+                            })),
                             _ => None,
                         },
                         // Cursor Up

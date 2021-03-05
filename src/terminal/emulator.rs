@@ -39,8 +39,8 @@ impl<'a, 'b> Term<'a, 'b> {
 
             screen_size: size,
             screen_begin: 0,
-            cursor: Point::new(0, 0),
-            saved_cursor_pos: Point::new(0, 0),
+            cursor: Point { x: 0, y: 0 },
+            saved_cursor_pos: Point { x: 0, y: 0 },
 
             top_line: 0,
             bottom_line: size.height - 1,
@@ -57,7 +57,7 @@ impl<'a, 'b> Term<'a, 'b> {
 
     pub fn reset(&mut self) {
         self.screen_begin = 0;
-        self.saved_cursor_pos = Point::new(0, 0);
+        self.saved_cursor_pos = Point { x: 0, y: 0 };
 
         self.top_line = 0;
         self.bottom_line = self.screen_size.height - 1;
@@ -213,7 +213,7 @@ impl<'a, 'b> Term<'a, 'b> {
                                 CursorHome(p) => {
                                     let x = wrap_range(p.x - 1, 0, self.screen_size.width - 1);
                                     let y = wrap_range(p.y - 1, 0, self.screen_size.height - 1);
-                                    self.cursor = Point::new(x, y);
+                                    self.cursor = Point { x, y };
                                 }
                                 CursorUp(am) => {
                                     let am = std::cmp::min(am, self.cursor.y - self.top_line);
@@ -287,7 +287,7 @@ impl<'a, 'b> Term<'a, 'b> {
                                     // set cursor to home position
                                     let x = wrap_range(0, 0, self.screen_size.width - 1);
                                     let y = wrap_range(0, 0, self.screen_size.height - 1);
-                                    self.cursor = Point::new(x, y);
+                                    self.cursor = Point { x, y };
                                 }
                                 ChangeCellAttribute(style, fg, bg) => {
                                     let mut attr = self.renderer.get_cell_attribute();

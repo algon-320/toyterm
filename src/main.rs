@@ -67,9 +67,18 @@ fn main() -> Result<(), String> {
                 "toyterm",
                 &sdl_context,
                 &ttf_context,
-                Size::new(columns, rows),
+                Size {
+                    width: columns,
+                    height: rows,
+                },
             );
-            let mut term = Term::new(&mut render_context, Size::new(columns, rows));
+            let mut term = Term::new(
+                &mut render_context,
+                Size {
+                    width: columns,
+                    height: rows,
+                },
+            );
 
             let mut event_pump = sdl_context.event_pump()?;
             let event_subsys = sdl_context.event().unwrap();
