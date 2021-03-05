@@ -2,7 +2,6 @@
 
 toyterm is a toy terminal emulator.
 
-
 ## Demo
 
 ![demo1.png](./demo/demo1.png)
@@ -34,27 +33,18 @@ When you want to uninstall, please simply remove `${HOME}/.terminfo/t/toyterm-25
 
 ```toml
 [font]
-regular = # full path to a ttf font file to use as the regular font
-bold = # full path to a ttf font file to use as bold font
-size = # the width of half-width char (in pixel)
+regular = "monospace" # font-family to use as the regular font
+bold = "monospace" # font-family to use as bold font
+size = 10 # the width of half-width char (in pixel)
 ```
 
-**Only monospaced font is available (now).**
-
-Here is my example
-```toml
-[font]
-regular = "/usr/share/fonts/truetype/ricty-diminished/RictyDiminished-Regular.ttf"
-bold = "/usr/share/fonts/truetype/ricty-diminished/RictyDiminished-Bold.ttf"
-size = 10
-```
+**Only monospaced fonts are supported currently.**
 
 ### 3. Run
 
 ```sh
 $ cargo run --release
 ```
-
 
 ## Functions
 

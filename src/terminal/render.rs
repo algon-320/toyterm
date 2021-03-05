@@ -184,22 +184,37 @@ impl<'a> FontSet<'a> {
         font_name_bold: &str,
         font_size: u16,
     ) -> Self {
+        let fc = fontconfig::Fontconfig::new().expect("fontconfig");
+
+        let font_path_regular = fc.find(font_name_regular, Some("Regular")).unwrap().path;
+
+        #[cfg(debug_assertions)]
+        println!("Regular font: {:?}", font_path_regular);
+
         let mut regular = ttf_context
-            .load_font(font_name_regular, font_size)
+            .load_font(font_path_regular, font_size)
             .map_err(|_| {
                 "Cannot open the regular font: please check your `settings.toml`".to_string()
             })
             .unwrap();
         regular.set_hinting(sdl2::ttf::Hinting::Light);
+
+        let font_path_bold = fc.find(font_name_bold, Some("Bold")).unwrap().path;
+
+        #[cfg(debug_assertions)]
+        println!("Bold font: {:?}", font_path_bold);
+
         let mut bold = ttf_context
-            .load_font(font_name_bold, font_size)
+            .load_font(font_path_bold, font_size)
             .map_err(|_| "Cannot open the bold font: please check your `settings.toml`".to_string())
             .unwrap();
         bold.set_hinting(sdl2::ttf::Hinting::Light);
+
         let char_size = {
             let tmp = regular.size_of_char('#').unwrap();
             Size::new(tmp.0 as usize, tmp.1 as usize)
         };
+
         FontSet {
             regular,
             bold,

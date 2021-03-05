@@ -27,8 +27,7 @@ light_white = [252, 250, 242]
 
 
 [font]
-# path to ttf file
-regular = #"/full/path/to/regular.ttf"
-bold = #"/full/path/to/bold.ttf"
+regular = "monospace"
+bold = "monospace"
 # the width of half-width char (in pixel)
 size = 10
