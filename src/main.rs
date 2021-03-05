@@ -11,7 +11,6 @@ extern crate sixel;
 mod basics;
 mod input;
 mod terminal;
-#[allow(dead_code)]
 mod utils;
 
 use std::sync::atomic::{AtomicBool, Ordering};

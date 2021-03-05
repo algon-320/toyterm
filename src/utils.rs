@@ -19,29 +19,6 @@ pub fn pretty_format_ascii_bytes(bytes: &[u8]) -> String {
         .fold("".to_string(), |s, x| s + &x)
 }
 
-// example: assert_eq!(parse_int_from_ascii(b"12345"), Some(12345))
-pub fn parse_int_from_ascii(bytes: &[u8]) -> Option<u32> {
-    if bytes.len() == 0 {
-        return None;
-    }
-    let mut ret = 0;
-    for c in bytes.iter() {
-        ret *= 10;
-        if char::from(*c).is_digit(10) {
-            ret += (*c - b'0') as u32
-        } else {
-            return None;
-        }
-    }
-    Some(ret)
-}
-
-pub fn fill_slice<T: Copy>(buf: &mut [T], v: T) {
-    for x in buf {
-        *x = v;
-    }
-}
-
 pub fn wrap_range<T: Ord>(v: T, l: T, h: T) -> T {
     if v < l {
         l
