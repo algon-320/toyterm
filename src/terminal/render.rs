@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 
 use sdl2::pixels::PixelFormatEnum;
@@ -7,7 +8,6 @@ use sdl2::ttf::Font;
 use sdl2::video::{Window, WindowContext};
 
 use crate::basics::*;
-use crate::utils::*;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -33,56 +33,58 @@ pub enum Color {
 impl Color {
     pub fn to_sdl_color(self) -> sdl2::pixels::Color {
         use sdl2::pixels::Color as Sdl2Color;
+
         lazy_static! {
-            static ref COLOR_CONFIG_TABLE: Option<std::collections::HashMap<String, config::Value>> = {
-                let mut tmp = config::Config::default();
-                tmp.merge(config::File::with_name("settings.toml")).ok()?;
-                tmp.get_table("color_scheme").ok()
+            static ref COLOR_CONFIG: HashMap<String, config::Value> = {
+                config::Config::default()
+                    .merge(config::File::with_name("settings.toml"))
+                    .and_then(|c| c.get_table("color_scheme"))
+                    .unwrap_or_else(|_| HashMap::new())
             };
-            static ref COLOR_BLACK: Sdl2Color =
-                get_config("black").unwrap_or(Sdl2Color::RGB(0, 0, 0));
-            static ref COLOR_RED: Sdl2Color =
-                get_config("red").unwrap_or(Sdl2Color::RGB(200, 0, 0));
-            static ref COLOR_YELLOW: Sdl2Color =
-                get_config("yellow").unwrap_or(Sdl2Color::RGB(200, 200, 0));
-            static ref COLOR_GREEN: Sdl2Color =
-                get_config("green").unwrap_or(Sdl2Color::RGB(0, 200, 0));
-            static ref COLOR_BLUE: Sdl2Color =
-                get_config("blue").unwrap_or(Sdl2Color::RGB(0, 0, 200));
-            static ref COLOR_MAGENTA: Sdl2Color =
-                get_config("magenta").unwrap_or(Sdl2Color::RGB(200, 0, 200));
-            static ref COLOR_CYAN: Sdl2Color =
-                get_config("cyan").unwrap_or(Sdl2Color::RGB(0, 200, 200));
-            static ref COLOR_WHITE: Sdl2Color =
-                get_config("white").unwrap_or(Sdl2Color::RGB(200, 200, 200));
-            static ref COLOR_GRAY: Sdl2Color =
-                get_config("gray").unwrap_or(Sdl2Color::RGB(120, 120, 120));
-            static ref COLOR_LIGHTRED: Sdl2Color =
-                get_config("light_red").unwrap_or(Sdl2Color::RGB(255, 0, 0));
-            static ref COLOR_LIGHTYELLOW: Sdl2Color =
-                get_config("light_yellow").unwrap_or(Sdl2Color::RGB(255, 255, 0));
-            static ref COLOR_LIGHTGREEN: Sdl2Color =
-                get_config("light_green").unwrap_or(Sdl2Color::RGB(0, 255, 0));
-            static ref COLOR_LIGHTBLUE: Sdl2Color =
-                get_config("light_blue").unwrap_or(Sdl2Color::RGB(0, 0, 255));
-            static ref COLOR_LIGHTMAGENTA: Sdl2Color =
-                get_config("light_magenta").unwrap_or(Sdl2Color::RGB(255, 0, 255));
-            static ref COLOR_LIGHTCYAN: Sdl2Color =
-                get_config("light_cyan").unwrap_or(Sdl2Color::RGB(0, 255, 255));
-            static ref COLOR_LIGHTWHITE: Sdl2Color =
-                get_config("light_white").unwrap_or(Sdl2Color::RGB(0, 255, 255));
         }
-        fn get_config(key: &str) -> Option<Sdl2Color> {
-            let mut col = COLOR_CONFIG_TABLE
-                .as_ref()?
-                .get(key)?
-                .clone()
-                .into_array()
-                .ok()?;
-            let b = col.pop()?.into_int().ok()?;
-            let g = col.pop()?.into_int().ok()?;
-            let r = col.pop()?.into_int().ok()?;
-            Some(Sdl2Color::RGB(r as u8, g as u8, b as u8))
+
+        fn get_sdl2_color(key: &str) -> Option<Sdl2Color> {
+            let col = extract_config!(COLOR_CONFIG, key, Vec<u8>)?;
+            if col.len() < 3 {
+                None
+            } else {
+                Some(Sdl2Color::RGB(col[0], col[1], col[2]))
+            }
+        }
+
+        lazy_static! {
+            static ref COLOR_BLACK: Sdl2Color =
+                get_sdl2_color("black").unwrap_or_else(|| Sdl2Color::RGB(0, 0, 0));
+            static ref COLOR_RED: Sdl2Color =
+                get_sdl2_color("red").unwrap_or_else(|| Sdl2Color::RGB(200, 0, 0));
+            static ref COLOR_YELLOW: Sdl2Color =
+                get_sdl2_color("yellow").unwrap_or_else(|| Sdl2Color::RGB(200, 200, 0));
+            static ref COLOR_GREEN: Sdl2Color =
+                get_sdl2_color("green").unwrap_or_else(|| Sdl2Color::RGB(0, 200, 0));
+            static ref COLOR_BLUE: Sdl2Color =
+                get_sdl2_color("blue").unwrap_or_else(|| Sdl2Color::RGB(0, 0, 200));
+            static ref COLOR_MAGENTA: Sdl2Color =
+                get_sdl2_color("magenta").unwrap_or_else(|| Sdl2Color::RGB(200, 0, 200));
+            static ref COLOR_CYAN: Sdl2Color =
+                get_sdl2_color("cyan").unwrap_or_else(|| Sdl2Color::RGB(0, 200, 200));
+            static ref COLOR_WHITE: Sdl2Color =
+                get_sdl2_color("white").unwrap_or_else(|| Sdl2Color::RGB(200, 200, 200));
+            static ref COLOR_GRAY: Sdl2Color =
+                get_sdl2_color("gray").unwrap_or_else(|| Sdl2Color::RGB(120, 120, 120));
+            static ref COLOR_LIGHTRED: Sdl2Color =
+                get_sdl2_color("light_red").unwrap_or_else(|| Sdl2Color::RGB(255, 0, 0));
+            static ref COLOR_LIGHTYELLOW: Sdl2Color =
+                get_sdl2_color("light_yellow").unwrap_or_else(|| Sdl2Color::RGB(255, 255, 0));
+            static ref COLOR_LIGHTGREEN: Sdl2Color =
+                get_sdl2_color("light_green").unwrap_or_else(|| Sdl2Color::RGB(0, 255, 0));
+            static ref COLOR_LIGHTBLUE: Sdl2Color =
+                get_sdl2_color("light_blue").unwrap_or_else(|| Sdl2Color::RGB(0, 0, 255));
+            static ref COLOR_LIGHTMAGENTA: Sdl2Color =
+                get_sdl2_color("light_magenta").unwrap_or_else(|| Sdl2Color::RGB(255, 0, 255));
+            static ref COLOR_LIGHTCYAN: Sdl2Color =
+                get_sdl2_color("light_cyan").unwrap_or_else(|| Sdl2Color::RGB(0, 255, 255));
+            static ref COLOR_LIGHTWHITE: Sdl2Color =
+                get_sdl2_color("light_white").unwrap_or_else(|| Sdl2Color::RGB(0, 255, 255));
         }
 
         match self {
@@ -239,24 +241,17 @@ impl<'a> RenderContext<'a> {
         screen_size: Size<usize>,
     ) -> Self {
         let font = {
-            let font_config = || -> Option<HashMap<String, config::Value>> {
-                let mut tmp = config::Config::default();
-                tmp.merge(config::File::with_name("settings.toml")).ok()?;
-                tmp.get_table("font").ok()
-            }();
-            macro_rules! find_config {
-                ($key:expr, $func:path) => {
-                    font_config
-                        .as_ref()
-                        .and_then(|t| $func(t.get($key)?.clone()).ok())
-                };
-            }
-            use config::Value;
+            let font_config: HashMap<String, config::Value> = {
+                config::Config::default()
+                    .merge(config::File::with_name("settings.toml"))
+                    .and_then(|c| c.get_table("font"))
+                    .unwrap_or_else(|_| HashMap::new())
+            };
             FontSet::new(
                 ttf_context,
-                &find_config!("regular", Value::into_str).unwrap_or(format!("")),
-                &find_config!("bold", Value::into_str).unwrap_or(format!("")),
-                2 * find_config!("size", Value::into_int).unwrap_or(10) as u16,
+                &extract_config!(font_config, "regular", String).unwrap_or_else(String::new),
+                &extract_config!(font_config, "bold", String).unwrap_or_else(String::new),
+                2 * extract_config!(font_config, "size", u16).unwrap_or(10),
             )
         };
         let window = {
@@ -351,7 +346,7 @@ impl<'a, 'b> Renderer<'a, 'b> {
     }
 
     // return char width
-    pub fn draw_char(&mut self, c: char, p: Point<ScreenCell>) -> Result<usize, String> {
+    pub fn draw_char(&mut self, c: char, p: Point<ScreenCell>) -> usize {
         let mut fg_color = self.cell_attr.fg.to_sdl_color();
         let mut bg_color = self.cell_attr.bg.to_sdl_color();
 
@@ -368,8 +363,8 @@ impl<'a, 'b> Renderer<'a, 'b> {
                 &self.context.font.regular
             };
             // draw □ if the font doesn't have this glyph
-            let c = if f.find_glyph(c).is_none() { '□' } else { c };
-            let surface = err_str(f.render_char(c).blended(fg_color))?;
+            let c = if f.find_glyph(c).is_none() { '?' } else { c };
+            let surface = f.render_char(c).blended(fg_color).expect("sdl2");
 
             let cols = CharWidth::from_char(c).columns();
             let mut cell_canvas = {
@@ -377,14 +372,15 @@ impl<'a, 'b> Renderer<'a, 'b> {
                     (self.get_char_size().width * cols) as u32,
                     self.get_char_size().height as u32,
                     PixelFormatEnum::ARGB8888,
-                )?;
+                )
+                .expect("sdl2");
                 let mut cvs = tmp.into_canvas().unwrap();
                 cvs.set_draw_color(bg_color);
                 cvs.fill_rect(None).unwrap();
                 cvs
             };
             let tc = cell_canvas.texture_creator();
-            let texture = err_str(tc.create_texture_from_surface(surface)).unwrap();
+            let texture = tc.create_texture_from_surface(surface).unwrap();
             cell_canvas.copy(&texture, None, None).unwrap();
 
             // draw under line
@@ -400,7 +396,7 @@ impl<'a, 'b> Renderer<'a, 'b> {
             }
 
             self.cache.insert(
-                cell.clone(),
+                cell,
                 (
                     cols,
                     cell_canvas
@@ -423,11 +419,10 @@ impl<'a, 'b> Renderer<'a, 'b> {
                     raw_data[i * 4 + k];
             }
         }
-
-        Ok(*cols)
+        *cols
     }
 
-    pub fn render(&mut self, cursor_pos: Option<&Point<ScreenCell>>) -> Result<(), String> {
+    pub fn render(&mut self, cursor_pos: Option<&Point<ScreenCell>>) {
         let src = &self.screen_pixel_buf[..];
         self.screen_texture
             .with_lock(None, |dst: &mut [u8], _: usize| unsafe {
@@ -435,7 +430,10 @@ impl<'a, 'b> Renderer<'a, 'b> {
             })
             .unwrap();
 
-        err_str(self.context.canvas.copy(&self.screen_texture, None, None))?;
+        self.context
+            .canvas
+            .copy(&self.screen_texture, None, None)
+            .expect("driver error");
         if let Some(c) = cursor_pos {
             let rect = Rect::new(
                 (self.get_char_size().width * c.x) as i32,
@@ -445,10 +443,9 @@ impl<'a, 'b> Renderer<'a, 'b> {
             );
             let col = self.cell_attr.fg.to_sdl_color();
             self.context.canvas.set_draw_color(col);
-            self.context.canvas.fill_rect(rect)?;
+            self.context.canvas.fill_rect(rect).expect("driver error");
         }
         self.context.canvas.present();
-        Ok(())
     }
 
     fn fill_rect_buf(&mut self, rect: &Rect, c: &Color) {
@@ -458,10 +455,8 @@ impl<'a, 'b> Renderer<'a, 'b> {
             let y = (y + rect.y) as usize;
             for x in 0..rect.w {
                 let x = (x + rect.x) as usize;
-                for k in 0..4 {
-                    self.screen_pixel_buf
-                        [(y * self.screen_pixel_size.width as usize + x) * 4 + k] = pix[k];
-                }
+                let pixel_begin = (y * self.screen_pixel_size.width as usize + x) * 4;
+                self.screen_pixel_buf[pixel_begin..pixel_begin + 4].copy_from_slice(&pix);
             }
         }
     }
@@ -488,11 +483,11 @@ impl<'a, 'b> Renderer<'a, 'b> {
             ),
             &self.cell_attr.bg.clone(),
         );
-        self.render(None).unwrap();
+        self.render(None);
     }
 
     // range: [l, r)
-    pub fn clear_line(&mut self, row: usize, range: Option<(usize, usize)>) -> Result<(), String> {
+    pub fn clear_line(&mut self, row: usize, range: Option<(usize, usize)>) {
         let rect = {
             let top_left = self.point_screen_to_pixel(Point { x: 0, y: row });
             if let Some(r) = range {
@@ -513,7 +508,6 @@ impl<'a, 'b> Renderer<'a, 'b> {
         };
         let bg = self.cell_attr.bg;
         self.fill_rect_buf(&rect, &bg);
-        Ok(())
     }
 
     fn point_screen_to_pixel(&self, sp: Point<ScreenCell>) -> Point<Pixel> {
@@ -535,7 +529,7 @@ impl<'a, 'b> Renderer<'a, 'b> {
                 row_block * (bottom_line - top_line),
             );
         }
-        self.clear_line(bottom_line, None).unwrap();
+        self.clear_line(bottom_line, None);
     }
     pub fn scroll_down(&mut self, top_line: usize, bottom_line: usize) {
         let line_bytes = (self.screen_pixel_size.width * 4) as usize;
@@ -547,6 +541,6 @@ impl<'a, 'b> Renderer<'a, 'b> {
                 row_block * (bottom_line - top_line),
             );
         }
-        self.clear_line(top_line, None).unwrap();
+        self.clear_line(top_line, None);
     }
 }

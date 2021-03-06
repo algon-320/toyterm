@@ -1,12 +1,8 @@
-pub fn err_str<T, E: ToString>(e: Result<T, E>) -> std::result::Result<T, String> {
-    e.map_err(|e| e.to_string())
-}
-
 pub fn pretty_format_ascii_bytes(bytes: &[u8]) -> String {
-    const TABLE: [&str; 33] = [
+    const TABLE: [&str; 32] = [
         "NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL", "BS", "HT", "LF", "VT", "FF", "CR",
         "SO", "SI", "DLE", "DC1", "DC2", "DC3", "DC4", "NAK", "SYN", "ETB", "CAN", "EM", "SUB",
-        "ESC", "FS", "GS", "RS", "US", "` `",
+        "ESC", "FS", "GS", "RS", "US",
     ];
     bytes
         .iter()

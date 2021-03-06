@@ -26,7 +26,7 @@ pub enum ControlOp {
     Ignore,
 }
 
-pub fn parse_escape_sequence<'a, I>(itr: &mut I) -> (Option<ControlOp>, usize)
+pub fn parse_escape_sequence<I>(itr: &mut I) -> (Option<ControlOp>, usize)
 where
     I: Iterator<Item = char> + Clone,
 {
@@ -44,20 +44,20 @@ where
                         while let Some(c) = itr.next() {
                             read_bytes += 1;
                             match c {
-                                x if '0' <= x && x <= '9' => {
+                                '0'..='9' => {
                                     if tmp.is_none() {
                                         tmp = Some(0);
                                     } else {
                                         tmp = Some(tmp.unwrap() * 10);
                                     }
-                                    tmp = Some(tmp.unwrap() + x.to_digit(10).unwrap());
+                                    tmp = Some(tmp.unwrap() + c.to_digit(10).unwrap());
                                 }
                                 ';' => {
                                     args.push(tmp);
                                     tmp = None;
                                 }
-                                x => {
-                                    fin_char = Some(x);
+                                _ => {
+                                    fin_char = Some(c);
                                     break;
                                 }
                             }
@@ -161,9 +161,9 @@ where
                                 bg = Some(def.bg);
                             }
 
-                            let mut itr = args.into_iter();
-                            while let Some(a) = itr.next() {
-                                match a {
+                            let mut args = args.into_iter();
+                            while let Some(arg) = args.next() {
+                                match arg {
                                     Some(0) => {
                                         // reset
                                         let def = CellAttribute::default();
@@ -184,7 +184,7 @@ where
                                         style = Some(Style::Reverse);
                                     }
                                     Some(x) if x == 38 || x == 48 => {
-                                        let color = match (itr.next(), itr.next()) {
+                                        let color = match (args.next(), args.next()) {
                                             (Some(Some(5)), Some(Some(x))) if (x <= 15) => {
                                                 Color::from_index(x as u8)
                                             }
@@ -195,17 +195,17 @@ where
                                             }
                                             (Some(Some(5)), Some(Some(x))) if (x <= 255) => {
                                                 let x = x - 16;
-                                                let r = (x / 36) as u8;
-                                                let g = ((x % 36) / 6) as u8;
-                                                let b = (x % 6) as u8;
-                                                Color::RGB(r * 51, g * 51, b * 51)
+                                                let red = (x / 36) as u8;
+                                                let green = ((x % 36) / 6) as u8;
+                                                let blue = (x % 6) as u8;
+                                                Color::RGB(red * 51, green * 51, blue * 51)
                                             }
-                                            (Some(Some(2)), Some(Some(r))) => {
+                                            (Some(Some(2)), Some(Some(red))) => {
                                                 use std::convert::identity as e;
-                                                let g = itr.next().and_then(e).unwrap_or(255);
-                                                let b = itr.next().and_then(e).unwrap_or(255);
+                                                let green = args.next().and_then(e).unwrap_or(255);
+                                                let blue = args.next().and_then(e).unwrap_or(255);
                                                 read_bytes += 2;
-                                                Color::RGB(r as u8, g as u8, b as u8)
+                                                Color::RGB(red as u8, green as u8, blue as u8)
                                             }
                                             _ => Color::White,
                                         };
@@ -217,7 +217,7 @@ where
                                         read_bytes += 2;
                                     }
                                     // foreground color
-                                    Some(x) if (31 <= x && x <= 39) => {
+                                    Some(x) if (31..=39).contains(&x) => {
                                         let c = x % 10;
                                         fg = Some(match c {
                                             1 => Color::Red,
@@ -230,7 +230,7 @@ where
                                         });
                                     }
                                     // background color
-                                    Some(x) if (41 <= x && x <= 49) => {
+                                    Some(x) if (41..=49).contains(&x) => {
                                         let c = x % 10;
                                         bg = Some(match c {
                                             1 => Color::Red,
@@ -261,7 +261,7 @@ where
 
                         Some(x) => {
                             // #[cfg(debug_assertions)]
-                            println!("unsupported: \\E[{}", char::from(x));
+                            println!("unsupported: \\E[{}", x);
                             None
                         }
                         None => None,

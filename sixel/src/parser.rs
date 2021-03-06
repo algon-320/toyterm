@@ -7,8 +7,8 @@ where
     I: Iterator<Item = char>,
 {
     let mut num = 0u64;
-    while let Some(c) = seq.peek() {
-        if &'0' <= c && c <= &'9' {
+    while let Some(&c) = seq.peek() {
+        if ('0'..='9').contains(&c) {
             let c = seq.next().unwrap();
             num = num.saturating_mul(10);
             num = num.saturating_add(c.to_digit(10).unwrap() as u64);
@@ -24,10 +24,10 @@ where
     I: Iterator<Item = char>,
 {
     let mut ps: Vec<u64> = vec![];
-    while let Some(_) = seq.peek() {
+    while let Some(&c) = seq.peek() {
         let tmp = numeric(seq);
         ps.push(tmp);
-        if seq.peek() != Some(&&';') {
+        if c != ';' {
             break;
         }
         seq.next();
@@ -99,11 +99,11 @@ where
                     let x = seq.next().unwrap();
                     Some(Op::Sixel {
                         bits: ((x as u32) - ('?' as u32)) as u8,
-                        rep: rep,
+                        rep,
                     })
                 }
             }
-            x if '?' <= x && x <= '~' => {
+            x if ('?'..='~').contains(&x) => {
                 seq.next();
                 Some(Op::Sixel {
                     bits: ((x as u32) - ('?' as u32)) as u8,

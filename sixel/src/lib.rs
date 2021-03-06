@@ -7,20 +7,13 @@ type SixelSeq = Vec<u8>;
 const SIX: usize = 6;
 const EACH_PIXEL: usize = 4;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Image {
     pub height: usize,
     pub width: usize,
     pub buf: Vec<u8>,
 }
 impl Image {
-    pub fn new() -> Self {
-        Image {
-            height: 0,
-            width: 0,
-            buf: Vec::new(),
-        }
-    }
     fn resize(&mut self) {
         self.buf
             .resize_with(self.height * self.width * EACH_PIXEL, Default::default);
@@ -71,13 +64,14 @@ pub fn decode<I>(
 where
     I: Iterator<Item = char>,
 {
-    let mut img = Image::new();
-    img.buf = vec![];
-    img.width = image_width;
-    img.height = if let Some(h) = image_height {
-        (h + SIX - 1) / SIX * SIX
-    } else {
-        SIX
+    let mut img = Image {
+        buf: Vec::new(),
+        width: image_width,
+        height: if let Some(h) = image_height {
+            (h + SIX - 1) / SIX * SIX
+        } else {
+            SIX
+        },
     };
     #[cfg(debug_assertions)]
     println!("w={}, h={}", img.width, img.height);

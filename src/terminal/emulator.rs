@@ -51,8 +51,8 @@ impl<'a, 'b> Term<'a, 'b> {
         term
     }
 
-    pub fn render(&mut self) -> Result<(), String> {
-        self.renderer.render(Some(&self.cursor))
+    pub fn render(&mut self) {
+        self.renderer.render(Some(&self.cursor));
     }
 
     pub fn reset(&mut self) {
@@ -148,29 +148,24 @@ impl<'a, 'b> Term<'a, 'b> {
         }
     }
 
-    pub fn insert_char(&mut self, c: char) -> Result<(), String> {
+    pub fn insert_char(&mut self, c: char) {
         if self.cursor.x + CharWidth::from_char(c).columns() > self.right_column + 1 {
             self.move_cursor(CursorMove::NewLine);
             self.move_cursor(CursorMove::LeftMost);
         }
 
-        let cols = self
-            .renderer
-            .draw_char(c, self.cursor)
-            .map_err(|e| format!("insert_char: c={}, error: {}", c, e))?;
+        let cols = self.renderer.draw_char(c, self.cursor);
         for _ in 0..cols {
             self.move_cursor(CursorMove::Next);
         }
-        Ok(())
     }
-    pub fn insert_chars(&mut self, chars: &[char]) -> Result<(), String> {
+    pub fn insert_chars(&mut self, chars: &[char]) {
         for c in chars.iter() {
-            self.insert_char(*c)?;
+            self.insert_char(*c);
         }
-        Ok(())
     }
 
-    pub fn write(&mut self, buf: &[u8]) -> Result<(), String> {
+    pub fn write(&mut self, buf: &[u8]) {
         let buf: Vec<char> = std::str::from_utf8(buf).unwrap().chars().collect();
         let mut itr = buf.into_iter();
         while let Some(c) = itr.next() {
@@ -243,39 +238,39 @@ impl<'a, 'b> Term<'a, 'b> {
                                     self.renderer.clear_line(
                                         self.cursor.y,
                                         Some((self.cursor.x, self.screen_size.width)),
-                                    )?;
+                                    );
                                 }
                                 EraseStartOfLine => {
                                     self.renderer
-                                        .clear_line(self.cursor.y, Some((0, self.cursor.x + 1)))?;
+                                        .clear_line(self.cursor.y, Some((0, self.cursor.x + 1)));
                                 }
                                 EraseLine => {
-                                    self.renderer.clear_line(self.cursor.y, None)?;
+                                    self.renderer.clear_line(self.cursor.y, None);
                                 }
                                 EraseDown => {
                                     // erase end of line
                                     self.renderer.clear_line(
                                         self.cursor.y,
                                         Some((self.cursor.x, self.screen_size.width)),
-                                    )?;
+                                    );
                                     // erase down
                                     for row in self.cursor.y + 1..self.screen_size.height {
-                                        self.renderer.clear_line(row, None)?;
+                                        self.renderer.clear_line(row, None);
                                     }
                                 }
                                 EraseUp => {
                                     // erase start of line
                                     self.renderer
-                                        .clear_line(self.cursor.y, Some((0, self.cursor.x + 1)))?;
+                                        .clear_line(self.cursor.y, Some((0, self.cursor.x + 1)));
                                     // erase up
                                     for row in 0..self.cursor.y {
-                                        self.renderer.clear_line(row, None)?;
+                                        self.renderer.clear_line(row, None);
                                     }
                                 }
                                 EraseScreen => {
                                     // erase entire screen
                                     for row in 0..self.screen_size.height {
-                                        self.renderer.clear_line(row, None)?;
+                                        self.renderer.clear_line(row, None);
                                     }
                                 }
                                 Reset => {
@@ -337,17 +332,16 @@ impl<'a, 'b> Term<'a, 'b> {
                         }
                         (None, sz) => {
                             // print sequence as string
-                            self.insert_chars(&['^', '['])?;
-                            self.insert_chars(&itr.as_slice()[..sz])?;
+                            self.insert_chars(&['^', '[']);
+                            self.insert_chars(&itr.as_slice()[..sz]);
                             if sz > 0 {
                                 itr.nth(sz - 1);
                             }
                         }
                     }
                 }
-                x => self.insert_char(x)?,
+                x => self.insert_char(x),
             }
         }
-        Ok(())
     }
 }
