@@ -1,12 +1,3 @@
-macro_rules! extract_config {
-    ($config:expr, $key:expr, $result:ty) => {{
-        $config
-            .get($key)
-            .cloned()
-            .and_then(|v| v.try_into::<$result>().ok())
-    }};
-}
-
 mod basics;
 mod input;
 mod terminal;
@@ -26,10 +17,18 @@ use sdl2::event::Event;
 use basics::*;
 use terminal::Term;
 
-const BUFFER_SIZE: usize = 1024 * 10;
+#[macro_export]
+macro_rules! extract_config {
+    ($config:expr, $key:expr, $result:ty) => {{
+        $config
+            .get($key)
+            .cloned()
+            .and_then(|v| v.try_into::<$result>().ok())
+    }};
+}
 
 fn main() -> Result<()> {
-    let general_config: HashMap<String, _> = {
+    let general_config = {
         config::Config::default()
             .merge(config::File::with_name("settings.toml"))
             .and_then(|c| c.get_table("general"))
@@ -116,7 +115,7 @@ fn main() -> Result<()> {
                 });
             }
 
-            let mut buf = vec![0; BUFFER_SIZE];
+            let mut buf = vec![0; 1024];
             for event in event_pump.wait_iter() {
                 match event {
                     Event::Quit { .. } => break,

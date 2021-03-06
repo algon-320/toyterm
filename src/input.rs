@@ -11,9 +11,12 @@ pub fn keyevent_to_bytes(event: &sdl2::event::Event) -> Option<Vec<u8>> {
             Some(s.clone().into_bytes().to_vec())
         }
         Event::TextEditing {
-            text: s,
-            start: st,
-            length: len,
+            #[cfg(debug_assertions)]
+                text: s,
+            #[cfg(debug_assertions)]
+                start: st,
+            #[cfg(debug_assertions)]
+                length: len,
             ..
         } => {
             #[cfg(debug_assertions)]

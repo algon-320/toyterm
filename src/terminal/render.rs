@@ -8,6 +8,7 @@ use sdl2::ttf::Font;
 use sdl2::video::{Window, WindowContext};
 
 use crate::basics::*;
+use crate::extract_config;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
