@@ -250,11 +250,33 @@ where
 
                         Some('?') => {
                             read_bytes += 1;
-                            let p =
-                                || -> Option<(char, char)> { Some((itr.next()?, itr.next()?)) }();
-                            match p {
-                                Some(('1', 'h')) => Some(ControlOp::SetCursorMode(true)),
-                                Some(('1', 'l')) => Some(ControlOp::SetCursorMode(false)),
+                            let (arg, fin_char) = {
+                                let mut fin_char = None;
+                                let mut arg = None;
+                                while let Some(c) = itr.next() {
+                                    read_bytes += 1;
+                                    match c {
+                                        c @ '0'..='9' => {
+                                            let c = c.to_digit(10).unwrap();
+                                            if let Some(tmp) = arg {
+                                                arg = Some(tmp * 10 + c);
+                                            } else {
+                                                arg = Some(c);
+                                            }
+                                        }
+                                        _ => {
+                                            fin_char = Some(c);
+                                            break;
+                                        }
+                                    }
+                                }
+                                (arg, fin_char)
+                            };
+                            match (arg, fin_char) {
+                                (Some(1), Some('h')) => Some(ControlOp::SetCursorMode(true)),
+                                (Some(1), Some('l')) => Some(ControlOp::SetCursorMode(false)),
+                                (Some(2004), Some('h')) => Some(ControlOp::Ignore),
+                                (Some(2004), Some('l')) => Some(ControlOp::Ignore),
                                 _ => None,
                             }
                         }
