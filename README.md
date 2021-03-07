@@ -35,7 +35,7 @@ When you want to uninstall, please simply remove `${HOME}/.terminfo/t/toyterm-25
 [font]
 regular = "monospace" # font-family to use as the regular font
 bold = "monospace" # font-family to use as bold font
-size = 10 # the width of half-width char (in pixel)
+size = 24  # glyph height (in pixel)
 ```
 
 **Only monospaced fonts are supported currently.**

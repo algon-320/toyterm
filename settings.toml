@@ -8,8 +8,7 @@ rows = 24
 [font]
 regular = "monospace"
 bold = "monospace"
-# glyph width of half-width character (in pixel)
-size = 10
+size = 24  # glyph height (in pixel)
 
 [color_scheme]
 black = [15, 15, 15]
