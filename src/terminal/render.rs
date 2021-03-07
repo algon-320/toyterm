@@ -244,9 +244,19 @@ impl<'a> RenderContext<'a> {
             };
             FontSet::new(
                 ttf_context,
-                &config_get!(font_config, "regular", String).unwrap_or_else(String::new),
-                &config_get!(font_config, "bold", String).unwrap_or_else(String::new),
-                2 * config_get!(font_config, "size", u16).unwrap_or(10),
+                &config_get!(font_config, "regular", String).unwrap_or_else(|| {
+                    log::warn!("Regular font not specified");
+                    String::new()
+                }),
+                &config_get!(font_config, "bold", String).unwrap_or_else(|| {
+                    log::warn!("Bold font not specified");
+                    String::new()
+                }),
+                config_get!(font_config, "size", u16).unwrap_or_else(|| {
+                    log::warn!("font size not specified");
+                    log::info!("default font size: {}", 20);
+                    20
+                }),
             )
         };
         let window = {
