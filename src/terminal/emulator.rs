@@ -1,9 +1,18 @@
 use crate::basics::*;
-use crate::utils::*;
 
 use super::control::parse_escape_sequence;
 use super::control::ControlOp;
 use super::render::*;
+
+fn wrap_range<T: Ord>(v: T, l: T, h: T) -> T {
+    if v < l {
+        l
+    } else if h < v {
+        h
+    } else {
+        v
+    }
+}
 
 #[derive(Debug, Clone, Copy, Hash)]
 pub enum CursorMove {

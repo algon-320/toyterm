@@ -1,15 +1,14 @@
 mod basics;
 mod input;
 mod terminal;
-mod utils;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::os::unix::io::RawFd;
+use std::sync::mpsc;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use nix::ioctl_write_ptr_bad;
-use nix::sys::{select, signal};
+use nix::sys::{signal, wait};
 use nix::unistd;
 use sdl2::event::Event;
 
@@ -26,6 +25,12 @@ macro_rules! config_get {
     }};
 }
 
+fn tiocswinsz(pty_master: RawFd, winsz: &nix::pty::Winsize) -> Result<()> {
+    ioctl_write_ptr_bad!(tiocswinsz, nix::libc::TIOCSWINSZ, nix::pty::Winsize);
+    unsafe { tiocswinsz(pty_master, winsz as *const nix::pty::Winsize) }?;
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let general_config = {
         config::Config::default()
@@ -35,86 +40,82 @@ fn main() -> Result<()> {
     };
 
     let rows = config_get!(general_config, "rows", usize).unwrap_or(24);
-    let columns = config_get!(general_config, "columns", usize).unwrap_or(80);
+    let cols = config_get!(general_config, "columns", usize).unwrap_or(80);
 
     let pty = nix::pty::forkpty(None, None).expect("forkpty");
     match pty.fork_result {
         unistd::ForkResult::Parent { child, .. } => {
             // set screen size
-            const TIOCSWINSZ: usize = 0x5414;
-            ioctl_write_ptr_bad!(tiocswinsz, TIOCSWINSZ, nix::pty::Winsize);
             let winsz = nix::pty::Winsize {
                 ws_row: rows as u16,
-                ws_col: columns as u16,
+                ws_col: cols as u16,
                 ws_xpixel: 0, // unused
                 ws_ypixel: 0, // unused
             };
-            unsafe { tiocswinsz(pty.master, &winsz as *const nix::pty::Winsize) }?;
+            tiocswinsz(pty.master, &winsz)?;
 
-            let sdl_context = sdl2::init().unwrap();
-            let ttf_context = sdl2::ttf::init().unwrap();
+            let sdl_context = sdl2::init().expect("sdl2 init");
+            let ttf_context = sdl2::ttf::init().expect("sdl2 ttf init");
             let mut render_context = terminal::render::RenderContext::new(
                 "toyterm",
                 &sdl_context,
                 &ttf_context,
                 Size {
-                    width: columns,
+                    width: cols,
                     height: rows,
                 },
             );
             let mut term = Term::new(
                 &mut render_context,
                 Size {
-                    width: columns,
+                    width: cols,
                     height: rows,
                 },
             );
 
-            let mut event_pump = sdl_context.event_pump().map_err(|e| anyhow!("{}", e))?;
+            let mut event_pump = sdl_context.event_pump().expect("misuse of event_pump");
             let event_subsys = sdl_context.event().unwrap();
             let event_sender = event_subsys.event_sender();
-            let master_readable_event_id = unsafe { event_subsys.register_event().unwrap() };
 
-            let enqueued_flag = Arc::new(AtomicBool::new(false));
+            let master_readable_event_id = unsafe {
+                event_subsys
+                    .register_event()
+                    .expect("too many custom events")
+            };
 
-            // check whether the master FD is readable
+            let (send, recv) = mpsc::sync_channel(1);
             {
-                let enqueued = enqueued_flag.clone();
-                let master_fd = pty.master;
+                // spawn a thread which reads bytes from the slave
+                // and forwards them to the main thread
+                let mut buf = vec![0; 4 * 1024];
                 std::thread::spawn(move || loop {
-                    if enqueued.load(Ordering::Relaxed) {
-                        continue;
-                    }
+                    match unistd::read(pty.master, &mut buf) {
+                        Ok(nb) => {
+                            let bytes = buf[..nb].to_vec();
+                            send.send(bytes).unwrap();
 
-                    let mut readable = select::FdSet::new();
-                    readable.insert(master_fd);
-
-                    select::select(
-                        None,
-                        Some(&mut readable), // read
-                        None,                // write
-                        None,                // error
-                        None,
-                    )
-                    .unwrap();
-
-                    if readable.contains(master_fd) {
-                        event_sender
-                            .push_event(Event::User {
-                                timestamp: 0,
-                                window_id: 0,
-                                type_: master_readable_event_id,
-                                code: 0,
-                                data1: std::ptr::null_mut::<core::ffi::c_void>(),
-                                data2: std::ptr::null_mut::<core::ffi::c_void>(),
-                            })
-                            .unwrap();
-                        enqueued.store(true, Ordering::Relaxed);
+                            // notify
+                            event_sender
+                                .push_event(Event::User {
+                                    timestamp: 0,
+                                    window_id: 0,
+                                    type_: master_readable_event_id,
+                                    code: 0,
+                                    data1: std::ptr::null_mut::<core::ffi::c_void>(),
+                                    data2: std::ptr::null_mut::<core::ffi::c_void>(),
+                                })
+                                .unwrap();
+                        }
+                        Err(_) => {
+                            event_sender
+                                .push_event(Event::Quit { timestamp: 0 })
+                                .unwrap();
+                            break;
+                        }
                     }
                 });
             }
 
-            let mut buf = vec![0; 1024];
             for event in event_pump.wait_iter() {
                 match event {
                     Event::Quit { .. } => break,
@@ -124,7 +125,7 @@ fn main() -> Result<()> {
                             Some(bytes) => {
                                 #[cfg(debug_assertions)]
                                 println!("keydown: bytes: {:?}", bytes);
-                                nix::unistd::write(pty.master, bytes.as_slice())?;
+                                nix::unistd::write(pty.master, bytes)?;
                             }
                         }
                     }
@@ -132,58 +133,45 @@ fn main() -> Result<()> {
                         type_: user_event_id,
                         ..
                     } if user_event_id == master_readable_event_id => {
-                        // read from master FD
-                        let bytes = match nix::unistd::read(pty.master, &mut buf) {
-                            Err(_) => {
-                                break;
-                            }
-                            Ok(sz) => sz,
-                        };
+                        let bytes: Vec<u8> = recv.recv().unwrap();
 
                         #[cfg(debug_assertions)]
-                        println!("buf: {:?}", utils::pretty_format_ascii_bytes(&buf[..bytes]));
+                        println!("buf: {:?}", String::from_utf8_lossy(&bytes));
 
-                        term.write(&buf[..bytes]);
+                        term.write(&bytes);
                         term.render();
-
-                        enqueued_flag.store(false, Ordering::Relaxed);
                     }
                     _ => {}
                 }
             }
+
             signal::kill(child, signal::Signal::SIGHUP)?;
-            nix::sys::wait::waitpid(child, None)?;
+            wait::waitpid(child, None)?;
             Ok(())
         }
         unistd::ForkResult::Child => {
+            use std::env;
             use std::ffi::CString;
 
-            let shell = config_get!(general_config, "shell", String)
-                .unwrap_or_else(|| std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned()));
+            let shell_fallback = || env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
+            let shell = config_get!(general_config, "shell", String).unwrap_or_else(shell_fallback);
             let shell = CString::new(shell).expect("null-char");
 
-            let args: Vec<_> = {
-                let mut ret = Vec::new();
-                ret.push(shell.clone());
-                ret.extend(
-                    config_get!(general_config, "shell_args", Vec<String>)
-                        .map(|args| {
-                            args.into_iter()
-                                .map(|arg| CString::new(arg).unwrap())
-                                .collect()
-                        })
-                        .unwrap_or_else(Vec::new),
-                );
-                ret
-            };
+            let mut args: Vec<CString> = vec![shell.clone()];
+            args.extend(
+                config_get!(general_config, "shell_args", Vec<String>)
+                    .unwrap_or_else(Vec::new)
+                    .into_iter()
+                    .map(|arg| CString::new(arg).expect("null-char")),
+            );
 
-            std::env::set_var("TERM", "toyterm-256color");
-            std::env::set_var("COLORTERM", "truecolor");
-            std::env::set_var("COLUMNS", &columns.to_string());
-            std::env::set_var("LINES", &rows.to_string());
+            env::set_var("TERM", "toyterm-256color");
+            env::set_var("COLORTERM", "truecolor");
+            env::set_var("COLUMNS", &cols.to_string());
+            env::set_var("LINES", &rows.to_string());
 
-            nix::unistd::execv(&shell, &args).expect("failed to spawn a shell");
-            unreachable!()
+            unistd::execv(&shell, &args).expect("failed to spawn a shell");
+            unreachable!();
         }
     }
 }
