@@ -214,6 +214,7 @@ impl<'a> FontSet<'a> {
                 height: tmp.1 as usize,
             }
         };
+        log::debug!("char_size = {:?}", char_size);
 
         FontSet {
             regular,
