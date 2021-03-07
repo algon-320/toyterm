@@ -1,13 +1,17 @@
 [general]
 # if the 'shell' field is empty, $SHELL is used instead
-shell = "/usr/bin/bash" # path to shell
-shell_args = ["--noprofile", "--norc"] # arguments passed to the shell
+shell = "/usr/bin/bash"
+shell_args = ["--noprofile", "--norc"]  # arguments passed to the shell
 columns = 80
 rows = 24
 
+[font]
+regular = "monospace"
+bold = "monospace"
+# glyph width of half-width character (in pixel)
+size = 10
 
 [color_scheme]
-# original theme
 black = [15, 15, 15]
 red = [159, 53, 58]
 yellow = [202, 122, 44]
@@ -24,10 +28,3 @@ light_blue = [46, 169, 223]
 light_magenta = [152, 109, 178]
 light_cyan = [120, 194, 196]
 light_white = [252, 250, 242]
-
-
-[font]
-regular = "monospace"
-bold = "monospace"
-# the width of half-width char (in pixel)
-size = 10
