@@ -157,9 +157,9 @@ impl Default for CellAttribute {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Cell {
-    pub c: char,
-    pub attribute: CellAttribute,
+struct Cell {
+    c: char,
+    attribute: CellAttribute,
 }
 impl Cell {
     pub fn new(c: char, attr: CellAttribute) -> Self {
@@ -175,10 +175,10 @@ impl Default for Cell {
     }
 }
 
-pub struct FontSet<'a> {
-    pub regular: Font<'a, 'static>,
-    pub bold: Font<'a, 'static>,
-    pub char_size: Size<usize>,
+struct FontSet<'a> {
+    regular: Font<'a, 'static>,
+    bold: Font<'a, 'static>,
+    char_size: Size<usize>,
 }
 impl<'a> FontSet<'a> {
     fn new(
@@ -224,9 +224,9 @@ impl<'a> FontSet<'a> {
 }
 
 pub struct RenderContext<'a> {
-    pub font: FontSet<'a>,
-    pub canvas: Canvas<Window>,
-    pub texture_creator: TextureCreator<WindowContext>,
+    font: FontSet<'a>,
+    canvas: Canvas<Window>,
+    texture_creator: TextureCreator<WindowContext>,
 }
 impl<'a> RenderContext<'a> {
     pub fn new(
@@ -308,13 +308,12 @@ impl CharWidth {
 }
 
 pub struct Renderer<'a, 'b> {
-    pub context: &'a mut RenderContext<'b>,
-    pub cache: HashMap<Cell, (usize, Vec<u8>)>,
-    pub screen_texture: Texture,
-    pub screen_size: Size<usize>,
-    pub screen_pixel_buf: Vec<u8>,
-    pub cell_attr: CellAttribute,
-    pub screen_pixel_size: Size<u32>,
+    context: &'a mut RenderContext<'b>,
+    cache: HashMap<Cell, (usize, Vec<u8>)>,
+    screen_texture: Texture,
+    screen_pixel_buf: Vec<u8>,
+    cell_attr: CellAttribute,
+    screen_pixel_size: Size<u32>,
 }
 impl<'a, 'b> Renderer<'a, 'b> {
     pub fn new(render_context: &'a mut RenderContext<'b>, screen_size: Size<usize>) -> Self {
@@ -329,7 +328,6 @@ impl<'a, 'b> Renderer<'a, 'b> {
             context: render_context,
             cache: std::collections::HashMap::new(),
             screen_texture: texture,
-            screen_size,
             screen_pixel_buf: vec![0u8; width * height * 4],
             cell_attr: CellAttribute::default(),
             screen_pixel_size: Size {
