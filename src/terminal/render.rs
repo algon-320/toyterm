@@ -190,10 +190,7 @@ impl<'a> FontSet<'a> {
         let fc = fontconfig::Fontconfig::new().expect("fontconfig");
 
         let font_path_regular = fc.find(font_name_regular, Some("Regular")).unwrap().path;
-
-        #[cfg(debug_assertions)]
-        println!("Regular font: {:?}", font_path_regular);
-
+        log::info!("Regular font: {:?}", font_path_regular);
         let mut regular = ttf_context
             .load_font(font_path_regular, font_size)
             .map_err(|_| {
@@ -203,10 +200,7 @@ impl<'a> FontSet<'a> {
         regular.set_hinting(sdl2::ttf::Hinting::Light);
 
         let font_path_bold = fc.find(font_name_bold, Some("Bold")).unwrap().path;
-
-        #[cfg(debug_assertions)]
-        println!("Bold font: {:?}", font_path_bold);
-
+        log::info!("Bold font: {:?}", font_path_bold);
         let mut bold = ttf_context
             .load_font(font_path_bold, font_size)
             .map_err(|_| "Cannot open the bold font: please check your `settings.toml`".to_string())
@@ -466,7 +460,6 @@ impl<'a, 'b> Renderer<'a, 'b> {
     pub fn draw_sixel(&mut self, img: &sixel::Image) {
         for iy in 0..img.height {
             let src = &img.buf[iy * img.width * 4..(iy + 1) * img.width * 4];
-            // println!("src={:?}", src);
             let dst = &mut self.screen_pixel_buf[iy * self.screen_pixel_size.width as usize * 4..];
             unsafe {
                 std::ptr::copy(src.as_ptr(), dst.as_mut_ptr(), img.width * 4);

@@ -3,24 +3,10 @@ use sdl2::keyboard::Keycode;
 use sdl2::keyboard::Mod;
 
 pub fn keyevent_to_bytes(event: &sdl2::event::Event) -> Option<&[u8]> {
-    // println!("{:?}", event);
     match event {
-        Event::TextInput { text: s, .. } => {
-            #[cfg(debug_assertions)]
-            println!("text input: {}", s);
-            Some(s.as_bytes())
-        }
-        Event::TextEditing {
-            #[cfg(debug_assertions)]
-                text: s,
-            #[cfg(debug_assertions)]
-                start: st,
-            #[cfg(debug_assertions)]
-                length: len,
-            ..
-        } => {
-            #[cfg(debug_assertions)]
-            println!("text editing: s={}, start={}, length={}", s, st, len);
+        Event::TextInput { text: s, .. } => Some(s.as_bytes()),
+        Event::TextEditing { text: s, .. } => {
+            log::trace!("text editing: {:?}", s);
             None
         }
         Event::KeyDown {

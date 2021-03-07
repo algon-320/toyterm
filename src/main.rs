@@ -32,6 +32,8 @@ fn tiocswinsz(pty_master: RawFd, winsz: &nix::pty::Winsize) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
+
     let general_config = {
         config::Config::default()
             .merge(config::File::with_name("settings.toml"))
@@ -123,8 +125,7 @@ fn main() -> Result<()> {
                         match input::keyevent_to_bytes(&event) {
                             None => continue,
                             Some(bytes) => {
-                                #[cfg(debug_assertions)]
-                                println!("keydown: bytes: {:?}", bytes);
+                                log::trace!("<---(user): {:?}", String::from_utf8_lossy(&bytes));
                                 nix::unistd::write(pty.master, bytes)?;
                             }
                         }
@@ -134,9 +135,7 @@ fn main() -> Result<()> {
                         ..
                     } if user_event_id == master_readable_event_id => {
                         let bytes: Vec<u8> = recv.recv().unwrap();
-
-                        #[cfg(debug_assertions)]
-                        println!("buf: {:?}", String::from_utf8_lossy(&bytes));
+                        log::trace!("(shell)-->: {:?}", String::from_utf8_lossy(&bytes));
 
                         term.write(&bytes);
                         term.render();

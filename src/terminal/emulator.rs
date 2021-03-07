@@ -84,6 +84,7 @@ impl<'a, 'b> Term<'a, 'b> {
         last
     }
     pub fn move_cursor(&mut self, m: CursorMove) -> bool {
+        log::trace!("{:?}", m);
         use CursorMove::*;
         match m {
             Up => {
@@ -184,25 +185,19 @@ impl<'a, 'b> Term<'a, 'b> {
                     // bell
                 }
                 '\n' => {
-                    #[cfg(debug_assertions)]
-                    println!("[next line]");
                     self.move_cursor(CursorMove::NewLine);
                 }
                 '\r' => {
-                    #[cfg(debug_assertions)]
-                    println!("[move left most]");
                     self.move_cursor(CursorMove::LeftMost);
                 }
                 '\t' => {
-                    #[cfg(debug_assertions)]
-                    println!("[TAB]");
-                    while self.cursor.x % 8 > 0 {
-                        self.move_cursor(CursorMove::Right);
-                    }
+                    // FIXME: tabwidth=8
+                    let rep = (8 - self.cursor.x % 8) % 8;
+                    log::trace!("[TAB] CursorMove::Right * {}", rep);
+                    self.move_cursor_repeat(CursorMove::Right, rep);
                 }
                 '\x08' => {
-                    #[cfg(debug_assertions)]
-                    println!("[back]");
+                    log::trace!("[Backspace]");
                     self.move_cursor(CursorMove::Left);
                 }
 
@@ -211,8 +206,7 @@ impl<'a, 'b> Term<'a, 'b> {
                     use ControlOp::*;
                     match parse_escape_sequence(&mut itr) {
                         (Some(op), _) => {
-                            #[cfg(debug_assertions)]
-                            println!("{:?}", op);
+                            log::trace!("{:?}", op);
                             match op {
                                 CursorHome(p) => {
                                     let x = wrap_range(p.x - 1, 0, self.screen_size.width - 1);
@@ -328,13 +322,11 @@ impl<'a, 'b> Term<'a, 'b> {
                                 }
 
                                 SetCursorMode(_to_set) => {
-                                    // currently, it is not meaningful
                                     // TODO
                                 }
 
                                 Sixel(img) => {
-                                    #[cfg(debug_assertions)]
-                                    println!("sixel: h={}, w={}", img.height, img.width);
+                                    log::trace!("sixel: h={}, w={}", img.height, img.width);
                                     self.renderer.draw_sixel(&img);
                                 }
                             }

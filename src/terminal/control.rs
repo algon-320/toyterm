@@ -67,8 +67,7 @@ where
                         }
                         (args, fin_char)
                     };
-                    #[cfg(debug_assertions)]
-                    println!("args:{:?}", args);
+                    log::trace!("CSI({:?}, {:?})", args, fin_char);
 
                     match fin_char {
                         // Cursor Home
@@ -282,8 +281,7 @@ where
                         }
 
                         Some(x) => {
-                            // #[cfg(debug_assertions)]
-                            println!("unsupported: \\E[{}", x);
+                            log::warn!("unsupported: \\E[{}", x);
                             None
                         }
                         None => None,
@@ -305,8 +303,7 @@ where
                 '>' => Some(ControlOp::Ignore),
                 'c' => Some(ControlOp::Reset),
                 x => {
-                    // #[cfg(debug_assertions)]
-                    println!("unsupported: \\E{}", x);
+                    log::warn!("unsupported: \\E[{}", x);
                     None
                 }
             };
