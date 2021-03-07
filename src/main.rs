@@ -9,8 +9,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use nix::ioctl_write_ptr_bad;
-use nix::sys::select;
-use nix::sys::signal;
+use nix::sys::{select, signal};
 use nix::unistd;
 use sdl2::event::Event;
 
@@ -18,7 +17,7 @@ use basics::*;
 use terminal::Term;
 
 #[macro_export]
-macro_rules! extract_config {
+macro_rules! config_get {
     ($config:expr, $key:expr, $result:ty) => {{
         $config
             .get($key)
@@ -35,8 +34,8 @@ fn main() -> Result<()> {
             .unwrap_or_else(|_| HashMap::new())
     };
 
-    let rows = extract_config!(general_config, "rows", usize).unwrap_or(24);
-    let columns = extract_config!(general_config, "columns", usize).unwrap_or(80);
+    let rows = config_get!(general_config, "rows", usize).unwrap_or(24);
+    let columns = config_get!(general_config, "columns", usize).unwrap_or(80);
 
     let pty = nix::pty::forkpty(None, None).expect("forkpty");
     match pty.fork_result {
@@ -159,7 +158,7 @@ fn main() -> Result<()> {
         unistd::ForkResult::Child => {
             use std::ffi::CString;
 
-            let shell = extract_config!(general_config, "shell", String)
+            let shell = config_get!(general_config, "shell", String)
                 .unwrap_or_else(|| std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned()));
             let shell = CString::new(shell).expect("null-char");
 
@@ -167,7 +166,7 @@ fn main() -> Result<()> {
                 let mut ret = Vec::new();
                 ret.push(shell.clone());
                 ret.extend(
-                    extract_config!(general_config, "shell_args", Vec<String>)
+                    config_get!(general_config, "shell_args", Vec<String>)
                         .map(|args| {
                             args.into_iter()
                                 .map(|arg| CString::new(arg).unwrap())

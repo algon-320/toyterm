@@ -8,7 +8,7 @@ use sdl2::ttf::Font;
 use sdl2::video::{Window, WindowContext};
 
 use crate::basics::*;
-use crate::extract_config;
+use crate::config_get;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -45,7 +45,7 @@ impl Color {
         }
 
         fn get_sdl2_color(key: &str) -> Option<Sdl2Color> {
-            let col = extract_config!(COLOR_CONFIG, key, Vec<u8>)?;
+            let col = config_get!(COLOR_CONFIG, key, Vec<u8>)?;
             if col.len() < 3 {
                 None
             } else {
@@ -250,9 +250,9 @@ impl<'a> RenderContext<'a> {
             };
             FontSet::new(
                 ttf_context,
-                &extract_config!(font_config, "regular", String).unwrap_or_else(String::new),
-                &extract_config!(font_config, "bold", String).unwrap_or_else(String::new),
-                2 * extract_config!(font_config, "size", u16).unwrap_or(10),
+                &config_get!(font_config, "regular", String).unwrap_or_else(String::new),
+                &config_get!(font_config, "bold", String).unwrap_or_else(String::new),
+                2 * config_get!(font_config, "size", u16).unwrap_or(10),
             )
         };
         let window = {
