@@ -365,8 +365,8 @@ impl<'a, 'b> Renderer<'a, 'b> {
             } else {
                 &self.context.font.regular
             };
-            // draw □ if the font doesn't have this glyph
-            let c = if f.find_glyph(c).is_none() { '?' } else { c };
+            // draw � if the font doesn't have this glyph
+            let c = if f.find_glyph(c).is_none() { '�' } else { c };
             let surface = f.render_char(c).blended(fg_color).expect("sdl2");
 
             let cols = CharWidth::from_char(c).columns();
