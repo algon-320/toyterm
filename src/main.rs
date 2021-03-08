@@ -58,17 +58,40 @@ fn main() -> Result<()> {
 
             let sdl_context = sdl2::init().expect("sdl2 init");
             let ttf_context = sdl2::ttf::init().expect("sdl2 ttf init");
-            let mut render_context = terminal::render::RenderContext::new(
-                "toyterm",
-                &sdl_context,
-                &ttf_context,
+            let fonts = terminal::render::load_fonts(&ttf_context);
+
+            let window = {
+                let video = sdl_context.video().unwrap();
+                log::info!("video driver: {}", video.current_video_driver());
+                video
+                    .window(
+                        "toyterm",
+                        (fonts.char_size.width * cols) as u32,
+                        (fonts.char_size.height * rows) as u32,
+                    )
+                    .position_centered()
+                    .build()
+                    .unwrap()
+            };
+            let canvas = window
+                .into_canvas()
+                .accelerated()
+                .target_texture()
+                .build()
+                .unwrap();
+            let texture_creator = canvas.texture_creator();
+            let renderer = terminal::render::Renderer::new(
+                fonts,
+                canvas,
+                &texture_creator,
                 Size {
                     width: cols,
                     height: rows,
                 },
             );
+
             let mut term = Term::new(
-                &mut render_context,
+                renderer,
                 Size {
                     width: cols,
                     height: rows,
@@ -90,31 +113,48 @@ fn main() -> Result<()> {
                 // spawn a thread which reads bytes from the slave
                 // and forwards them to the main thread
                 let mut buf = vec![0; 4 * 1024];
-                std::thread::spawn(move || loop {
-                    match unistd::read(pty.master, &mut buf) {
-                        Ok(nb) => {
-                            let bytes = buf[..nb].to_vec();
-                            send.send(bytes).unwrap();
-
-                            // notify
-                            event_sender
-                                .push_event(Event::User {
-                                    timestamp: 0,
-                                    window_id: 0,
-                                    type_: master_readable_event_id,
-                                    code: 0,
-                                    data1: std::ptr::null_mut::<core::ffi::c_void>(),
-                                    data2: std::ptr::null_mut::<core::ffi::c_void>(),
-                                })
-                                .unwrap();
-                        }
-                        Err(_) => {
-                            event_sender
-                                .push_event(Event::Quit { timestamp: 0 })
-                                .unwrap();
-                            break;
+                std::thread::spawn(move || 'thread: loop {
+                    let mut bytes = Vec::new();
+                    loop {
+                        match unistd::read(pty.master, &mut buf) {
+                            Ok(nb) => {
+                                bytes.extend_from_slice(&buf[..nb]);
+                                if nb + 1 == buf.len() {
+                                    use nix::poll::{poll, PollFd, PollFlags};
+                                    let mut pollfd = [PollFd::new(pty.master, PollFlags::POLLIN)];
+                                    poll(&mut pollfd, 0).expect("poll");
+                                    let result = pollfd[0].revents().expect("revents");
+                                    if result.contains(PollFlags::POLLIN) {
+                                        // we can read more data from the slave
+                                        log::debug!("read more");
+                                        continue;
+                                    }
+                                    assert!(!result.contains(PollFlags::POLLERR));
+                                }
+                                break;
+                            }
+                            Err(_) => {
+                                event_sender
+                                    .push_event(Event::Quit { timestamp: 0 })
+                                    .unwrap();
+                                break 'thread;
+                            }
                         }
                     }
+                    log::trace!("received {} bytes", bytes.len());
+                    send.send(bytes).unwrap();
+
+                    // notify
+                    event_sender
+                        .push_event(Event::User {
+                            timestamp: 0,
+                            window_id: 0,
+                            type_: master_readable_event_id,
+                            code: 0,
+                            data1: std::ptr::null_mut::<core::ffi::c_void>(),
+                            data2: std::ptr::null_mut::<core::ffi::c_void>(),
+                        })
+                        .unwrap();
                 });
             }
 

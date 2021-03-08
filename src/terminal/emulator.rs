@@ -27,11 +27,10 @@ pub enum CursorMove {
     NewLine,
 }
 
-pub struct Term<'a, 'b> {
-    renderer: Renderer<'a, 'b>,
+pub struct Term<'ttf, 'texture> {
+    renderer: Renderer<'ttf, 'texture>,
 
     screen_size: Size<usize>,
-    screen_begin: usize,
     cursor: Point<ScreenCell>,
     saved_cursor_pos: Point<ScreenCell>,
 
@@ -40,14 +39,13 @@ pub struct Term<'a, 'b> {
     left_column: usize,
     right_column: usize,
 }
-impl<'a, 'b> Term<'a, 'b> {
-    pub fn new(render_context: &'a mut RenderContext<'b>, size: Size<usize>) -> Self {
+impl<'ttf, 'texture> Term<'ttf, 'texture> {
+    pub fn new(renderer: Renderer<'ttf, 'texture>, size: Size<usize>) -> Self {
         assert!(size.height > 0);
         let mut term = Term {
-            renderer: Renderer::new(render_context, size),
+            renderer,
 
             screen_size: size,
-            screen_begin: 0,
             cursor: Point { x: 0, y: 0 },
             saved_cursor_pos: Point { x: 0, y: 0 },
 
@@ -56,7 +54,7 @@ impl<'a, 'b> Term<'a, 'b> {
             left_column: 0,
             right_column: size.width - 1,
         };
-        term.renderer.clear();
+        term.renderer.clear_entire_screen();
         term
     }
 
@@ -65,7 +63,6 @@ impl<'a, 'b> Term<'a, 'b> {
     }
 
     pub fn reset(&mut self) {
-        self.screen_begin = 0;
         self.saved_cursor_pos = Point { x: 0, y: 0 };
 
         self.top_line = 0;
@@ -73,7 +70,7 @@ impl<'a, 'b> Term<'a, 'b> {
         self.left_column = 0;
         self.right_column = self.screen_size.width - 1;
 
-        self.renderer.clear();
+        self.renderer.clear_entire_screen();
     }
 
     pub fn move_cursor_repeat(&mut self, m: CursorMove, repeat: usize) -> bool {
@@ -175,6 +172,39 @@ impl<'a, 'b> Term<'a, 'b> {
         }
     }
 
+    /// clear cells on (x, y) where:
+    ///   x in [left_top.x, right_down.x)
+    ///   y in [left_top.y, right_down.y)
+    fn clear_screen_part(&mut self, left_top: Point<ScreenCell>, right_down: Point<ScreenCell>) {
+        let Size {
+            width: cw,
+            height: ch,
+        } = self.renderer.cell_size();
+        let top_left_in_pixel = Point {
+            x: (left_top.x as i32) * (cw as i32),
+            y: (left_top.y as i32) * (ch as i32),
+        };
+        let size_in_pixel = Size {
+            width: ((right_down.x - left_top.x) * cw) as u32,
+            height: ((right_down.y - left_top.y) * ch) as u32,
+        };
+        self.renderer.clear_area(top_left_in_pixel, size_in_pixel);
+    }
+    /// clear cells on the current line in [left, right)
+    fn clear_line(&mut self, left: Option<usize>, right: Option<usize>) {
+        let left = left.unwrap_or(0);
+        let right = right.unwrap_or(self.screen_size.width);
+        let left_top = Point {
+            x: left,
+            y: self.cursor.y,
+        };
+        let right_down = Point {
+            x: right,
+            y: self.cursor.y + 1,
+        };
+        self.clear_screen_part(left_top, right_down);
+    }
+
     pub fn write(&mut self, buf: &[u8]) {
         let buf: Vec<char> = std::str::from_utf8(buf).unwrap().chars().collect();
         let mut itr = buf.into_iter();
@@ -238,43 +268,44 @@ impl<'a, 'b> Term<'a, 'b> {
                                 }
 
                                 EraseEndOfLine => {
-                                    self.renderer.clear_line(
-                                        self.cursor.y,
-                                        Some((self.cursor.x, self.screen_size.width)),
-                                    );
+                                    self.clear_line(Some(self.cursor.x), None);
                                 }
                                 EraseStartOfLine => {
-                                    self.renderer
-                                        .clear_line(self.cursor.y, Some((0, self.cursor.x + 1)));
+                                    self.clear_line(None, Some(self.cursor.x + 1));
                                 }
                                 EraseLine => {
-                                    self.renderer.clear_line(self.cursor.y, None);
+                                    self.clear_line(None, None);
                                 }
                                 EraseDown => {
                                     // erase end of line
-                                    self.renderer.clear_line(
-                                        self.cursor.y,
-                                        Some((self.cursor.x, self.screen_size.width)),
-                                    );
-                                    // erase down
-                                    for row in self.cursor.y + 1..self.screen_size.height {
-                                        self.renderer.clear_line(row, None);
-                                    }
+                                    self.clear_line(Some(self.cursor.x), None);
+
+                                    // erase below
+                                    let left_top = Point {
+                                        x: 0,
+                                        y: self.cursor.y + 1,
+                                    };
+                                    let right_down = Point {
+                                        x: self.screen_size.width,
+                                        y: self.screen_size.height,
+                                    };
+                                    self.clear_screen_part(left_top, right_down);
                                 }
                                 EraseUp => {
                                     // erase start of line
-                                    self.renderer
-                                        .clear_line(self.cursor.y, Some((0, self.cursor.x + 1)));
-                                    // erase up
-                                    for row in 0..self.cursor.y {
-                                        self.renderer.clear_line(row, None);
-                                    }
+                                    self.clear_line(None, Some(self.cursor.x + 1));
+
+                                    // erase above
+                                    let left_top = Point { x: 0, y: 0 };
+                                    let right_down = Point {
+                                        x: self.screen_size.width,
+                                        y: self.cursor.y,
+                                    };
+                                    self.clear_screen_part(left_top, right_down);
                                 }
                                 EraseScreen => {
                                     // erase entire screen
-                                    for row in 0..self.screen_size.height {
-                                        self.renderer.clear_line(row, None);
-                                    }
+                                    self.renderer.clear_entire_screen();
                                 }
                                 Reset => {
                                     self.reset();

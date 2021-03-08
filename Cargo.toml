@@ -16,4 +16,4 @@ lazy_static = "1.4.0"
 ucd = "0.1.1"
 fontconfig = "0.2.0"
 sixel = {path = "./sixel"}
-sdl2 = { version = "0.34.3", default-features = false, features = ["ttf", "unsafe_textures"] }
+sdl2 = { version = "0.34.3", default-features = false, features = ["ttf"] }
