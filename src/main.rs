@@ -126,7 +126,7 @@ fn main() -> Result<()> {
                                     let result = pollfd[0].revents().expect("revents");
                                     if result.contains(PollFlags::POLLIN) {
                                         // we can read more data from the slave
-                                        log::debug!("read more");
+                                        log::debug!("read more (current {} bytes)", bytes.len());
                                         continue;
                                     }
                                     assert!(!result.contains(PollFlags::POLLERR));

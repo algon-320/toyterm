@@ -3,11 +3,6 @@ pub struct Size<T> {
     pub width: T,
     pub height: T,
 }
-impl<T: std::ops::Mul> Size<T> {
-    pub fn area(self) -> T::Output {
-        self.width * self.height
-    }
-}
 
 pub trait PointType {
     type Type;
@@ -17,12 +12,6 @@ pub trait PointType {
 pub struct Pixel;
 impl PointType for Pixel {
     type Type = i32;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BufferCell;
-impl PointType for BufferCell {
-    type Type = usize;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

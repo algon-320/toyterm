@@ -290,11 +290,11 @@ where
                 'D' => Some(ControlOp::ScrollDown),
                 'M' => Some(ControlOp::ScrollUp),
                 'P' => {
-                    while let Some(x) = itr.next() {
-                        if x == 'q' {
-                            break;
+                    loop {
+                        match itr.next() {
+                            Some('q') => break,
+                            _ => read_bytes += 1,
                         }
-                        read_bytes += 1;
                     }
                     let img = sixel::decode(itr, [3, 2, 1, 0], 0, None);
                     Some(ControlOp::Sixel(img))

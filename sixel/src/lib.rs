@@ -67,14 +67,12 @@ where
     let mut img = Image {
         buf: Vec::new(),
         width: image_width,
-        height: if let Some(h) = image_height {
-            (h + SIX - 1) / SIX * SIX
-        } else {
-            SIX
+        height: match image_height {
+            Some(h) => (h + SIX - 1) / SIX * SIX,
+            None => SIX,
         },
     };
-    #[cfg(debug_assertions)]
-    println!("w={}, h={}", img.width, img.height);
+    log::debug!("sixel image: w={}, h={}", img.width, img.height);
 
     img.resize(); // allocate buffer
 
@@ -96,8 +94,7 @@ where
                 img.height = (pixel_h * pv as usize + SIX - 1) / SIX * SIX;
                 img.width = pixel_w * ph as usize;
 
-                #[cfg(debug_assertions)]
-                println!("buffer size changed: w={}, h={}", img.width, img.height);
+                log::debug!("buffer size changed: w={}, h={}", img.width, img.height);
                 img.resize();
             }
             Op::CarriageReturn => {
@@ -121,8 +118,7 @@ where
                 if img.buf.len() < required_buf {
                     let each_line = img.width * EACH_PIXEL;
                     img.height += (required_buf - img.buf.len() + each_line - 1) / each_line;
-                    #[cfg(debug_assertions)]
-                    println!("buffer size changed: h={}", img.height);
+                    log::debug!("buffer size changed: h={}", img.height);
                     img.resize();
                 }
                 for _ in 0..r as usize * pixel_w {

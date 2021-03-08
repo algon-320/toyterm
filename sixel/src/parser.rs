@@ -7,12 +7,13 @@ where
     I: Iterator<Item = char>,
 {
     let mut num = 0u64;
-    while let Some(&c) = seq.peek() {
-        if ('0'..='9').contains(&c) {
+    while let Some(c) = seq.peek() {
+        if ('0'..='9').contains(c) {
             let c = seq.next().unwrap();
             num = num.saturating_mul(10);
             num = num.saturating_add(c.to_digit(10).unwrap() as u64);
         } else {
+            log::trace!("c={}", c);
             break;
         }
     }
@@ -25,9 +26,10 @@ where
 {
     let mut ps: Vec<u64> = vec![];
     while let Some(&c) = seq.peek() {
+        log::trace!("c={}", c);
         let tmp = numeric(seq);
         ps.push(tmp);
-        if c != ';' {
+        if seq.peek() != Some(&';') {
             break;
         }
         seq.next();
@@ -42,8 +44,9 @@ where
     match seq.peek() {
         Some(x) => match *x {
             '"' => {
-                seq.next();
+                let _ = seq.next().unwrap();
                 let ps = parameters(seq);
+                log::debug!("parameters = {:?}", ps);
                 Some(Op::RasterAttributes(ps[0], ps[1], ps[2], ps[3]))
             }
             '$' => {
