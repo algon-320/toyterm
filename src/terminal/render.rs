@@ -517,7 +517,7 @@ impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
     }
 
     // draw sixel graphic on the screen texture
-    pub fn draw_sixel(&mut self, img: &sixel::Image) {
+    pub fn draw_sixel(&mut self, img: &sixel::Image, at: Point<Pixel>) {
         let mut surface = Surface::new(
             img.width as u32,
             img.height as u32,
@@ -536,7 +536,7 @@ impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
                 .copy(
                     &texture,
                     None,
-                    Rect::new(0, 0, surface.width(), surface.height()),
+                    Rect::new(at.x, at.y, surface.width(), surface.height()),
                 )
                 .unwrap();
         });

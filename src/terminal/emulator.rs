@@ -357,8 +357,25 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                                 }
 
                                 Sixel(img) => {
-                                    log::trace!("sixel: h={}, w={}", img.height, img.width);
-                                    self.renderer.draw_sixel(&img);
+                                    let cell_size = self.renderer.cell_size();
+                                    let corresponding_lines =
+                                        (img.height + cell_size.height - 1) / cell_size.height;
+                                    for _ in 0..corresponding_lines {
+                                        self.move_cursor(CursorMove::NewLine);
+                                    }
+                                    let left_top = Point {
+                                        x: self.cursor.x as i32 * cell_size.width as i32,
+                                        y: (self.cursor.y as i32 - corresponding_lines as i32)
+                                            * cell_size.height as i32,
+                                    };
+                                    log::debug!(
+                                        "draw sixel: x={}, y={}, h={}, w={}",
+                                        left_top.x,
+                                        left_top.y,
+                                        img.height,
+                                        img.width
+                                    );
+                                    self.renderer.draw_sixel(&img, left_top);
                                 }
                             }
                         }
