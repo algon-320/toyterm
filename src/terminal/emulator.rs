@@ -64,6 +64,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
 
     pub fn reset(&mut self) {
         self.saved_cursor_pos = Point { x: 0, y: 0 };
+        self.cursor = Point { x: 0, y: 0 };
 
         self.top_line = 0;
         self.bottom_line = self.screen_size.height - 1;
