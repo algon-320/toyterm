@@ -41,7 +41,7 @@ pub struct Term<'ttf, 'texture> {
 }
 impl<'ttf, 'texture> Term<'ttf, 'texture> {
     pub fn new(renderer: Renderer<'ttf, 'texture>, size: Size<usize>) -> Self {
-        assert!(size.height > 0);
+        assert!(size.width > 0 && size.height > 0);
         let mut term = Term {
             renderer,
 
@@ -166,11 +166,6 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             self.move_cursor(CursorMove::Next);
         }
     }
-    pub fn insert_chars(&mut self, chars: &[char]) {
-        for c in chars.iter() {
-            self.insert_char(*c);
-        }
-    }
 
     /// clear cells on (x, y) where:
     ///   x in [left_top.x, right_down.x)
@@ -213,29 +208,30 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                 '\x00' => break,
                 '\x07' => {
                     // bell
+                    log::trace!("[Bell]");
                 }
-                '\n' => {
-                    self.move_cursor(CursorMove::NewLine);
+                '\x08' => {
+                    log::trace!("[Backspace]");
+                    self.move_cursor(CursorMove::Left);
                 }
-                '\r' => {
-                    self.move_cursor(CursorMove::LeftMost);
-                }
-                '\t' => {
+                '\x09' => {
                     // FIXME: tabwidth=8
                     let rep = (8 - self.cursor.x % 8) % 8;
                     log::trace!("[TAB] CursorMove::Right * {}", rep);
                     self.move_cursor_repeat(CursorMove::Right, rep);
                 }
-                '\x08' => {
-                    log::trace!("[Backspace]");
-                    self.move_cursor(CursorMove::Left);
+                '\x0A' => {
+                    self.move_cursor(CursorMove::NewLine);
+                }
+                '\x0D' => {
+                    self.move_cursor(CursorMove::LeftMost);
                 }
 
                 '\x1B' => {
                     // begin of escape sequence
                     use ControlOp::*;
                     match parse_escape_sequence(&mut itr) {
-                        (Some(op), _) => {
+                        Some(op) => {
                             log::trace!("{:?}", op);
                             match op {
                                 CursorHome(p) => {
@@ -379,13 +375,15 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                                 }
                             }
                         }
-                        (None, sz) => {
-                            // print sequence as string
-                            self.insert_chars(&['^', '[']);
-                            self.insert_chars(&itr.as_slice()[..sz]);
-                            if sz > 0 {
-                                itr.nth(sz - 1);
-                            }
+                        None => {
+                            // print sequence as string followed by '^['
+                            // to indicate it is unknown escape sequence
+                            self.insert_char('^');
+                            self.insert_char('[');
+                            log::warn!(
+                                "unknown escape sequence: \\E{}",
+                                itr.as_slice().iter().collect::<String>()
+                            );
                         }
                     }
                 }

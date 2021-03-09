@@ -26,23 +26,20 @@ pub enum ControlOp {
     Ignore,
 }
 
-pub fn parse_escape_sequence<I>(itr: &mut I) -> (Option<ControlOp>, usize)
+pub fn parse_escape_sequence<I>(itr: &mut I) -> Option<ControlOp>
 where
     I: Iterator<Item = char> + Clone,
 {
     let backup = itr.clone();
     match itr.next() {
         Some(c) => {
-            let mut read_bytes = 1;
             let op = match c {
-                // escape sequences
                 '[' => {
                     let (args, fin_char) = {
                         let mut args = Vec::new();
                         let mut fin_char = None;
                         let mut tmp = None;
                         while let Some(c) = itr.next() {
-                            read_bytes += 1;
                             match c {
                                 '0'..='9' => {
                                     if tmp.is_none() {
@@ -203,7 +200,6 @@ where
                                                 use std::convert::identity as e;
                                                 let green = args.next().and_then(e).unwrap_or(255);
                                                 let blue = args.next().and_then(e).unwrap_or(255);
-                                                read_bytes += 2;
                                                 Color::RGB(red as u8, green as u8, blue as u8)
                                             }
                                             _ => Color::White,
@@ -213,7 +209,6 @@ where
                                         } else if x == 48 {
                                             bg = Some(color);
                                         }
-                                        read_bytes += 2;
                                     }
                                     // foreground color
                                     Some(x) if (31..=39).contains(&x) => {
@@ -248,12 +243,10 @@ where
                         }
 
                         Some('?') => {
-                            read_bytes += 1;
                             let (arg, fin_char) = {
                                 let mut fin_char = None;
                                 let mut arg = None;
                                 while let Some(c) = itr.next() {
-                                    read_bytes += 1;
                                     match c {
                                         c @ '0'..='9' => {
                                             let c = c.to_digit(10).unwrap();
@@ -274,26 +267,27 @@ where
                             match (arg, fin_char) {
                                 (Some(1), Some('h')) => Some(ControlOp::SetCursorMode(true)),
                                 (Some(1), Some('l')) => Some(ControlOp::SetCursorMode(false)),
-                                (Some(2004), Some('h')) => Some(ControlOp::Ignore),
-                                (Some(2004), Some('l')) => Some(ControlOp::Ignore),
+                                (Some(2004), Some('h')) => {
+                                    // TODO
+                                    Some(ControlOp::Ignore)
+                                }
+                                (Some(2004), Some('l')) => {
+                                    // TODO
+                                    Some(ControlOp::Ignore)
+                                }
                                 _ => None,
                             }
                         }
 
-                        Some(x) => {
-                            log::warn!("unsupported: \\E[{}", x);
-                            None
-                        }
-                        None => None,
+                        _ => None,
                     }
                 }
                 'D' => Some(ControlOp::ScrollDown),
                 'M' => Some(ControlOp::ScrollUp),
                 'P' => {
-                    loop {
-                        match itr.next() {
-                            Some('q') => break,
-                            _ => read_bytes += 1,
+                    while let Some(c) = itr.next() {
+                        if c == 'q' {
+                            break;
                         }
                     }
                     let img = sixel::decode(itr, [3, 2, 1, 0], 0, None);
@@ -302,17 +296,14 @@ where
                 '=' => Some(ControlOp::Ignore),
                 '>' => Some(ControlOp::Ignore),
                 'c' => Some(ControlOp::Reset),
-                x => {
-                    log::warn!("unsupported: \\E[{}", x);
-                    None
-                }
+                _ => None,
             };
-            // revert iterator if it is followed by a invalid sequence
+            // revert the iterator if it is followed by a invalid sequence
             if op.is_none() {
                 *itr = backup;
             }
-            (op, read_bytes)
+            op
         }
-        None => (None, 0),
+        None => None,
     }
 }
