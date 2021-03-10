@@ -108,27 +108,6 @@ impl Color {
             Color::RGB(r, g, b) => Sdl2Color::RGB(r, g, b),
         }
     }
-    pub fn from_index(index: u8) -> Self {
-        match index {
-            0 => Color::Black,
-            1 => Color::Red,
-            2 => Color::Yellow,
-            3 => Color::Green,
-            4 => Color::Blue,
-            5 => Color::Magenta,
-            6 => Color::Cyan,
-            7 => Color::White,
-            8 => Color::Gray,
-            9 => Color::LightRed,
-            10 => Color::LightYellow,
-            11 => Color::LightGreen,
-            12 => Color::LightBlue,
-            13 => Color::LightMagenta,
-            14 => Color::LightCyan,
-            15 => Color::LightWhite,
-            _ => Color::LightWhite,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

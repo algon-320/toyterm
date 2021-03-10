@@ -382,7 +382,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                             self.insert_char('^');
                             self.insert_char('[');
                             log::warn!(
-                                "unknown escape sequence: \\E{}",
+                                "unknown escape sequence: \\E {:?}",
                                 itr.as_slice().iter().collect::<String>()
                             );
                         }
