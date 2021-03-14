@@ -1,7 +1,6 @@
 use crate::basics::*;
 
-use super::control::parse_escape_sequence;
-use super::control::ControlOp;
+use super::control::{self, ControlOp};
 use super::render::*;
 
 fn cell_to_pixel(p: Point<ScreenCell>, cell_size: Size<Pixel>) -> Point<Pixel> {
@@ -235,6 +234,27 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
 
         use ControlOp::*;
         match op {
+            InsertChar(x) => {
+                log::trace!("insert_char: {}", x);
+                self.insert_char(x);
+            }
+            Bell => {
+                log::debug!("[Bell]");
+            }
+            Tab => {
+                // FIXME: tabwidth=8
+                let rep = (8 - self.cursor.pos.x as usize % 8) % 8;
+                log::trace!("[TAB] CursorMove::Right * {}", rep);
+                self.move_cursor(CursorMove::Right, rep);
+            }
+            LineFeed => {
+                log::trace!("[LF]");
+                self.move_cursor_nextline(1);
+            }
+            CarriageReturn => {
+                log::trace!("[CR]");
+                self.move_cursor(CursorMove::LeftMost, 1);
+            }
             CursorHome(p) => {
                 self.move_cursor(CursorMove::Exact(p), 1);
             }
@@ -361,6 +381,17 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                 );
                 self.renderer.draw_sixel(&img, pos);
             }
+
+            Unknown(seq) => {
+                // print sequence as string followed by '^['
+                // to indicate it is unknown escape sequence
+                self.insert_char('^');
+                self.insert_char('[');
+                log::warn!("unknown escape sequence: {:?}", seq);
+                for c in seq {
+                    self.insert_char(c);
+                }
+            }
         }
     }
 }
@@ -368,49 +399,8 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
 impl<'ttf, 'texture> std::io::Write for Term<'ttf, 'texture> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         let mut itr = std::str::from_utf8(bytes).expect("UTF-8").chars();
-        while let Some(c) = itr.next() {
-            match c {
-                '\x00' => break,
-                '\x07' => {
-                    // bell
-                    log::debug!("[Bell]");
-                }
-                '\x08' => {
-                    log::trace!("[Backspace]");
-                    self.move_cursor(CursorMove::Left, 1);
-                }
-                '\x09' => {
-                    // FIXME: tabwidth=8
-                    let rep = (8 - self.cursor.pos.x as usize % 8) % 8;
-                    log::trace!("[TAB] CursorMove::Right * {}", rep);
-                    self.move_cursor(CursorMove::Right, rep);
-                }
-                '\x0A' => {
-                    log::trace!("[LF]");
-                    self.move_cursor_nextline(1);
-                }
-                '\x0D' => {
-                    log::trace!("[CR]");
-                    self.move_cursor(CursorMove::LeftMost, 1);
-                }
-
-                '\x1B' => {
-                    match parse_escape_sequence(&mut itr) {
-                        Some(op) => self.process(op),
-                        None => {
-                            // print sequence as string followed by '^['
-                            // to indicate it is unknown escape sequence
-                            self.insert_char('^');
-                            self.insert_char('[');
-                            log::warn!("unknown escape sequence: \\E {:?}", itr.as_str());
-                        }
-                    }
-                }
-                x => {
-                    log::trace!("insert_char: {}", x);
-                    self.insert_char(x);
-                }
-            }
+        while let Some(op) = control::parse(&mut itr) {
+            self.process(op);
         }
         Ok(bytes.len())
     }

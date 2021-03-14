@@ -3,6 +3,11 @@ use crate::basics::*;
 
 #[derive(Debug)]
 pub enum ControlOp {
+    InsertChar(char),
+    Bell,
+    Tab,
+    LineFeed,
+    CarriageReturn,
     CursorHome(Point<ScreenCell>), // 0-origin
     CursorUp(usize),
     CursorDown(usize),
@@ -23,6 +28,7 @@ pub enum ControlOp {
     ChangeCellAttribute(Option<Style>, Option<Color>, Option<Color>),
     SetCursorMode(bool),
     Sixel(sixel::Image),
+    Unknown(Vec<char>),
     Ignore,
 }
 
@@ -141,7 +147,7 @@ where
     }
 }
 
-fn parse_sgr<I>(args: &mut I) -> Option<(Option<Style>, Option<Color>, Option<Color>)>
+fn sgr<I>(args: &mut I) -> Option<(Option<Style>, Option<Color>, Option<Color>)>
 where
     I: Iterator<Item = Option<i64>>,
 {
@@ -219,7 +225,7 @@ where
 
         // SGR (Select Graphic Rendition)
         (args, 'm') => {
-            let (style, fg, bg) = parse_sgr(&mut args.iter().copied())?;
+            let (style, fg, bg) = sgr(&mut args.iter().copied())?;
             Some(ControlOp::ChangeCellAttribute(style, fg, bg))
         }
 
@@ -277,4 +283,25 @@ where
         }
         None => None,
     }
+}
+
+pub fn parse<I>(itr: &mut I) -> Option<ControlOp>
+where
+    I: Iterator<Item = char> + Clone,
+{
+    let op = match itr.next()? {
+        '\x00' => return None,
+        '\x07' => ControlOp::Bell,
+        '\x08' => ControlOp::CursorBackward(1),
+        '\x09' => ControlOp::Tab,
+        '\x0A' => ControlOp::LineFeed,
+        '\x0D' => ControlOp::CarriageReturn,
+        '\x1B' => parse_escape_sequence(itr).unwrap_or_else(|| {
+            let mut seq = vec!['\x1B'];
+            seq.extend(itr);
+            ControlOp::Unknown(seq)
+        }),
+        x => ControlOp::InsertChar(x),
+    };
+    Some(op)
 }
