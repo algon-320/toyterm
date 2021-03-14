@@ -10,7 +10,7 @@ use anyhow::Result;
 use nix::ioctl_write_ptr_bad;
 use nix::sys::{signal, wait};
 use nix::unistd;
-use sdl2::event::Event;
+use sdl2::event::{Event, WindowEvent};
 
 use basics::*;
 use terminal::Term;
@@ -60,15 +60,16 @@ fn main() -> Result<()> {
             let ttf_context = sdl2::ttf::init().expect("sdl2 ttf init");
             let fonts = terminal::render::load_fonts(&ttf_context);
 
+            let win_size = Size {
+                width: fonts.char_size.width * (cols as PixelIdx),
+                height: fonts.char_size.height * (rows as PixelIdx),
+            };
+            log::info!("window size: {:?}", win_size);
             let window = {
                 let video = sdl_context.video().unwrap();
                 log::info!("video driver: {}", video.current_video_driver());
                 video
-                    .window(
-                        "toyterm",
-                        (fonts.char_size.width * cols) as u32,
-                        (fonts.char_size.height * rows) as u32,
-                    )
+                    .window("toyterm", win_size.width as u32, win_size.height as u32)
                     .position_centered()
                     .build()
                     .unwrap()
@@ -80,21 +81,14 @@ fn main() -> Result<()> {
                 .build()
                 .unwrap();
             let texture_creator = canvas.texture_creator();
-            let renderer = terminal::render::Renderer::new(
-                fonts,
-                canvas,
-                &texture_creator,
-                Size {
-                    width: cols,
-                    height: rows,
-                },
-            );
+            let renderer =
+                terminal::render::Renderer::new(fonts, canvas, &texture_creator, win_size);
 
             let mut term = Term::new(
                 renderer,
                 Size {
-                    width: cols,
-                    height: rows,
+                    width: cols as ScreenCellIdx,
+                    height: rows as ScreenCellIdx,
                 },
             );
 
@@ -177,8 +171,23 @@ fn main() -> Result<()> {
                         let bytes: Vec<u8> = recv.recv().unwrap();
                         log::trace!("(shell)-->: {:?}", String::from_utf8_lossy(&bytes));
 
-                        term.write(&bytes);
+                        use std::io::Write;
+                        term.write_all(&bytes).unwrap();
+                        term.flush().unwrap();
+                    }
+                    Event::Window {
+                        win_event: WindowEvent::Exposed,
+                        ..
+                    } => {
+                        // redraw
                         term.render();
+                    }
+                    Event::Window {
+                        win_event: WindowEvent::Resized(width, height),
+                        ..
+                    } => {
+                        log::info!("resized: width={}, height={}", width, height);
+                        // TODO: change screen size
                     }
                     _ => {}
                 }

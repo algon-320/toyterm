@@ -3,7 +3,7 @@ use crate::basics::*;
 
 #[derive(Debug)]
 pub enum ControlOp {
-    CursorHome(Point<ScreenCell>),
+    CursorHome(Point<ScreenCell>), // 0-origin
     CursorUp(usize),
     CursorDown(usize),
     CursorForward(usize),
@@ -18,7 +18,7 @@ pub enum ControlOp {
     EraseDown,
     EraseUp,
     EraseScreen,
-    SetTopBottom(usize, usize),
+    SetTopBottom(std::ops::Range<ScreenCellIdx>), // 0-origin
     Reset,
     ChangeCellAttribute(Option<Style>, Option<Color>, Option<Color>),
     SetCursorMode(bool),
@@ -179,10 +179,10 @@ where
     match (args.as_slice(), fin_char) {
         // Cursor Home
         (args, 'f') | (args, 'H') => match args {
-            [None] => Some(ControlOp::CursorHome(Point { x: 1, y: 1 })),
+            [None] => Some(ControlOp::CursorHome(Point { x: 0, y: 0 })),
             [y, x] => Some(ControlOp::CursorHome(Point {
-                x: x.unwrap_or(1) as usize,
-                y: y.unwrap_or(1) as usize,
+                x: x.unwrap_or(1).checked_sub(1)? as ScreenCellIdx,
+                y: y.unwrap_or(1).checked_sub(1)? as ScreenCellIdx,
             })),
             _ => None,
         },
@@ -212,7 +212,9 @@ where
 
         // Scroll Region
         ([Some(top), Some(bot)], 'r') => {
-            Some(ControlOp::SetTopBottom(*top as usize, *bot as usize))
+            let top = (*top as ScreenCellIdx).checked_sub(1)?;
+            let bot = (*bot as ScreenCellIdx).checked_sub(1)?;
+            Some(ControlOp::SetTopBottom((top)..(bot + 1)))
         }
 
         // SGR (Select Graphic Rendition)
@@ -251,8 +253,8 @@ where
         Some(c) => {
             let op = match c {
                 '[' => csi(itr),
-                'D' => Some(ControlOp::ScrollDown),
-                'M' => Some(ControlOp::ScrollUp),
+                'D' => Some(ControlOp::ScrollUp),
+                'M' => Some(ControlOp::ScrollDown),
                 'P' => {
                     while let Some(c) = itr.next() {
                         if c == 'q' {

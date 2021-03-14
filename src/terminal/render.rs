@@ -12,6 +12,25 @@ use sdl2::video::{Window, WindowContext};
 use crate::basics::*;
 use crate::config_get;
 
+trait ToSdl2Color {
+    fn to_sdl2_color(&self) -> Sdl2Color;
+}
+
+trait ToSdl2Rect {
+    fn to_sdl2_rect(&self) -> Rect;
+}
+
+impl ToSdl2Rect for Range2d<Pixel> {
+    fn to_sdl2_rect(&self) -> Rect {
+        Rect::new(
+            self.left() as i32,
+            self.top() as i32,
+            self.width() as u32,
+            self.height() as u32,
+        )
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Color {
@@ -33,8 +52,9 @@ pub enum Color {
     LightWhite,
     RGB(u8, u8, u8),
 }
-impl Color {
-    pub fn to_sdl_color(self) -> Sdl2Color {
+
+impl ToSdl2Color for Color {
+    fn to_sdl2_color(&self) -> Sdl2Color {
         lazy_static! {
             static ref COLOR_CONFIG: HashMap<String, config::Value> = {
                 config::Config::default()
@@ -88,7 +108,7 @@ impl Color {
                 get_sdl2_color("light_white").unwrap_or_else(|| Sdl2Color::RGB(0, 255, 255));
         }
 
-        match self {
+        match *self {
             Color::Black => *COLOR_BLACK,
             Color::Red => *COLOR_RED,
             Color::Yellow => *COLOR_YELLOW,
@@ -136,20 +156,20 @@ impl Default for CellAttribute {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct Cell {
+pub struct Cell {
     c: char,
-    attribute: CellAttribute,
+    attr: CellAttribute,
 }
 impl Cell {
     pub fn new(c: char, attr: CellAttribute) -> Self {
-        Cell { c, attribute: attr }
+        Cell { c, attr }
     }
 }
 impl Default for Cell {
     fn default() -> Self {
         Cell {
             c: ' ',
-            attribute: CellAttribute::default(),
+            attr: CellAttribute::default(),
         }
     }
 }
@@ -157,7 +177,7 @@ impl Default for Cell {
 pub struct FontSet<'ttf> {
     pub regular: Font<'ttf, 'static>,
     pub bold: Font<'ttf, 'static>,
-    pub char_size: Size<usize>,
+    pub char_size: Size<Pixel>,
 }
 impl<'ttf> FontSet<'ttf> {
     fn new(
@@ -177,6 +197,9 @@ impl<'ttf> FontSet<'ttf> {
             })
             .unwrap();
         regular.set_hinting(sdl2::ttf::Hinting::Light);
+        if !regular.face_is_fixed_width() {
+            log::warn!("{:?} isn't a monospace font", regular.face_family_name());
+        }
 
         let font_path_bold = fc.find(font_name_bold, Some("Bold")).unwrap().path;
         log::info!("Bold font: {:?}", font_path_bold);
@@ -185,12 +208,15 @@ impl<'ttf> FontSet<'ttf> {
             .map_err(|_| "Cannot open the bold font: please check your `settings.toml`".to_string())
             .unwrap();
         bold.set_hinting(sdl2::ttf::Hinting::Light);
+        if !bold.face_is_fixed_width() {
+            log::warn!("{:?} isn't a monospace font", bold.face_family_name());
+        }
 
         let char_size = {
             let tmp = regular.size_of_char('#').unwrap();
             Size {
-                width: tmp.0 as usize,
-                height: tmp.1 as usize,
+                width: tmp.0 as PixelIdx,
+                height: tmp.1 as PixelIdx,
             }
         };
         log::debug!("char_size = {:?}", char_size);
@@ -237,7 +263,8 @@ impl CharWidth {
         use ucd::tables::misc::EastAsianWidth::*;
         use ucd::Codepoint;
         match c.east_asian_width() {
-            Ambiguous | Neutral | HalfWidth | Narrow => CharWidth::Half,
+            Ambiguous => CharWidth::Half, // TODO: config
+            Neutral | HalfWidth | Narrow => CharWidth::Half,
             FullWidth | Wide => CharWidth::Full,
         }
     }
@@ -253,88 +280,73 @@ pub struct Renderer<'ttf, 'texture> {
     fonts: FontSet<'ttf>,
     canvas: Canvas<Window>,
     texture_creator: &'texture TextureCreator<WindowContext>,
-    cache: HashMap<Cell, (usize, Surface<'static>)>,
+    cache: HashMap<Cell, Texture<'texture>>,
     screen_texture: Texture<'texture>,
-    cell_attr: CellAttribute,
-    screen_pixel_size: Size<u32>,
+    screen_pixel_size: Size<Pixel>,
 }
 impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
     pub fn new(
         fonts: FontSet<'ttf>,
         canvas: Canvas<Window>,
         texture_creator: &'texture TextureCreator<WindowContext>,
-        screen_size: Size<usize>,
+        screen_pixel_size: Size<Pixel>,
     ) -> Self {
-        let char_size = fonts.char_size;
-        let width = screen_size.width * char_size.width;
-        let height = screen_size.height * char_size.height;
         let texture = texture_creator
-            .create_texture_target(PixelFormatEnum::ARGB8888, width as u32, height as u32)
+            .create_texture_target(
+                PixelFormatEnum::ARGB8888,
+                screen_pixel_size.width as u32,
+                screen_pixel_size.height as u32,
+            )
             .unwrap();
-        // let texture_creator = canvas.texture_creator();
+        assert_eq!(
+            unsafe { sdl2::sys::SDL_SetRenderTarget(canvas.raw(), texture.raw()) },
+            0
+        );
         Renderer {
             fonts,
             canvas,
             texture_creator,
             cache: std::collections::HashMap::new(),
             screen_texture: texture,
-            cell_attr: CellAttribute::default(),
-            screen_pixel_size: Size {
-                width: width as u32,
-                height: height as u32,
-            },
+            screen_pixel_size,
         }
     }
 
-    pub fn cell_size(&self) -> Size<usize> {
+    pub fn cell_size(&self) -> Size<Pixel> {
         self.fonts.char_size
     }
-    pub fn char_size(&self, c: char) -> Size<usize> {
+
+    fn char_size(&self, c: char) -> Size<Pixel> {
         let width = CharWidth::from_char(c).columns();
         let cell = self.fonts.char_size;
         Size {
-            width: cell.width * width,
+            width: cell.width * (width as PixelIdx),
             height: cell.height,
         }
     }
 
-    pub fn set_cell_attribute(&mut self, cell_attr: CellAttribute) {
-        self.cell_attr = cell_attr;
-    }
-    pub fn get_cell_attribute(&self) -> CellAttribute {
-        self.cell_attr
-    }
-
-    /// Draw the character and return its width
-    pub fn draw_char(&mut self, c: char, p: Point<ScreenCell>) -> usize {
-        let (fg_color, bg_color) = if self.cell_attr.style == Style::Reverse {
-            (
-                self.cell_attr.bg.to_sdl_color(),
-                self.cell_attr.fg.to_sdl_color(),
-            )
+    pub fn draw_cell(&mut self, cell: Cell, top_left: Point<Pixel>) {
+        let (fg_color, bg_color) = if cell.attr.style == Style::Reverse {
+            (cell.attr.bg.to_sdl2_color(), cell.attr.fg.to_sdl2_color())
         } else {
-            (
-                self.cell_attr.fg.to_sdl_color(),
-                self.cell_attr.bg.to_sdl_color(),
-            )
+            (cell.attr.fg.to_sdl2_color(), cell.attr.bg.to_sdl2_color())
         };
 
-        // generate surface
-        let cell = Cell::new(c, self.cell_attr);
+        let char_size = self.char_size(cell.c);
+
         if !self.cache.contains_key(&cell) {
-            let f = match self.cell_attr.style {
+            // generate surface
+            let font = match cell.attr.style {
                 Style::Bold => &self.fonts.bold,
                 _ => &self.fonts.regular,
             };
 
             // draw � if the font doesn't have a glyph of the character.
-            let c = f.find_glyph(c).map(|_| c).unwrap_or('�');
-            let mut surface = f.render_char(c).blended(fg_color).expect("sdl2");
-            let char_width = CharWidth::from_char(c).columns();
+            let c = font.find_glyph(cell.c).map(|_| cell.c).unwrap_or('�');
+            let mut surface = font.render_char(c).blended(fg_color).expect("sdl2");
 
             // draw under line
-            if self.cell_attr.style == Style::UnderLine {
-                let char_size = self.char_size(c);
+            if cell.attr.style == Style::UnderLine {
                 let mut canvas = surface.into_canvas().unwrap();
                 canvas.set_draw_color(fg_color);
                 canvas
@@ -346,157 +358,105 @@ impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
                     .unwrap();
                 surface = canvas.into_surface();
             }
-            self.cache.insert(cell, (char_width, surface));
+            let texture = self
+                .texture_creator
+                .create_texture_from_surface(&surface)
+                .unwrap();
+            self.cache.insert(cell, texture);
         }
 
-        let (char_width, cell_surface) = self.cache.get(&cell).unwrap();
-        let char_width = *char_width;
-        let cell_texture = Texture::from_surface(&cell_surface, &self.texture_creator).unwrap();
-        let cell_rect = {
-            let top_left = self.point_screen_to_pixel(p);
-            let cell_size = self.cell_size();
-            Rect::new(
-                top_left.x,
-                top_left.y,
-                (char_width * cell_size.width) as u32,
-                cell_size.height as u32,
-            )
-        };
-
-        self.draw_on_screen_texture(|canvas| {
-            canvas.set_draw_color(bg_color);
-            canvas.fill_rect(cell_rect).unwrap();
-            // copy texture
-            canvas.copy(&cell_texture, None, Some(cell_rect)).unwrap();
-        });
-        char_width
+        let cell_texture = self.cache.get(&cell).unwrap();
+        let cell_rect = Range2d::new(top_left, char_size).to_sdl2_rect();
+        self.canvas.set_draw_color(bg_color);
+        self.canvas.fill_rect(cell_rect).unwrap();
+        self.canvas.copy(&cell_texture, None, cell_rect).unwrap();
+        // self.canvas
+        //     .with_texture_canvas(&mut self.screen_texture, |canvas| {
+        //         // self.draw_on_screen_texture(|canvas| {
+        //         canvas.set_draw_color(bg_color);
+        //         canvas.fill_rect(cell_rect).unwrap();
+        //         canvas.copy(&cell_texture, None, cell_rect).unwrap();
+        //     })
+        //     .unwrap();
     }
 
-    pub fn render(&mut self, cursor_pos: Option<&Point<ScreenCell>>) {
-        self.canvas.copy(&self.screen_texture, None, None).unwrap();
+    pub fn render(&mut self) {
+        assert!(self.canvas.render_target_supported());
 
-        // draw a cursor on the current position
-        if let Some(c) = cursor_pos {
-            let Size {
-                width: w,
-                height: h,
-            } = self.cell_size();
-            let rect = Rect::new((w * c.x) as i32, (h * c.y) as i32, w as u32, h as u32);
-            let fg = self.cell_attr.fg.to_sdl_color();
-            self.canvas.set_draw_color(fg);
-            self.canvas.fill_rect(rect).expect("driver error");
-        }
-
-        self.canvas.present();
-    }
-
-    fn fill_rect(&mut self, rect: Rect, c: &Color) {
-        let c = c.to_sdl_color();
-        self.draw_on_screen_texture(|canvas| {
-            canvas.set_draw_color(c);
-            canvas.fill_rect(rect).unwrap();
-        });
-    }
-
-    pub fn clear_entire_screen(&mut self) {
-        let bg = self.cell_attr.bg;
-        self.fill_rect(
-            Rect::new(
-                0,
-                0,
-                self.screen_pixel_size.width,
-                self.screen_pixel_size.height,
-            ),
-            &bg,
+        // switch back to default (window)
+        assert_eq!(
+            unsafe { sdl2::sys::SDL_SetRenderTarget(self.canvas.raw(), std::ptr::null_mut()) },
+            0
         );
-        self.render(None);
+
+        self.canvas.copy(&self.screen_texture, None, None).unwrap();
+        self.canvas.present();
+
+        // switch to the screen texture
+        assert_eq!(
+            unsafe { sdl2::sys::SDL_SetRenderTarget(self.canvas.raw(), self.screen_texture.raw()) },
+            0
+        );
     }
 
-    /// Fill the given area with the current background color
-    pub fn clear_area(&mut self, top_left: Point<Pixel>, size: Size<u32>) {
-        let rect = Rect::new(top_left.x, top_left.y, size.width, size.height);
-        let bg = self.cell_attr.bg;
-        self.fill_rect(rect, &bg);
+    pub fn clear_range(&mut self, color: &Color, range: &Range2d<Pixel>) {
+        self.draw_on_screen_texture(|canvas| {
+            canvas.set_draw_color(color.to_sdl2_color());
+            canvas.fill_rect(range.to_sdl2_rect()).unwrap();
+        });
     }
 
-    fn point_screen_to_pixel(&self, sp: Point<ScreenCell>) -> Point<Pixel> {
-        let cell_sz = self.cell_size();
-        Point {
-            x: sp.x as i32 * cell_sz.width as i32,
-            y: sp.y as i32 * cell_sz.height as i32,
-        }
-    }
-
-    fn shift_texture(&mut self, src: Rect, dst: Point<Pixel>) {
+    pub fn shift_texture(&mut self, bg: &Color, src: &Range2d<Pixel>, dst: Point<Pixel>) {
         log::trace!("shift_texture(src={:?}, dst={:?})", src, dst);
+        let bg = bg.to_sdl2_color();
+        let src = src.to_sdl2_rect();
         let mut new_texture = self
             .texture_creator
             .create_texture_target(
                 PixelFormatEnum::ARGB8888,
-                self.screen_pixel_size.width,
-                self.screen_pixel_size.height,
+                self.screen_pixel_size.width as u32,
+                self.screen_pixel_size.height as u32,
             )
             .unwrap();
 
-        let bg_color = self.cell_attr.bg.to_sdl_color();
         let screen_texture = &self.screen_texture;
         self.canvas
             .with_texture_canvas(&mut new_texture, |canvas| {
                 canvas.copy(screen_texture, None, None).unwrap();
 
                 let mut rect = src;
-                rect.set_x(dst.x);
-                rect.set_y(dst.y);
+                rect.set_x(dst.x as i32);
+                rect.set_y(dst.y as i32);
 
-                canvas.set_draw_color(bg_color);
+                canvas.set_draw_color(bg);
                 canvas.fill_rect(src | rect).unwrap();
                 canvas.copy(screen_texture, src, rect).unwrap();
             })
             .unwrap();
 
+        assert_eq!(
+            unsafe { sdl2::sys::SDL_SetRenderTarget(self.canvas.raw(), new_texture.raw()) },
+            0
+        );
         self.screen_texture = new_texture;
-    }
-
-    pub fn scroll_up(&mut self, top_line: usize, bottom_line: usize) {
-        let cell_size = self.cell_size();
-        let src = Rect::new(
-            0,
-            ((top_line + 1) * cell_size.height) as i32,
-            self.screen_pixel_size.width,
-            ((bottom_line - top_line) * cell_size.height) as u32,
-        );
-        let dst = Point {
-            x: 0,
-            y: (top_line * cell_size.height) as i32,
-        };
-        self.shift_texture(src, dst);
-    }
-    pub fn scroll_down(&mut self, top_line: usize, bottom_line: usize) {
-        let cell_size = self.cell_size();
-        let src = Rect::new(
-            0,
-            (top_line * cell_size.height) as i32,
-            self.screen_pixel_size.width,
-            ((bottom_line - top_line) * cell_size.height) as u32,
-        );
-        let dst = Point {
-            x: 0,
-            y: ((top_line + 1) * cell_size.height) as i32,
-        };
-        self.shift_texture(src, dst);
     }
 
     fn draw_on_screen_texture<F>(&mut self, fun: F)
     where
         F: FnOnce(&mut Canvas<Window>),
     {
-        self.canvas
-            .with_texture_canvas(&mut self.screen_texture, fun)
-            .expect("invalid screen texture")
+        fun(&mut self.canvas);
+        // self.canvas
+        //     .with_texture_canvas(&mut self.screen_texture, fun)
+        //     .expect("invalid screen texture")
     }
 
     // draw sixel graphic on the screen texture
     pub fn draw_sixel(&mut self, img: &sixel::Image, at: Point<Pixel>) {
+        let img_size = Size {
+            width: img.width as PixelIdx,
+            height: img.height as PixelIdx,
+        };
         let mut surface = Surface::new(
             img.width as u32,
             img.height as u32,
@@ -512,11 +472,7 @@ impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
         let texture = Texture::from_surface(&surface, &self.texture_creator).unwrap();
         self.draw_on_screen_texture(|canvas| {
             canvas
-                .copy(
-                    &texture,
-                    None,
-                    Rect::new(at.x, at.y, surface.width(), surface.height()),
-                )
+                .copy(&texture, None, Range2d::new(at, img_size).to_sdl2_rect())
                 .unwrap();
         });
     }
