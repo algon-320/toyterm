@@ -57,6 +57,16 @@ where
 }
 impl<P: PointType> Range2d<P>
 where
+    P::Type: std::iter::Step + Copy,
+{
+    pub fn iter(&self) -> impl Iterator<Item = Point<P>> + DoubleEndedIterator {
+        let v = self.v.clone();
+        let h = self.h.clone();
+        v.flat_map(move |y| h.clone().map(move |x| Point { x, y }))
+    }
+}
+impl<P: PointType> Range2d<P>
+where
     P::Type: std::ops::Sub<Output = P::Type> + num::One + Copy,
 {
     pub fn right(&self) -> P::Type {

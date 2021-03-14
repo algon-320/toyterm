@@ -1,3 +1,5 @@
+#![feature(step_trait)]
+
 mod basics;
 mod input;
 mod terminal;
@@ -60,7 +62,7 @@ fn main() -> Result<()> {
             let ttf_context = sdl2::ttf::init().expect("sdl2 ttf init");
             let fonts = terminal::render::load_fonts(&ttf_context);
 
-            let win_size = Size {
+            let win_size: Size<Pixel> = Size {
                 width: fonts.char_size.width * (cols as PixelIdx),
                 height: fonts.char_size.height * (rows as PixelIdx),
             };
@@ -81,8 +83,7 @@ fn main() -> Result<()> {
                 .build()
                 .unwrap();
             let texture_creator = canvas.texture_creator();
-            let renderer =
-                terminal::render::Renderer::new(fonts, canvas, &texture_creator, win_size);
+            let renderer = terminal::render::Renderer::new(fonts, canvas, &texture_creator);
 
             let mut term = Term::new(
                 renderer,

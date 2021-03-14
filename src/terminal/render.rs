@@ -157,13 +157,8 @@ impl Default for CellAttribute {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Cell {
-    c: char,
-    attr: CellAttribute,
-}
-impl Cell {
-    pub fn new(c: char, attr: CellAttribute) -> Self {
-        Cell { c, attr }
-    }
+    pub c: char,
+    pub attr: CellAttribute,
 }
 impl Default for Cell {
     fn default() -> Self {
@@ -281,34 +276,18 @@ pub struct Renderer<'ttf, 'texture> {
     canvas: Canvas<Window>,
     texture_creator: &'texture TextureCreator<WindowContext>,
     cache: HashMap<Cell, Texture<'texture>>,
-    screen_texture: Texture<'texture>,
-    screen_pixel_size: Size<Pixel>,
 }
 impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
     pub fn new(
         fonts: FontSet<'ttf>,
         canvas: Canvas<Window>,
         texture_creator: &'texture TextureCreator<WindowContext>,
-        screen_pixel_size: Size<Pixel>,
     ) -> Self {
-        let texture = texture_creator
-            .create_texture_target(
-                PixelFormatEnum::ARGB8888,
-                screen_pixel_size.width as u32,
-                screen_pixel_size.height as u32,
-            )
-            .unwrap();
-        assert_eq!(
-            unsafe { sdl2::sys::SDL_SetRenderTarget(canvas.raw(), texture.raw()) },
-            0
-        );
         Renderer {
             fonts,
             canvas,
             texture_creator,
             cache: std::collections::HashMap::new(),
-            screen_texture: texture,
-            screen_pixel_size,
         }
     }
 
@@ -341,13 +320,16 @@ impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
                 _ => &self.fonts.regular,
             };
 
-            // draw � if the font doesn't have a glyph of the character.
+            // render � if the font doesn't have a glyph of the character.
             let c = font.find_glyph(cell.c).map(|_| cell.c).unwrap_or('�');
-            let mut surface = font.render_char(c).blended(fg_color).expect("sdl2");
+            let mut cell_surface = font
+                .render_char(c)
+                .shaded(fg_color, bg_color)
+                .expect("sdl2");
 
             // draw under line
             if cell.attr.style == Style::UnderLine {
-                let mut canvas = surface.into_canvas().unwrap();
+                let mut canvas = cell_surface.into_canvas().unwrap();
                 canvas.set_draw_color(fg_color);
                 canvas
                     .draw_line(
@@ -356,99 +338,22 @@ impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
                         rect::Point::new(char_size.width as i32 - 1, char_size.height as i32 - 3),
                     )
                     .unwrap();
-                surface = canvas.into_surface();
+                cell_surface = canvas.into_surface();
             }
             let texture = self
                 .texture_creator
-                .create_texture_from_surface(&surface)
+                .create_texture_from_surface(&cell_surface)
                 .unwrap();
             self.cache.insert(cell, texture);
         }
 
         let cell_texture = self.cache.get(&cell).unwrap();
         let cell_rect = Range2d::new(top_left, char_size).to_sdl2_rect();
-        self.canvas.set_draw_color(bg_color);
-        self.canvas.fill_rect(cell_rect).unwrap();
         self.canvas.copy(&cell_texture, None, cell_rect).unwrap();
-        // self.canvas
-        //     .with_texture_canvas(&mut self.screen_texture, |canvas| {
-        //         // self.draw_on_screen_texture(|canvas| {
-        //         canvas.set_draw_color(bg_color);
-        //         canvas.fill_rect(cell_rect).unwrap();
-        //         canvas.copy(&cell_texture, None, cell_rect).unwrap();
-        //     })
-        //     .unwrap();
     }
 
-    pub fn render(&mut self) {
-        assert!(self.canvas.render_target_supported());
-
-        // switch back to default (window)
-        assert_eq!(
-            unsafe { sdl2::sys::SDL_SetRenderTarget(self.canvas.raw(), std::ptr::null_mut()) },
-            0
-        );
-
-        self.canvas.copy(&self.screen_texture, None, None).unwrap();
+    pub fn present(&mut self) {
         self.canvas.present();
-
-        // switch to the screen texture
-        assert_eq!(
-            unsafe { sdl2::sys::SDL_SetRenderTarget(self.canvas.raw(), self.screen_texture.raw()) },
-            0
-        );
-    }
-
-    pub fn clear_range(&mut self, color: &Color, range: &Range2d<Pixel>) {
-        self.draw_on_screen_texture(|canvas| {
-            canvas.set_draw_color(color.to_sdl2_color());
-            canvas.fill_rect(range.to_sdl2_rect()).unwrap();
-        });
-    }
-
-    pub fn shift_texture(&mut self, bg: &Color, src: &Range2d<Pixel>, dst: Point<Pixel>) {
-        log::trace!("shift_texture(src={:?}, dst={:?})", src, dst);
-        let bg = bg.to_sdl2_color();
-        let src = src.to_sdl2_rect();
-        let mut new_texture = self
-            .texture_creator
-            .create_texture_target(
-                PixelFormatEnum::ARGB8888,
-                self.screen_pixel_size.width as u32,
-                self.screen_pixel_size.height as u32,
-            )
-            .unwrap();
-
-        let screen_texture = &self.screen_texture;
-        self.canvas
-            .with_texture_canvas(&mut new_texture, |canvas| {
-                canvas.copy(screen_texture, None, None).unwrap();
-
-                let mut rect = src;
-                rect.set_x(dst.x as i32);
-                rect.set_y(dst.y as i32);
-
-                canvas.set_draw_color(bg);
-                canvas.fill_rect(src | rect).unwrap();
-                canvas.copy(screen_texture, src, rect).unwrap();
-            })
-            .unwrap();
-
-        assert_eq!(
-            unsafe { sdl2::sys::SDL_SetRenderTarget(self.canvas.raw(), new_texture.raw()) },
-            0
-        );
-        self.screen_texture = new_texture;
-    }
-
-    fn draw_on_screen_texture<F>(&mut self, fun: F)
-    where
-        F: FnOnce(&mut Canvas<Window>),
-    {
-        fun(&mut self.canvas);
-        // self.canvas
-        //     .with_texture_canvas(&mut self.screen_texture, fun)
-        //     .expect("invalid screen texture")
     }
 
     // draw sixel graphic on the screen texture
@@ -470,10 +375,8 @@ impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
             .copy_from_slice(&img.buf);
 
         let texture = Texture::from_surface(&surface, &self.texture_creator).unwrap();
-        self.draw_on_screen_texture(|canvas| {
-            canvas
-                .copy(&texture, None, Range2d::new(at, img_size).to_sdl2_rect())
-                .unwrap();
-        });
+        self.canvas
+            .copy(&texture, None, Range2d::new(at, img_size).to_sdl2_rect())
+            .unwrap();
     }
 }

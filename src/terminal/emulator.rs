@@ -11,17 +11,6 @@ fn cell_to_pixel(p: Point<ScreenCell>, cell_size: Size<Pixel>) -> Point<Pixel> {
     }
 }
 
-fn scale_range(range: &Range2d<ScreenCell>, cell_size: Size<Pixel>) -> Range2d<Pixel> {
-    let Size {
-        width: cw,
-        height: ch,
-    } = cell_size;
-    Range2d {
-        h: (range.h.start as PixelIdx * cw)..(range.h.end as PixelIdx * cw),
-        v: (range.v.start as PixelIdx * ch)..(range.v.end as PixelIdx * ch),
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum CursorMove {
     Exact(Point<ScreenCell>),
@@ -94,7 +83,7 @@ pub struct Term<'ttf, 'texture> {
     scroll_range: Range2d<ScreenCell>,
     cursor: Cursor,
     saved_cursor: Option<Cursor>,
-    screen_buf: Vec<char>,
+    screen_buf: Vec<Cell>,
 }
 impl<'ttf, 'texture> Term<'ttf, 'texture> {
     pub fn new(renderer: Renderer<'ttf, 'texture>, size: Size<ScreenCell>) -> Self {
@@ -105,7 +94,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             screen_size: size,
             cursor: Cursor::default(),
             saved_cursor: None,
-            screen_buf: vec![' '; (size.width as usize) * (size.height as usize)],
+            screen_buf: vec![Cell::default(); (size.width as usize) * (size.height as usize)],
             scroll_range: size.into(),
         };
         term.reset();
@@ -122,7 +111,21 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
 
     pub fn render(&mut self) {
         log::trace!("render");
-        self.renderer.render();
+        let cell_size = self.renderer.cell_size();
+        let cells = Range2d::from(self.screen_size)
+            .iter()
+            .rev()
+            .zip(self.screen_buf.iter().rev());
+        for (p, cell) in cells {
+            let mut cell = *cell;
+            if self.cursor.pos == p {
+                cell.attr = CellAttribute::default();
+                cell.attr.style = Style::Reverse;
+            }
+            self.renderer.draw_cell(cell, cell_to_pixel(p, cell_size));
+        }
+        // TODO: draw sixel
+        self.renderer.present();
     }
 
     pub fn move_cursor_nextline(&mut self, rep: usize) {
@@ -159,14 +162,13 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             }
         }
 
-        let cell_idx = (self.cursor.pos.y * self.screen_size.height + self.cursor.pos.x) as usize;
-        self.screen_buf[cell_idx] = c;
+        let cell = Cell {
+            c,
+            attr: self.cursor.attr,
+        };
 
-        let cell = Cell::new(c, self.cursor.attr);
-        self.renderer.draw_cell(
-            cell,
-            cell_to_pixel(self.cursor.pos, self.renderer.cell_size()),
-        );
+        let cell_idx = (self.cursor.pos.y * self.screen_size.width + self.cursor.pos.x) as usize;
+        self.screen_buf[cell_idx] = cell;
 
         match self
             .cursor
@@ -183,35 +185,49 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
 
     fn clear_screen_part(&mut self, range: &Range2d<ScreenCell>) {
         log::trace!("clear_screen_part(range={:?})", range);
-        let pixel_range = scale_range(range, self.renderer.cell_size());
-        self.renderer
-            .clear_range(&self.cursor.attr.bg, &pixel_range);
+        let w = self.screen_size.width;
+        for y in range.v.clone() {
+            for x in range.h.clone() {
+                self.screen_buf[(y * w + x) as usize] = Cell::default();
+            }
+        }
     }
 
     pub fn scroll_up(&mut self) {
         log::trace!("scroll_up");
-        let cell_size = self.renderer.cell_size();
-        let mut src = self.scroll_range.clone();
-        src.v.start += 1;
-        let (dst, _) = self.scroll_range.decompose();
-        self.renderer.shift_texture(
-            &self.cursor.attr.bg,
-            &scale_range(&src, cell_size),
-            cell_to_pixel(dst, cell_size),
-        );
+        let w = self.screen_size.width;
+
+        let mut range = self.scroll_range.clone();
+        range.v.start += 1;
+        for Point { x, y } in range.iter() {
+            self.screen_buf[((y - 1) * w + x) as usize] = self.screen_buf[(y * w + x) as usize];
+        }
+
+        let bottom = Range2d::<ScreenCell> {
+            v: range.bottom()..(range.bottom() + 1),
+            ..range
+        };
+        for Point { x, y } in bottom.iter() {
+            self.screen_buf[(y * w + x) as usize] = Cell::default();
+        }
     }
     pub fn scroll_down(&mut self) {
         log::trace!("scroll_down");
-        let cell_size = self.renderer.cell_size();
-        let mut src = self.scroll_range.clone();
-        src.v.end -= 1;
-        let (mut dst, _) = self.scroll_range.decompose();
-        dst.y += 1;
-        self.renderer.shift_texture(
-            &self.cursor.attr.bg,
-            &scale_range(&src, cell_size),
-            cell_to_pixel(dst, cell_size),
-        );
+        let w = self.screen_size.width;
+
+        let mut range = self.scroll_range.clone();
+        range.v.end -= 1;
+        for Point { x, y } in range.iter().rev() {
+            self.screen_buf[((y + 1) * w + x) as usize] = self.screen_buf[(y * w + x) as usize];
+        }
+
+        let top = Range2d::<ScreenCell> {
+            v: range.top()..(range.top() + 1),
+            ..range
+        };
+        for Point { x, y } in top.iter() {
+            self.screen_buf[(y * w + x) as usize] = Cell::default();
+        }
     }
 
     pub fn process(&mut self, op: ControlOp) {
@@ -295,7 +311,6 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             }
             SetTopBottom(range) => {
                 self.scroll_range.v = range;
-                // self.cursor.pos = Point { x: 0, y: 0 };
             }
             ChangeCellAttribute(style, fg, bg) => {
                 if let Some(s) = style {
@@ -322,6 +337,8 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             }
 
             Sixel(img) => {
+                // TODO: retain this sixel image and re-render it on each render() call.
+
                 let cell_size = self.renderer.cell_size();
                 let ch = cell_size.height as usize;
                 let corresponding_lines = ((img.height + ch - 1) / ch) as ScreenCellIdx;
