@@ -27,6 +27,9 @@ pub fn keyevent_to_bytes(event: &sdl2::event::Event) -> Option<&[u8]> {
                 (ALT) => {
                     (false, false, true)
                 };
+                (()) => {
+                    (false, false, false)
+                };
             }
             macro_rules! gen_match {
                 ($([$p:pat, $e:expr]),*) => {
@@ -72,8 +75,13 @@ pub fn keyevent_to_bytes(event: &sdl2::event::Event) -> Option<&[u8]> {
                     Keycode::Underscore => gen_match!([deco!(CTRL), b"\x1F"]),
                     Keycode::Question => gen_match!([deco!(CTRL), b"\x7F"]),
 
-                    Keycode::Home => Some(b"\x1b[1~"),
-                    Keycode::End => Some(b"\x1b[4~"),
+                    Keycode::Home => {
+                        gen_match!([deco!(CTRL), b"\x1b[1;5H"], [deco!(()), b"\x1b[H"])
+                    }
+                    Keycode::End => {
+                        gen_match!([deco!(CTRL), b"\x1b[1;5F"], [deco!(()), b"\x1b[F"])
+                    }
+
                     Keycode::Backspace => Some(b"\x7F"),
                     Keycode::Delete => Some(b"\x1bOC\x7F"),
                     Keycode::Return => Some(b"\r"),
@@ -96,6 +104,7 @@ pub fn keyevent_to_bytes(event: &sdl2::event::Event) -> Option<&[u8]> {
                     Keycode::Down => Some(b"\x1bOB"),
                     Keycode::Right => Some(b"\x1bOC"),
                     Keycode::Left => Some(b"\x1bOD"),
+
                     _ => None,
                 },
                 None => None,
