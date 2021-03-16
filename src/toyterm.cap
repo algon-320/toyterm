@@ -1,17 +1,16 @@
-tt|toyterm-256color|toyterm (partially support vt100 control sequences):\
-	:am:bs:ms:ul:\
+tt|toyterm-256color|toyterm (a toy terminal emulator):\
+	:am:bs:xn:eo:mi:ms:ul:\
 	:Co#256:co#80:it#8:li#24:\
+    :bl=^G:cr=^M:cs=\E[%i%d;%dr:\
+    :cl=\E[H\E[J:cb=\E[1K:ce=\E[K:cd=\E[J:dl=\E[2K:\
+	:cm=\E[%i%d;%dH:ho=\E[H:sc=\E[s:rc=\E[u:\
+	:md=\E[1m:us=\E[4m:mb=\E[5m:mr=\E[7m:me=\E[m:so=\E[1;7m:\
 	:AB=\E[48;5;%dm:AF=\E[38;5;%dm:\
 	:AB=\E[4%dm:AF=\E[3%dm:\
-	:DO=\E[%dB:\
-	:LE=\E[%dD:RI=\E[%dC:UP=\E[%dA:\
-	:cb=\E[1K:cd=\E[J:ce=\E[K:cl=\E[H\E[J:\
-	:cm=\E[%i%d;%dH:cr=^M:cs=\E[%i%d;%dr:\
-	:ho=\E[H:\
+	:kb=^H:@8=\r:\
 	:k1=\EOP:k2=\EOQ:k3=\EOR:k4=\EOS:k5=\EOt:k6=\EOu:k7=\EOv:k8=\EOl:k9=\EOw:k;=\EOx:\
-	:kb=^H:\
-	:ku=\EOA:kd=\EOB:kl=\EOD:kr=\EOC:\
-	:le=\E[D:md=\E[1m:me=\E[m:mr=\E[7m:\
-	:nd=\E[C:r1=\Ec:sc=\E[s:rc=\E[u:\
-	:sf=^J:us=\E[4m:so=\E[7m:sr=\EM:\
-	:up=\E[A:\
+	:ku=\EOA:kd=\EOB:kr=\EOC:kl=\EOD:\
+    :kh=\E[H:@7=\E[F:\
+	:r1=\Ec:sf=^J:sr=\EM:\
+    :up=\E[A:do=\E[B:nd=\E[C:le=\E[D:\
+    :UP=\E[%dA:DO=\E[%dB:RI=\E[%dC:LE=\E[%dD:\
