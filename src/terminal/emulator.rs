@@ -249,7 +249,6 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
         use ControlOp::*;
         match op {
             InsertChar(x) => {
-                log::trace!("insert_char: {}", x);
                 self.insert_char(x);
             }
             Bell => {
@@ -287,15 +286,15 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                 self.move_cursor(CursorMove::Left, am);
             }
             SaveCursor => {
-                log::debug!("cursor saved");
+                log::debug!("cursor saved: {:?}", self.cursor);
                 self.saved_cursor = Some(self.cursor.clone());
             }
             RestoreCursor => {
-                log::debug!("cursor restored");
                 self.cursor = self.saved_cursor.clone().unwrap_or_else(|| {
                     log::info!("no saved cursor");
                     Cursor::default()
                 });
+                log::debug!("cursor restored: {:?}", self.cursor);
             }
 
             EraseEndOfLine => {
@@ -347,8 +346,13 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             }
             SetTopBottom(range) => {
                 self.scroll_range.v = range;
+                log::debug!("scroll_range changed --> {:?}", self.scroll_range);
             }
             ChangeCellAttribute(style, fg, bg) => {
+                log::trace!(
+                    "(before attribute change) cursor.attr = {:?}",
+                    self.cursor.attr
+                );
                 if let Some(s) = style {
                     self.cursor.attr.style = s;
                 }
@@ -358,6 +362,10 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                 if let Some(b) = bg {
                     self.cursor.attr.bg = b;
                 }
+                log::trace!(
+                    "(after attribute change)  cursor.attr = {:?}",
+                    self.cursor.attr
+                );
             }
             Ignore => {}
 
