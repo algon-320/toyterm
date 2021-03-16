@@ -3,7 +3,7 @@ use crate::basics::*;
 use super::control::{self, ControlOp};
 use super::render::*;
 
-fn cell_to_pixel(p: Point<ScreenCell>, cell_size: Size<Pixel>) -> Point<Pixel> {
+fn cell_top_left_corner(p: Point<ScreenCell>, cell_size: Size<Pixel>) -> Point<Pixel> {
     Point {
         x: p.x as PixelIdx * cell_size.width,
         y: p.y as PixelIdx * cell_size.height,
@@ -126,7 +126,8 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                 cell.attr = CellAttribute::default();
                 cell.attr.style = Style::Reverse;
             }
-            self.renderer.draw_cell(cell, cell_to_pixel(p, cell_size));
+            self.renderer
+                .draw_cell(cell, cell_top_left_corner(p, cell_size));
         }
         // TODO: draw sixel
         self.renderer.present();
@@ -397,7 +398,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                 let ch = cell_size.height as usize;
                 let corresponding_lines = ((img.height + ch - 1) / ch) as ScreenCellIdx;
                 self.move_cursor_nextline(corresponding_lines as usize);
-                let pos = cell_to_pixel(
+                let pos = cell_top_left_corner(
                     {
                         let mut tmp = self.cursor.pos;
                         tmp.y -= corresponding_lines;
