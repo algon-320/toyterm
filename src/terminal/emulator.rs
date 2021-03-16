@@ -27,12 +27,14 @@ pub enum CursorMove {
 pub struct Cursor {
     pub pos: Point<ScreenCell>,
     pub attr: CellAttribute,
+    pub visible: bool,
 }
 impl Default for Cursor {
     fn default() -> Self {
         Self {
             pos: Point { x: 0, y: 0 },
             attr: CellAttribute::default(),
+            visible: true,
         }
     }
 }
@@ -54,7 +56,7 @@ impl Cursor {
         }
         range.contains(&new_pos).then(|| Cursor {
             pos: new_pos,
-            attr: self.attr,
+            ..*self
         })
     }
 
@@ -120,7 +122,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             .zip(self.screen_buf.iter().rev());
         for (p, cell) in cells {
             let mut cell = *cell;
-            if self.cursor.pos == p {
+            if self.cursor.visible && self.cursor.pos == p {
                 cell.attr = CellAttribute::default();
                 cell.attr.style = Style::Reverse;
             }
@@ -295,6 +297,14 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                     Cursor::default()
                 });
                 log::debug!("cursor restored: {:?}", self.cursor);
+            }
+            HideCursor => {
+                self.cursor.visible = false;
+                log::debug!("cursor invisible");
+            }
+            ShowCursor => {
+                self.cursor.visible = true;
+                log::debug!("cursor visible");
             }
 
             EraseEndOfLine => {

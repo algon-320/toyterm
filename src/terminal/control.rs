@@ -15,6 +15,8 @@ pub enum ControlOp {
     CursorBackward(usize),
     SaveCursor,
     RestoreCursor,
+    HideCursor,
+    ShowCursor,
     ScrollDown,
     ScrollUp,
     EraseEndOfLine,
@@ -234,6 +236,8 @@ where
             match (arg.as_slice(), fin_char) {
                 ([Some(1)], 'h') => Some(ControlOp::SetCursorMode(true)),
                 ([Some(1)], 'l') => Some(ControlOp::SetCursorMode(false)),
+                ([Some(25)], 'h') => Some(ControlOp::ShowCursor),
+                ([Some(25)], 'l') => Some(ControlOp::HideCursor),
                 ([Some(2004)], 'h') => {
                     // TODO
                     Some(ControlOp::Ignore)

@@ -7,6 +7,7 @@ tt|toyterm-256color|toyterm (a toy terminal emulator):\
     :md=\E[1m:us=\E[4m:mb=\E[5m:mr=\E[7m:me=\E[m:so=\E[1;7m:\
     :AB=\E[48;5;%dm:AF=\E[38;5;%dm:\
     :AB=\E[4%dm:AF=\E[3%dm:\
+    :vi=\E[?25l:ve=\E[?25h\
     :kb=^H:@8=\r:\
     :k1=\EOP:k2=\EOQ:k3=\EOR:k4=\EOS:k5=\EOt:k6=\EOu:k7=\EOv:k8=\EOl:k9=\EOw:k;=\EOx:\
     :ku=\EOA:kd=\EOB:kr=\EOC:kl=\EOD:\

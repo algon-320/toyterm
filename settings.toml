@@ -1,9 +1,6 @@
 [general]
-# if the 'shell' field is empty, $SHELL is used instead
-shell = "/usr/bin/bash"
-shell_args = ["--noprofile", "--norc"]  # arguments passed to the shell
-columns = 80
-rows = 24
+columns = 100
+rows = 30
 
 [font]
 regular = "monospace"
