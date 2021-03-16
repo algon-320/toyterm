@@ -1,6 +1,9 @@
 [general]
-columns = 100
-rows = 30
+# if the 'shell' field is omitted or empty, $SHELL would be used instead
+shell = "/usr/bin/bash"
+shell_args = []  # arguments passed to the shell
+columns = 80
+rows = 24
 
 [font]
 regular = "monospace"
