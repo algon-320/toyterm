@@ -83,6 +83,7 @@ pub struct Term<'ttf, 'texture> {
     cursor: Cursor,
     saved_cursor: Option<Cursor>,
     screen_buf: Vec<Cell>,
+    end_of_line: bool,
 }
 impl<'ttf, 'texture> Term<'ttf, 'texture> {
     pub fn new(renderer: Renderer<'ttf, 'texture>, size: Size<ScreenCell>) -> Self {
@@ -95,6 +96,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             saved_cursor: None,
             screen_buf: vec![Cell::default(); (size.width as usize) * (size.height as usize)],
             scroll_range: size.into(),
+            end_of_line: false,
         };
         term.reset();
         term
@@ -105,6 +107,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
         self.cursor = Cursor::default();
         self.saved_cursor = None;
         self.scroll_range = self.screen_size.into();
+        self.end_of_line = false;
         self.clear_screen_part(&Range2d::from(self.screen_size));
     }
 
@@ -143,21 +146,32 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
     }
 
     pub fn move_cursor(&mut self, m: CursorMove, rep: usize) {
+        self.end_of_line = false;
+        log::trace!("self.end_of_line = {:?}", self.end_of_line);
         let (cursor, _) = self.cursor.try_move(m, &self.screen_size.into(), rep);
         self.cursor = cursor;
     }
 
     pub fn insert_char(&mut self, c: char) {
         let cw = CharWidth::from_char(c).columns();
+        log::trace!("insert_char: \x1b[32;1m{:?}\x1b[m", c);
+        log::trace!("(before insert) cursor = {:?}", self.cursor);
+        if self.end_of_line {
+            self.move_cursor(CursorMove::LeftMost, 1);
+            self.move_cursor_nextline(1);
+            self.end_of_line = false;
+            log::trace!("self.end_of_line = {:?}", self.end_of_line);
+        }
+
         match self
             .cursor
-            .try_move(CursorMove::Right, &self.screen_size.into(), cw - 1)
+            .try_move(CursorMove::Right, &self.scroll_range, cw - 1)
         {
             (_, 0) => {} // we have enough space to draw the character
             (_, _) => {
                 // TODO: consider line wrap
-                self.move_cursor_nextline(1);
                 self.move_cursor(CursorMove::LeftMost, 1);
+                self.move_cursor_nextline(1);
             }
         }
 
@@ -171,15 +185,15 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
 
         match self
             .cursor
-            .try_move(CursorMove::Right, &self.screen_size.into(), cw)
+            .try_move(CursorMove::Right, &self.scroll_range, cw)
         {
             (cursor, 0) => self.cursor = cursor,
             (_, _) => {
-                // TODO: consider line wrap
-                self.move_cursor(CursorMove::LeftMost, 1);
-                self.move_cursor_nextline(1);
+                self.end_of_line = true;
+                log::trace!("self.end_of_line = {:?}", self.end_of_line);
             }
         }
+        log::trace!("(after insert)  cursor = {:?}", self.cursor);
     }
 
     fn clear_screen_part(&mut self, range: &Range2d<ScreenCell>) {
@@ -253,6 +267,8 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             }
             CarriageReturn => {
                 log::trace!("[CR]");
+                self.end_of_line = false;
+                log::trace!("self.end_of_line = {:?}", self.end_of_line);
                 self.move_cursor(CursorMove::LeftMost, 1);
             }
             CursorHome(p) => {
