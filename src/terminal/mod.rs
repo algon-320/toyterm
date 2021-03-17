@@ -1,5 +1,5 @@
-mod control;
 mod emulator;
+mod parser;
 pub mod render;
 
 pub use emulator::*;

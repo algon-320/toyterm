@@ -1,6 +1,6 @@
 use crate::basics::*;
 
-use super::control;
+use super::parser;
 use super::render::Renderer;
 use super::{Cell, CellAttribute, CharWidth, ControlOp, Cursor, CursorMove, Style};
 
@@ -357,7 +357,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
 impl<'ttf, 'texture> std::io::Write for Term<'ttf, 'texture> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         let mut itr = std::str::from_utf8(bytes).expect("UTF-8").chars();
-        while let Some(op) = control::parse(&mut itr) {
+        while let Some(op) = parser::parse(&mut itr) {
             self.process(op);
         }
         Ok(bytes.len())
