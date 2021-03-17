@@ -24,7 +24,7 @@ toyterm is a toy terminal emulator.
 run following commands
 
 ```sh
-$ tic -o ${HOME}/.terminfo/ src/toyterm.cap
+$ tic -o ${HOME}/.terminfo/ src/toyterm.info
 ```
 
 When you want to uninstall, please simply remove `${HOME}/.terminfo/t/toyterm-256color`.
@@ -50,4 +50,4 @@ $ cargo run --release
 
 ### escape sequences
 
-see `src/terminal/control.rs` and `src/toyterm.cap`
+see `src/terminal/control.rs` and `src/toyterm.info`
