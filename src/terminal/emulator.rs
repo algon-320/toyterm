@@ -254,7 +254,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             }
             Tab => {
                 // FIXME: tabwidth=8
-                let rep = (8 - self.cursor.pos.x as usize % 8) % 8;
+                let rep = 8 - self.cursor.pos.x as usize % 8;
                 log::trace!("[TAB] CursorMove::Right * {}", rep);
                 self.move_cursor(Move::Right(rep));
             }
