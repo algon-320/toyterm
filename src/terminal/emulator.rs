@@ -1,6 +1,6 @@
 use crate::basics::*;
 
-use super::parser;
+use super::parser::Parser;
 use super::render::Renderer;
 use super::{Cell, CellAttribute, CharWidth, ControlOp, Cursor, CursorMove, Style};
 
@@ -13,6 +13,7 @@ fn cell_top_left_corner(p: Point<ScreenCell>, cell_size: Size<Pixel>) -> Point<P
 
 pub struct Term<'ttf, 'texture> {
     renderer: Renderer<'ttf, 'texture>,
+    parser: Parser,
 
     screen_size: Size<ScreenCell>,
     scroll_range: Range2d<ScreenCell>,
@@ -27,6 +28,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
 
         let mut term = Term {
             renderer,
+            parser: Parser::new(),
             screen_size: size,
             cursor: Cursor::default(),
             saved_cursor: None,
@@ -301,7 +303,6 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                     self.cursor.attr
                 );
             }
-            Ignore => {}
 
             ScrollUp => {
                 self.scroll_up();
@@ -340,25 +341,18 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                 self.renderer.draw_sixel(&img, pos);
             }
 
-            Unknown(seq) => {
-                // print sequence as string followed by '^['
-                // to indicate it is unknown escape sequence
-                self.insert_char('^');
-                self.insert_char('[');
-                log::warn!("unknown escape sequence: {:?}", seq);
-                for c in seq {
-                    self.insert_char(c);
-                }
-            }
+            Ignore => {}
         }
     }
 }
 
 impl<'ttf, 'texture> std::io::Write for Term<'ttf, 'texture> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        let mut itr = std::str::from_utf8(bytes).expect("UTF-8").chars();
-        while let Some(op) = parser::parse(&mut itr) {
-            self.process(op);
+        let input = std::str::from_utf8(bytes).expect("UTF-8");
+        if self.parser.feed(input) {
+            while let Some(op) = self.parser.next() {
+                self.process(op);
+            }
         }
         Ok(bytes.len())
     }

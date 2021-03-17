@@ -109,47 +109,31 @@ fn main() -> Result<()> {
                 // and forwards them to the main thread
                 let mut buf = vec![0; 4 * 1024];
                 std::thread::spawn(move || 'thread: loop {
-                    let mut bytes = Vec::new();
-                    loop {
-                        match unistd::read(pty.master, &mut buf) {
-                            Ok(nb) => {
-                                bytes.extend_from_slice(&buf[..nb]);
-                                if nb + 1 == buf.len() {
-                                    use nix::poll::{poll, PollFd, PollFlags};
-                                    let mut pollfd = [PollFd::new(pty.master, PollFlags::POLLIN)];
-                                    poll(&mut pollfd, 0).expect("poll");
-                                    let result = pollfd[0].revents().expect("revents");
-                                    if result.contains(PollFlags::POLLIN) {
-                                        // we can read more data from the slave
-                                        log::debug!("read more (current {} bytes)", bytes.len());
-                                        continue;
-                                    }
-                                    assert!(!result.contains(PollFlags::POLLERR));
-                                }
-                                break;
-                            }
-                            Err(_) => {
-                                event_sender
-                                    .push_event(Event::Quit { timestamp: 0 })
-                                    .unwrap();
-                                break 'thread;
-                            }
+                    match unistd::read(pty.master, &mut buf) {
+                        Ok(nb) => {
+                            let bytes = buf[..nb].to_vec();
+                            log::trace!("received {} bytes", bytes.len());
+                            send.send(bytes).unwrap();
+
+                            // notify
+                            event_sender
+                                .push_event(Event::User {
+                                    timestamp: 0,
+                                    window_id: 0,
+                                    type_: master_readable_event_id,
+                                    code: 0,
+                                    data1: std::ptr::null_mut::<core::ffi::c_void>(),
+                                    data2: std::ptr::null_mut::<core::ffi::c_void>(),
+                                })
+                                .unwrap();
+                        }
+                        Err(_) => {
+                            event_sender
+                                .push_event(Event::Quit { timestamp: 0 })
+                                .unwrap();
+                            break 'thread;
                         }
                     }
-                    log::trace!("received {} bytes", bytes.len());
-                    send.send(bytes).unwrap();
-
-                    // notify
-                    event_sender
-                        .push_event(Event::User {
-                            timestamp: 0,
-                            window_id: 0,
-                            type_: master_readable_event_id,
-                            code: 0,
-                            data1: std::ptr::null_mut::<core::ffi::c_void>(),
-                            data2: std::ptr::null_mut::<core::ffi::c_void>(),
-                        })
-                        .unwrap();
                 });
             }
 

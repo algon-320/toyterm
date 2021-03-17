@@ -2,7 +2,7 @@ use super::{CellAttribute, Color, ControlOp, CursorMove, Style};
 use crate::basics::*;
 
 use std::iter::Peekable;
-fn parse_numeric<I>(itr: &mut Peekable<I>) -> Option<i64>
+fn number<I>(itr: &mut Peekable<I>) -> Option<i64>
 where
     I: Iterator<Item = char>,
 {
@@ -14,14 +14,21 @@ where
     tmp
 }
 
-fn parse_args<I>(itr: &mut I) -> Option<(Vec<Option<i64>>, char)>
+fn arguments<I>(itr: &mut I) -> Option<(bool, Vec<Option<i64>>, char)>
 where
     I: Iterator<Item = char>,
 {
     let mut itr = itr.peekable();
+    let question = match itr.peek() {
+        Some(&'?') => {
+            itr.next().unwrap();
+            true
+        }
+        _ => false,
+    };
     let mut args = Vec::new();
     let fin = loop {
-        args.push(parse_numeric(&mut itr));
+        args.push(number(&mut itr));
         match itr.peek() {
             Some(&';') => {
                 itr.next().unwrap();
@@ -37,15 +44,12 @@ where
             }
         }
     };
-    Some((args, fin))
+    Some((question, args, fin))
 }
 
-fn parse_color<I>(ty: i64, args: &mut I) -> Option<Color>
-where
-    I: Iterator<Item = Option<i64>>,
-{
-    match ty {
-        30..=37 | 40..=47 => match ty % 10 {
+fn color(args: &[i64]) -> Option<Color> {
+    match args[0] {
+        30..=37 | 40..=47 => match args[0] % 10 {
             0 => Some(Color::Black),
             1 => Some(Color::Red),
             2 => Some(Color::Green),
@@ -56,7 +60,7 @@ where
             7 => Some(Color::White),
             _ => unreachable!(),
         },
-        90..=97 | 100..=107 => match ty % 10 {
+        90..=97 | 100..=107 => match args[0] % 10 {
             0 => Some(Color::Gray),
             1 => Some(Color::LightRed),
             2 => Some(Color::LightGreen),
@@ -67,9 +71,9 @@ where
             7 => Some(Color::LightWhite),
             _ => unreachable!(),
         },
-        38 | 48 => match args.next()?? {
-            5 => {
-                match args.next()?? {
+        38 | 48 => match &args[1..] {
+            [5, idx] => {
+                match idx {
                     0 => Some(Color::Black),
                     1 => Some(Color::Red),
                     2 => Some(Color::Yellow),
@@ -103,28 +107,20 @@ where
                     _ => None,
                 }
             }
-            2 => {
-                // 24-bit colors
-                let red = args.next()?.unwrap_or(255);
-                let green = args.next()?.unwrap_or(255);
-                let blue = args.next()?.unwrap_or(255);
-                Some(Color::RGB(red as u8, green as u8, blue as u8))
-            }
+            // 24-bit colors
+            [2, red, green, blue] => Some(Color::RGB(*red as u8, *green as u8, *blue as u8)),
             _ => None,
         },
         _ => None,
     }
 }
 
-fn sgr<I>(args: &mut I) -> Option<(Option<Style>, Option<Color>, Option<Color>)>
-where
-    I: Iterator<Item = Option<i64>>,
-{
+fn sgr(args: &[i64]) -> Option<(Option<Style>, Option<Color>, Option<Color>)> {
     let mut style = None;
     let mut fg = None;
     let mut bg = None;
-    while let Some(arg) = args.next() {
-        match arg.unwrap_or(0) {
+    for (i, arg) in args.iter().enumerate() {
+        match arg {
             0 => {
                 // reset
                 let def = CellAttribute::default();
@@ -136,8 +132,14 @@ where
             4 => style = Some(Style::UnderLine),
             5 => style = Some(Style::Blink),
             7 => style = Some(Style::Reverse),
-            arg @ 30..=38 | arg @ 90..=97 => fg = Some(parse_color(arg, args)?),
-            arg @ 40..=48 | arg @ 100..=107 => bg = Some(parse_color(arg, args)?),
+            _arg @ 30..=38 | _arg @ 90..=97 => {
+                fg = Some(color(&args[i..])?);
+                break;
+            }
+            _arg @ 40..=48 | _arg @ 100..=107 => {
+                bg = Some(color(&args[i..])?);
+                break;
+            }
             _ => {}
         }
     }
@@ -148,142 +150,235 @@ fn csi<I>(itr: &mut I) -> Option<ControlOp>
 where
     I: Iterator<Item = char>,
 {
-    let (args, fin_char) = parse_args(itr)?;
-    log::trace!("CSI({:?}, {:?})", args, fin_char);
+    let (question, args, fin_char) = arguments(itr)?;
+    log::trace!(
+        "CSI({}{:?}, {:?})",
+        if question { "? " } else { "" },
+        args,
+        fin_char
+    );
 
-    match (args.as_slice(), fin_char) {
-        // Cursor Home
-        (args, 'f') | (args, 'H') => match args {
-            [None] => Some(ControlOp::CursorMove(CursorMove::Exact(Point {
-                x: 0,
-                y: 0,
-            }))),
-            [y, x] => Some(ControlOp::CursorMove(CursorMove::Exact(Point {
-                x: x.unwrap_or(1).checked_sub(1)? as ScreenCellIdx,
-                y: y.unwrap_or(1).checked_sub(1)? as ScreenCellIdx,
-            }))),
-            _ => None,
-        },
-        // Cursor Up
-        ([amount], 'A') => Some(ControlOp::CursorMove(CursorMove::Up(
-            amount.unwrap_or(1) as usize
-        ))),
-        // Cursor Down
-        ([amount], 'B') => Some(ControlOp::CursorMove(CursorMove::Down(
-            amount.unwrap_or(1) as usize
-        ))),
-        // Cursor Forward
-        ([amount], 'C') => Some(ControlOp::CursorMove(CursorMove::Right(
-            amount.unwrap_or(1) as usize,
-        ))),
-        // Cursor Backward
-        ([amount], 'D') => Some(ControlOp::CursorMove(CursorMove::Left(
-            amount.unwrap_or(1) as usize
-        ))),
-
-        // Save cursor position
-        ([None], 's') => Some(ControlOp::SaveCursor),
-        // Restore cursor position
-        ([None], 'u') => Some(ControlOp::RestoreCursor),
-
-        // Erase line
-        ([None], 'K') | ([Some(0)], 'K') => Some(ControlOp::EraseEndOfLine),
-        ([Some(1)], 'K') => Some(ControlOp::EraseStartOfLine),
-        ([Some(2)], 'K') => Some(ControlOp::EraseLine),
-
-        // Erase screen
-        ([None], 'J') | ([Some(0)], 'J') => Some(ControlOp::EraseDown),
-        ([Some(1)], 'J') => Some(ControlOp::EraseUp),
-        ([Some(2)], 'J') => Some(ControlOp::EraseScreen),
-
-        // Scroll Region
-        ([Some(top), Some(bot)], 'r') => {
-            let top = (*top as ScreenCellIdx).checked_sub(1)?;
-            let bot = (*bot as ScreenCellIdx).checked_sub(1)?;
-            Some(ControlOp::SetScrollRange((top)..(bot + 1)))
-        }
-
-        // SGR (Select Graphic Rendition)
-        (args, 'm') => {
-            let (style, fg, bg) = sgr(&mut args.iter().copied())?;
-            Some(ControlOp::ChangeCellAttribute(style, fg, bg))
-        }
-
-        ([None], '?') => {
-            let (arg, fin_char) = parse_args(itr)?;
-            match (arg.as_slice(), fin_char) {
-                ([Some(1)], 'h') => Some(ControlOp::SetCursorMode(true)),
-                ([Some(1)], 'l') => Some(ControlOp::SetCursorMode(false)),
-                ([Some(25)], 'h') => Some(ControlOp::ShowCursor),
-                ([Some(25)], 'l') => Some(ControlOp::HideCursor),
-                ([Some(2004)], 'h') => {
-                    // TODO
-                    Some(ControlOp::Ignore)
-                }
-                ([Some(2004)], 'l') => {
-                    // TODO
-                    Some(ControlOp::Ignore)
-                }
-                _ => None,
+    if question {
+        match (args.as_slice(), fin_char) {
+            ([Some(1)], 'h') => Some(ControlOp::SetCursorMode(true)),
+            ([Some(1)], 'l') => Some(ControlOp::SetCursorMode(false)),
+            ([Some(25)], 'h') => Some(ControlOp::ShowCursor),
+            ([Some(25)], 'l') => Some(ControlOp::HideCursor),
+            ([Some(2004)], 'h') => {
+                // TODO
+                Some(ControlOp::Ignore)
             }
+            ([Some(2004)], 'l') => {
+                // TODO
+                Some(ControlOp::Ignore)
+            }
+            _ => None,
         }
+    } else {
+        match (args.as_slice(), fin_char) {
+            // Cursor Home
+            ([None], 'f') | ([None], 'H') => {
+                Some(ControlOp::CursorMove(CursorMove::Exact(Point {
+                    x: 0,
+                    y: 0,
+                })))
+            }
+            ([y, x], 'f') | ([y, x], 'H') => {
+                Some(ControlOp::CursorMove(CursorMove::Exact(Point {
+                    x: x.unwrap_or(1).checked_sub(1)? as ScreenCellIdx,
+                    y: y.unwrap_or(1).checked_sub(1)? as ScreenCellIdx,
+                })))
+            }
+            // Cursor Up
+            ([amount], 'A') => Some(ControlOp::CursorMove(CursorMove::Up(
+                amount.unwrap_or(1) as usize
+            ))),
+            // Cursor Down
+            ([amount], 'B') => Some(ControlOp::CursorMove(CursorMove::Down(
+                amount.unwrap_or(1) as usize
+            ))),
+            // Cursor Forward
+            ([amount], 'C') => Some(ControlOp::CursorMove(CursorMove::Right(
+                amount.unwrap_or(1) as usize,
+            ))),
+            // Cursor Backward
+            ([amount], 'D') => Some(ControlOp::CursorMove(CursorMove::Left(
+                amount.unwrap_or(1) as usize
+            ))),
 
-        _ => None,
+            // Save cursor position
+            ([None], 's') => Some(ControlOp::SaveCursor),
+            // Restore cursor position
+            ([None], 'u') => Some(ControlOp::RestoreCursor),
+
+            // Erase line
+            ([None], 'K') | ([Some(0)], 'K') => Some(ControlOp::EraseEndOfLine),
+            ([Some(1)], 'K') => Some(ControlOp::EraseStartOfLine),
+            ([Some(2)], 'K') => Some(ControlOp::EraseLine),
+
+            // Erase screen
+            ([None], 'J') | ([Some(0)], 'J') => Some(ControlOp::EraseDown),
+            ([Some(1)], 'J') => Some(ControlOp::EraseUp),
+            ([Some(2)], 'J') => Some(ControlOp::EraseScreen),
+
+            // Scroll Region
+            ([Some(top), Some(bot)], 'r') => {
+                let top = (*top as ScreenCellIdx).checked_sub(1)?;
+                let bot = (*bot as ScreenCellIdx).checked_sub(1)?;
+                Some(ControlOp::SetScrollRange((top)..(bot + 1)))
+            }
+
+            // SGR (Select Graphic Rendition)
+            (args, 'm') => {
+                let default_zero: Vec<_> = args.iter().map(|op| op.unwrap_or(0)).collect();
+                let (style, fg, bg) = sgr(&default_zero)?;
+                Some(ControlOp::ChangeCellAttribute(style, fg, bg))
+            }
+
+            _ => None,
+        }
     }
 }
 
-fn parse_escape_sequence<I>(itr: &mut I) -> Option<ControlOp>
-where
-    I: Iterator<Item = char> + Clone,
-{
-    let backup = itr.clone();
-    match itr.next() {
-        Some(c) => {
-            let op = match c {
-                '[' => csi(itr),
-                'D' => Some(ControlOp::ScrollUp),
-                'M' => Some(ControlOp::ScrollDown),
-                'P' => {
-                    while let Some(c) = itr.next() {
-                        if c == 'q' {
-                            break;
+enum State {
+    NotStarted,
+    EscapeSequence,
+    Csi(Vec<char>),
+    Sixel(Vec<char>),
+}
+impl State {
+    fn start(&mut self, input: char) -> Option<ControlOp> {
+        *self = State::NotStarted;
+        match input {
+            '\x00' => Some(ControlOp::Ignore),
+            '\x07' => Some(ControlOp::Bell),
+            '\x08' => Some(ControlOp::CursorMove(CursorMove::Left(1))),
+            '\x09' => Some(ControlOp::Tab),
+            '\x0A' => Some(ControlOp::LineFeed),
+            '\x0D' => Some(ControlOp::CarriageReturn),
+            '\x1B' => {
+                *self = State::EscapeSequence;
+                None
+            }
+            x => Some(ControlOp::InsertChar(x)),
+        }
+    }
+
+    fn escape_sequence(&mut self, input: char) -> Option<ControlOp> {
+        *self = State::NotStarted;
+        match input {
+            '[' => {
+                *self = State::Csi(Vec::new());
+                None
+            }
+            'D' => Some(ControlOp::ScrollUp),
+            'M' => Some(ControlOp::ScrollDown),
+            'P' => {
+                *self = State::Sixel(Vec::new());
+                None
+            }
+            '=' => Some(ControlOp::Ignore),
+            '>' => Some(ControlOp::Ignore),
+            'c' => Some(ControlOp::Reset),
+            x => {
+                log::warn!("Unkwon escape sequence: \\E {:?}", x);
+                None
+            }
+        }
+    }
+
+    fn csi(&mut self, input: char) -> Option<ControlOp> {
+        match input {
+            '?' | '0'..='9' | ';' | ' ' => match self {
+                State::Csi(buf) => {
+                    buf.push(input);
+                    None
+                }
+                _ => unreachable!(),
+            },
+            _ => match std::mem::replace(self, State::NotStarted) {
+                State::Csi(mut buf) => {
+                    buf.push(input);
+                    let mut iter = buf.iter().copied();
+                    match csi(&mut iter) {
+                        None => {
+                            log::warn!("Unknown CSI sequnce: {:?}", buf);
+                            None
                         }
+                        Some(op) => Some(op),
                     }
-                    let img = sixel::decode(itr, [3, 2, 1, 0], 0, None);
+                }
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    fn sixel(&mut self, input: char) -> Option<ControlOp> {
+        let last = match self {
+            State::Sixel(buf) => buf.last() == Some(&'\x1b') && input == '\\',
+            _ => unreachable!(),
+        };
+        if last {
+            match std::mem::replace(self, State::NotStarted) {
+                State::Sixel(mut buf) => {
+                    buf.push(input);
+                    *self = State::NotStarted;
+                    let mut itr = buf.into_iter();
+                    let img = sixel::decode(&mut itr, [3, 2, 1, 0], 0, None);
                     Some(ControlOp::Sixel(img))
                 }
-                '=' => Some(ControlOp::Ignore),
-                '>' => Some(ControlOp::Ignore),
-                'c' => Some(ControlOp::Reset),
-                _ => None,
-            };
-            // revert the iterator if it is followed by a invalid sequence
-            if op.is_none() {
-                *itr = backup;
+                _ => unreachable!(),
             }
-            op
+        } else {
+            match self {
+                State::Sixel(buf) => {
+                    if !(buf.is_empty() && input == 'q') {
+                        buf.push(input);
+                    }
+                    None
+                }
+                _ => unreachable!(),
+            }
         }
-        None => None,
+    }
+
+    pub fn transfer(&mut self, input: char) -> Option<ControlOp> {
+        match self {
+            State::NotStarted => self.start(input),
+            State::EscapeSequence => self.escape_sequence(input),
+            State::Csi(_) => self.csi(input),
+            State::Sixel(_) => self.sixel(input),
+        }
     }
 }
 
-pub fn parse<I>(itr: &mut I) -> Option<ControlOp>
-where
-    I: Iterator<Item = char> + Clone,
-{
-    let op = match itr.next()? {
-        '\x00' => return None,
-        '\x07' => ControlOp::Bell,
-        '\x08' => ControlOp::CursorMove(CursorMove::Left(1)),
-        '\x09' => ControlOp::Tab,
-        '\x0A' => ControlOp::LineFeed,
-        '\x0D' => ControlOp::CarriageReturn,
-        '\x1B' => parse_escape_sequence(itr).unwrap_or_else(|| {
-            let mut seq = vec!['\x1B'];
-            seq.extend(itr);
-            ControlOp::Unknown(seq)
-        }),
-        x => ControlOp::InsertChar(x),
-    };
-    Some(op)
+use std::collections::VecDeque;
+pub struct Parser {
+    op_buf: VecDeque<ControlOp>,
+    state: State,
+}
+impl Parser {
+    pub fn new() -> Self {
+        Self {
+            op_buf: VecDeque::new(),
+            state: State::NotStarted,
+        }
+    }
+    pub fn feed(&mut self, input: &str) -> bool {
+        for c in input.chars() {
+            match self.state.transfer(c) {
+                Some(op) => {
+                    self.op_buf.push_back(op);
+                }
+                None => {}
+            }
+        }
+        !self.op_buf.is_empty()
+    }
+}
+impl Iterator for Parser {
+    type Item = ControlOp;
+    fn next(&mut self) -> Option<ControlOp> {
+        self.op_buf.pop_front()
+    }
 }

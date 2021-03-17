@@ -114,7 +114,6 @@ pub enum ControlOp {
     ChangeCellAttribute(Option<Style>, Option<Color>, Option<Color>),
     SetCursorMode(bool),
     Sixel(sixel::Image),
-    Unknown(Vec<char>),
     Ignore,
 }
 
