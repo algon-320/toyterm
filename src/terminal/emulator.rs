@@ -1,14 +1,18 @@
-use crate::basics::*;
-
 use super::parser::Parser;
-use super::render::Renderer;
-use super::{Cell, CellAttribute, CharWidth, Color, ControlOp, Cursor, CursorMove, Style};
+use super::render::{Renderer, SixelHandle};
+use super::{Cell, CellAttribute, CharWidth, ControlOp, Cursor, CursorMove, Style};
+use crate::basics::*;
 
 fn cell_top_left_corner(p: Point<ScreenCell>, cell_size: Size<Pixel>) -> Point<Pixel> {
     Point {
         x: p.x as PixelIdx * cell_size.width,
         y: p.y as PixelIdx * cell_size.height,
     }
+}
+
+struct SixelImage {
+    range: Range2d<ScreenCell>,
+    handle: Option<SixelHandle>,
 }
 
 pub struct Term<'ttf, 'texture> {
@@ -22,6 +26,7 @@ pub struct Term<'ttf, 'texture> {
     screen_buf: Vec<Cell>,
     end_of_line: bool,
     has_focus: bool,
+    sixels: Vec<SixelImage>,
 }
 impl<'ttf, 'texture> Term<'ttf, 'texture> {
     pub fn new(renderer: Renderer<'ttf, 'texture>, size: Size<ScreenCell>) -> Self {
@@ -37,6 +42,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             scroll_range: size.into(),
             end_of_line: false,
             has_focus: true,
+            sixels: Vec::new(),
         };
         term.reset();
         term
@@ -58,6 +64,17 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
         self.clear_screen_part(&Range2d::from(self.screen_size));
     }
 
+    fn release_outofrange_sixels(&mut self) {
+        for sixel in &mut self.sixels {
+            if sixel.range.bottom() < 0 || sixel.range.top() >= self.screen_size.height {
+                if let Some(handle) = sixel.handle.take() {
+                    self.renderer.release_sixel(handle);
+                }
+            }
+        }
+        self.sixels.retain(|sixel| sixel.handle.is_some());
+    }
+
     pub fn render(&mut self) {
         log::trace!("render");
         let cell_size = self.renderer.cell_size();
@@ -74,7 +91,16 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             self.renderer
                 .draw_cell(cell, cell_top_left_corner(p, cell_size));
         }
-        // TODO: draw sixel
+
+        // draw sixels
+        for sixel in &self.sixels {
+            let (at, _size) = sixel.range.clone().decompose();
+            if let Some(handle) = sixel.handle.as_ref() {
+                self.renderer
+                    .draw_sixel(handle, cell_top_left_corner(at, cell_size));
+            }
+        }
+
         self.renderer.present();
     }
 
@@ -152,9 +178,26 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                 self.screen_buf[(y * w + x) as usize] = Cell::default();
             }
         }
+
+        for sixel in &mut self.sixels {
+            // remove the sixel if it intersects with the given range
+            let int = range.intersection(&sixel.range);
+            if int.top() <= int.bottom() && int.left() <= int.right() {
+                if let Some(handle) = sixel.handle.take() {
+                    self.renderer.release_sixel(handle);
+                }
+            }
+        }
+        self.sixels.retain(|sixel| sixel.handle.is_some());
     }
 
     fn scroll_up(&mut self) {
+        for sixel in &mut self.sixels {
+            sixel.range.v.start -= 1;
+            sixel.range.v.end -= 1;
+        }
+        self.release_outofrange_sixels();
+
         log::trace!("scroll_up");
         let w = self.screen_size.width;
 
@@ -173,6 +216,12 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
         }
     }
     fn scroll_down(&mut self) {
+        for sixel in &mut self.sixels {
+            sixel.range.v.start += 1;
+            sixel.range.v.end += 1;
+        }
+        self.release_outofrange_sixels();
+
         log::trace!("scroll_down");
         let w = self.screen_size.width;
 
@@ -325,20 +374,24 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             }
 
             Sixel(img) => {
-                // TODO: retain this sixel image and re-render it on each render() call.
-
                 let cell_size = self.renderer.cell_size();
+                let cw = cell_size.width as usize;
                 let ch = cell_size.height as usize;
                 let corresponding_lines = ((img.height + ch - 1) / ch) as ScreenCellIdx;
                 self.move_cursor_nextline(corresponding_lines as usize);
-                let pos = cell_top_left_corner(
-                    {
-                        let mut tmp = self.cursor.pos;
-                        tmp.y -= corresponding_lines;
-                        tmp
+                let at = {
+                    let mut tmp = self.cursor.pos;
+                    tmp.y -= corresponding_lines;
+                    tmp
+                };
+                let range = Range2d::new(
+                    at,
+                    Size {
+                        width: ((img.width + cw - 1) / cw) as ScreenCellIdx,
+                        height: corresponding_lines,
                     },
-                    cell_size,
                 );
+                let pos = cell_top_left_corner(at, cell_size);
                 log::debug!(
                     "draw sixel: x={}, y={}, h={}, w={} (lines: {})",
                     pos.x,
@@ -347,7 +400,11 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                     img.width,
                     corresponding_lines,
                 );
-                self.renderer.draw_sixel(&img, pos);
+                let handle = self.renderer.register_sixel(&img);
+                self.sixels.push(SixelImage {
+                    range,
+                    handle: Some(handle),
+                });
             }
 
             Ignore => {}

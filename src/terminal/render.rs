@@ -189,11 +189,17 @@ pub fn load_fonts(ttf_context: &Sdl2TtfContext) -> FontSet<'_> {
     )
 }
 
+pub struct SixelHandle {
+    id: usize,
+    size: Size<Pixel>,
+}
+
 pub struct Renderer<'ttf, 'texture> {
     fonts: FontSet<'ttf>,
     canvas: Canvas<Window>,
     texture_creator: &'texture TextureCreator<WindowContext>,
     cache: HashMap<Cell, Texture<'texture>>,
+    sixel_texture: Vec<Option<Texture<'texture>>>,
 }
 impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
     pub fn new(
@@ -205,7 +211,8 @@ impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
             fonts,
             canvas,
             texture_creator,
-            cache: std::collections::HashMap::new(),
+            cache: HashMap::new(),
+            sixel_texture: Vec::new(),
         }
     }
 
@@ -274,8 +281,7 @@ impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
         self.canvas.present();
     }
 
-    // draw sixel graphic on the screen texture
-    pub fn draw_sixel(&mut self, img: &sixel::Image, at: Point<Pixel>) {
+    pub fn register_sixel(&mut self, img: &sixel::Image) -> SixelHandle {
         let img_size = Size {
             width: img.width as PixelIdx,
             height: img.height as PixelIdx,
@@ -293,8 +299,27 @@ impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
             .copy_from_slice(&img.buf);
 
         let texture = Texture::from_surface(&surface, &self.texture_creator).unwrap();
+        let id = self.sixel_texture.len();
+        log::debug!("sixel registered id={}", id);
+        self.sixel_texture.push(Some(texture));
+        SixelHandle { id, size: img_size }
+    }
+
+    pub fn release_sixel(&mut self, handle: SixelHandle) {
+        log::debug!("sixel released id={}", handle.id);
+        let texture = self.sixel_texture.get_mut(handle.id).take();
+        drop(texture);
+    }
+
+    pub fn draw_sixel(&mut self, handle: &SixelHandle, at: Point<Pixel>) {
+        let texture = self
+            .sixel_texture
+            .get(handle.id)
+            .expect("invalid sixel handle")
+            .as_ref()
+            .expect("already released");
         self.canvas
-            .copy(&texture, None, Range2d::new(at, img_size).to_sdl2_rect())
+            .copy(texture, None, Range2d::new(at, handle.size).to_sdl2_rect())
             .unwrap();
     }
 }

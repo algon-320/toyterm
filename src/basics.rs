@@ -96,10 +96,30 @@ where
 }
 impl<P: PointType> Range2d<P>
 where
-    P::Type: std::cmp::PartialOrd,
+    P::Type: std::cmp::Ord,
 {
     pub fn contains(&self, p: &Point<P>) -> bool {
         self.h.contains(&p.x) && self.v.contains(&p.y)
+    }
+}
+impl<P: PointType> Range2d<P>
+where
+    P::Type: std::ops::Add<Output = P::Type>
+        + std::ops::Sub<Output = P::Type>
+        + num::One
+        + std::cmp::Ord
+        + Copy,
+{
+    pub fn intersection(&self, other: &Self) -> Self {
+        use std::cmp::{max, min};
+        let top = max(self.top(), other.top());
+        let left = max(self.left(), other.left());
+        let bottom = min(self.bottom(), other.bottom());
+        let right = min(self.right(), other.right());
+        Range2d {
+            v: top..(bottom + <P::Type as num::One>::one()),
+            h: left..(right + <P::Type as num::One>::one()),
+        }
     }
 }
 
