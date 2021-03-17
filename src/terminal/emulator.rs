@@ -1,79 +1,13 @@
 use crate::basics::*;
 
-use super::control::{self, ControlOp};
-use super::render::*;
+use super::control;
+use super::render::Renderer;
+use super::{Cell, CellAttribute, CharWidth, ControlOp, Cursor, CursorMove, Style};
 
 fn cell_top_left_corner(p: Point<ScreenCell>, cell_size: Size<Pixel>) -> Point<Pixel> {
     Point {
         x: p.x as PixelIdx * cell_size.width,
         y: p.y as PixelIdx * cell_size.height,
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CursorMove {
-    Exact(Point<ScreenCell>),
-    Up,
-    Down,
-    Left,
-    Right,
-    Top,
-    Bottom,
-    LeftMost,
-    RightMost,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Cursor {
-    pub pos: Point<ScreenCell>,
-    pub attr: CellAttribute,
-    pub visible: bool,
-}
-impl Default for Cursor {
-    fn default() -> Self {
-        Self {
-            pos: Point { x: 0, y: 0 },
-            attr: CellAttribute::default(),
-            visible: true,
-        }
-    }
-}
-
-impl Cursor {
-    pub fn try_move_once(&self, m: CursorMove, range: &Range2d<ScreenCell>) -> Option<Cursor> {
-        use CursorMove::*;
-        let mut new_pos = self.pos;
-        match m {
-            Exact(p) => new_pos = p,
-            Up => new_pos.y = self.pos.y.checked_sub(1)?,
-            Down => new_pos.y = self.pos.y.checked_add(1)?,
-            Left => new_pos.x = self.pos.x.checked_sub(1)?,
-            Right => new_pos.x = self.pos.x.checked_add(1)?,
-            LeftMost => new_pos.x = range.left(),
-            RightMost => new_pos.x = range.right(),
-            Top => new_pos.y = range.top(),
-            Bottom => new_pos.y = range.bottom(),
-        }
-        range.contains(&new_pos).then(|| Cursor {
-            pos: new_pos,
-            ..*self
-        })
-    }
-
-    pub fn try_move(
-        &self,
-        m: CursorMove,
-        range: &Range2d<ScreenCell>,
-        rep: usize,
-    ) -> (Cursor, usize) {
-        let mut cursor = self.clone();
-        for i in 0..rep {
-            match cursor.try_move_once(m, range) {
-                Some(new_cursor) => cursor = new_cursor,
-                None => return (cursor, rep - i),
-            }
-        }
-        (cursor, 0)
     }
 }
 
@@ -133,12 +67,12 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
         self.renderer.present();
     }
 
-    pub fn move_cursor_nextline(&mut self, rep: usize) {
+    fn move_cursor_nextline(&mut self, rep: usize) {
         log::trace!("move_cursor_nextline(rep={})", rep);
         for _ in 0..rep {
             match self
                 .cursor
-                .try_move_once(CursorMove::Down, &self.scroll_range)
+                .try_move(CursorMove::Down(1), &self.scroll_range)
             {
                 Some(cursor) => self.cursor = cursor,
                 None => {
@@ -148,19 +82,19 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
         }
     }
 
-    pub fn move_cursor(&mut self, m: CursorMove, rep: usize) {
+    fn move_cursor(&mut self, m: CursorMove) {
         self.end_of_line = false;
         log::trace!("self.end_of_line = {:?}", self.end_of_line);
-        let (cursor, _) = self.cursor.try_move(m, &self.screen_size.into(), rep);
+        let cursor = self.cursor.try_saturating_move(m, &self.screen_size.into());
         self.cursor = cursor;
     }
 
-    pub fn insert_char(&mut self, c: char) {
+    fn insert_char(&mut self, c: char) {
         let cw = CharWidth::from_char(c).columns();
         log::trace!("insert_char: \x1b[32;1m{:?}\x1b[m", c);
         log::trace!("(before insert) cursor = {:?}", self.cursor);
         if self.end_of_line {
-            self.move_cursor(CursorMove::LeftMost, 1);
+            self.move_cursor(CursorMove::LeftMost);
             self.move_cursor_nextline(1);
             self.end_of_line = false;
             log::trace!("self.end_of_line = {:?}", self.end_of_line);
@@ -168,12 +102,12 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
 
         match self
             .cursor
-            .try_move(CursorMove::Right, &self.scroll_range, cw - 1)
+            .try_move(CursorMove::Right(cw - 1), &self.scroll_range)
         {
-            (_, 0) => {} // we have enough space to draw the character
-            (_, _) => {
+            Some(_) => {} // we have enough space to draw the character
+            None => {
                 // TODO: consider line wrap
-                self.move_cursor(CursorMove::LeftMost, 1);
+                self.move_cursor(CursorMove::LeftMost);
                 self.move_cursor_nextline(1);
             }
         }
@@ -188,10 +122,10 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
 
         match self
             .cursor
-            .try_move(CursorMove::Right, &self.scroll_range, cw)
+            .try_move(CursorMove::Right(cw), &self.scroll_range)
         {
-            (cursor, 0) => self.cursor = cursor,
-            (_, _) => {
+            Some(cursor) => self.cursor = cursor,
+            None => {
                 self.end_of_line = true;
                 log::trace!("self.end_of_line = {:?}", self.end_of_line);
             }
@@ -209,7 +143,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
         }
     }
 
-    pub fn scroll_up(&mut self) {
+    fn scroll_up(&mut self) {
         log::trace!("scroll_up");
         let w = self.screen_size.width;
 
@@ -227,7 +161,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             self.screen_buf[(y * w + x) as usize] = Cell::default();
         }
     }
-    pub fn scroll_down(&mut self) {
+    fn scroll_down(&mut self) {
         log::trace!("scroll_down");
         let w = self.screen_size.width;
 
@@ -249,6 +183,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
     pub fn process(&mut self, op: ControlOp) {
         log::trace!("op: {:?}", op);
 
+        use super::CursorMove as Move;
         use ControlOp::*;
         match op {
             InsertChar(x) => {
@@ -261,7 +196,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                 // FIXME: tabwidth=8
                 let rep = (8 - self.cursor.pos.x as usize % 8) % 8;
                 log::trace!("[TAB] CursorMove::Right * {}", rep);
-                self.move_cursor(CursorMove::Right, rep);
+                self.move_cursor(Move::Right(rep));
             }
             LineFeed => {
                 log::trace!("[LF]");
@@ -271,22 +206,10 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                 log::trace!("[CR]");
                 self.end_of_line = false;
                 log::trace!("self.end_of_line = {:?}", self.end_of_line);
-                self.move_cursor(CursorMove::LeftMost, 1);
+                self.move_cursor(Move::LeftMost);
             }
-            CursorHome(p) => {
-                self.move_cursor(CursorMove::Exact(p), 1);
-            }
-            CursorUp(am) => {
-                self.move_cursor(CursorMove::Up, am);
-            }
-            CursorDown(am) => {
-                self.move_cursor(CursorMove::Down, am);
-            }
-            CursorForward(am) => {
-                self.move_cursor(CursorMove::Right, am);
-            }
-            CursorBackward(am) => {
-                self.move_cursor(CursorMove::Left, am);
+            CursorMove(mov) => {
+                self.move_cursor(mov);
             }
             SaveCursor => {
                 log::debug!("cursor saved: {:?}", self.cursor);
@@ -355,7 +278,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             Reset => {
                 self.reset();
             }
-            SetTopBottom(range) => {
+            SetScrollRange(range) => {
                 self.scroll_range.v = range;
                 log::debug!("scroll_range changed --> {:?}", self.scroll_range);
             }

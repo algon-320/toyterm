@@ -9,6 +9,7 @@ use sdl2::surface::Surface;
 use sdl2::ttf::{Font, Sdl2TtfContext};
 use sdl2::video::{Window, WindowContext};
 
+use super::{Cell, CharWidth, Color, Style};
 use crate::basics::*;
 use crate::config_get;
 
@@ -29,28 +30,6 @@ impl ToSdl2Rect for Range2d<Pixel> {
             self.height() as u32,
         )
     }
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Color {
-    Black,
-    Red,
-    Green,
-    Yellow,
-    Blue,
-    Magenta,
-    Cyan,
-    White,
-    Gray,
-    LightRed,
-    LightGreen,
-    LightYellow,
-    LightBlue,
-    LightMagenta,
-    LightCyan,
-    LightWhite,
-    RGB(u8, u8, u8),
 }
 
 impl ToSdl2Color for Color {
@@ -126,45 +105,6 @@ impl ToSdl2Color for Color {
             Color::LightCyan => *COLOR_LIGHTCYAN,
             Color::LightWhite => *COLOR_LIGHTWHITE,
             Color::RGB(r, g, b) => Sdl2Color::RGB(r, g, b),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Style {
-    Normal,
-    Bold,
-    UnderLine,
-    Blink,
-    Reverse,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CellAttribute {
-    pub style: Style,
-    pub fg: Color,
-    pub bg: Color,
-}
-impl Default for CellAttribute {
-    fn default() -> Self {
-        CellAttribute {
-            style: Style::Normal,
-            fg: Color::LightWhite,
-            bg: Color::Black,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Cell {
-    pub c: char,
-    pub attr: CellAttribute,
-}
-impl Default for Cell {
-    fn default() -> Self {
-        Cell {
-            c: ' ',
-            attr: CellAttribute::default(),
         }
     }
 }
@@ -247,28 +187,6 @@ pub fn load_fonts(ttf_context: &Sdl2TtfContext) -> FontSet<'_> {
             20
         }),
     )
-}
-
-pub enum CharWidth {
-    Half,
-    Full,
-}
-impl CharWidth {
-    pub fn from_char(c: char) -> Self {
-        use ucd::tables::misc::EastAsianWidth::*;
-        use ucd::Codepoint;
-        match c.east_asian_width() {
-            Ambiguous => CharWidth::Half, // TODO: config
-            Neutral | HalfWidth | Narrow => CharWidth::Half,
-            FullWidth | Wide => CharWidth::Full,
-        }
-    }
-    pub fn columns(self) -> usize {
-        match self {
-            CharWidth::Half => 1,
-            CharWidth::Full => 2,
-        }
-    }
 }
 
 pub struct Renderer<'ttf, 'texture> {

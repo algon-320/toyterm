@@ -1,38 +1,5 @@
-use super::render::{CellAttribute, Color, Style};
+use super::{CellAttribute, Color, ControlOp, CursorMove, Style};
 use crate::basics::*;
-
-#[derive(Debug)]
-pub enum ControlOp {
-    InsertChar(char),
-    Bell,
-    Tab,
-    LineFeed,
-    CarriageReturn,
-    CursorHome(Point<ScreenCell>), // 0-origin
-    CursorUp(usize),
-    CursorDown(usize),
-    CursorForward(usize),
-    CursorBackward(usize),
-    SaveCursor,
-    RestoreCursor,
-    HideCursor,
-    ShowCursor,
-    ScrollDown,
-    ScrollUp,
-    EraseEndOfLine,
-    EraseStartOfLine,
-    EraseLine,
-    EraseDown,
-    EraseUp,
-    EraseScreen,
-    SetTopBottom(std::ops::Range<ScreenCellIdx>), // 0-origin
-    Reset,
-    ChangeCellAttribute(Option<Style>, Option<Color>, Option<Color>),
-    SetCursorMode(bool),
-    Sixel(sixel::Image),
-    Unknown(Vec<char>),
-    Ignore,
-}
 
 use std::iter::Peekable;
 fn parse_numeric<I>(itr: &mut Peekable<I>) -> Option<i64>
@@ -187,21 +154,32 @@ where
     match (args.as_slice(), fin_char) {
         // Cursor Home
         (args, 'f') | (args, 'H') => match args {
-            [None] => Some(ControlOp::CursorHome(Point { x: 0, y: 0 })),
-            [y, x] => Some(ControlOp::CursorHome(Point {
+            [None] => Some(ControlOp::CursorMove(CursorMove::Exact(Point {
+                x: 0,
+                y: 0,
+            }))),
+            [y, x] => Some(ControlOp::CursorMove(CursorMove::Exact(Point {
                 x: x.unwrap_or(1).checked_sub(1)? as ScreenCellIdx,
                 y: y.unwrap_or(1).checked_sub(1)? as ScreenCellIdx,
-            })),
+            }))),
             _ => None,
         },
         // Cursor Up
-        ([amount], 'A') => Some(ControlOp::CursorUp(amount.unwrap_or(1) as usize)),
+        ([amount], 'A') => Some(ControlOp::CursorMove(CursorMove::Up(
+            amount.unwrap_or(1) as usize
+        ))),
         // Cursor Down
-        ([amount], 'B') => Some(ControlOp::CursorDown(amount.unwrap_or(1) as usize)),
+        ([amount], 'B') => Some(ControlOp::CursorMove(CursorMove::Down(
+            amount.unwrap_or(1) as usize
+        ))),
         // Cursor Forward
-        ([amount], 'C') => Some(ControlOp::CursorForward(amount.unwrap_or(1) as usize)),
+        ([amount], 'C') => Some(ControlOp::CursorMove(CursorMove::Right(
+            amount.unwrap_or(1) as usize,
+        ))),
         // Cursor Backward
-        ([amount], 'D') => Some(ControlOp::CursorBackward(amount.unwrap_or(1) as usize)),
+        ([amount], 'D') => Some(ControlOp::CursorMove(CursorMove::Left(
+            amount.unwrap_or(1) as usize
+        ))),
 
         // Save cursor position
         ([None], 's') => Some(ControlOp::SaveCursor),
@@ -222,7 +200,7 @@ where
         ([Some(top), Some(bot)], 'r') => {
             let top = (*top as ScreenCellIdx).checked_sub(1)?;
             let bot = (*bot as ScreenCellIdx).checked_sub(1)?;
-            Some(ControlOp::SetTopBottom((top)..(bot + 1)))
+            Some(ControlOp::SetScrollRange((top)..(bot + 1)))
         }
 
         // SGR (Select Graphic Rendition)
@@ -254,7 +232,7 @@ where
     }
 }
 
-pub fn parse_escape_sequence<I>(itr: &mut I) -> Option<ControlOp>
+fn parse_escape_sequence<I>(itr: &mut I) -> Option<ControlOp>
 where
     I: Iterator<Item = char> + Clone,
 {
@@ -296,7 +274,7 @@ where
     let op = match itr.next()? {
         '\x00' => return None,
         '\x07' => ControlOp::Bell,
-        '\x08' => ControlOp::CursorBackward(1),
+        '\x08' => ControlOp::CursorMove(CursorMove::Left(1)),
         '\x09' => ControlOp::Tab,
         '\x0A' => ControlOp::LineFeed,
         '\x0D' => ControlOp::CarriageReturn,
