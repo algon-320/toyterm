@@ -2,7 +2,7 @@ use crate::basics::*;
 
 use super::parser::Parser;
 use super::render::Renderer;
-use super::{Cell, CellAttribute, CharWidth, ControlOp, Cursor, CursorMove, Style};
+use super::{Cell, CellAttribute, CharWidth, Color, ControlOp, Cursor, CursorMove, Style};
 
 fn cell_top_left_corner(p: Point<ScreenCell>, cell_size: Size<Pixel>) -> Point<Pixel> {
     Point {
@@ -21,6 +21,7 @@ pub struct Term<'ttf, 'texture> {
     saved_cursor: Option<Cursor>,
     screen_buf: Vec<Cell>,
     end_of_line: bool,
+    has_focus: bool,
 }
 impl<'ttf, 'texture> Term<'ttf, 'texture> {
     pub fn new(renderer: Renderer<'ttf, 'texture>, size: Size<ScreenCell>) -> Self {
@@ -35,9 +36,17 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             screen_buf: vec![Cell::default(); (size.width as usize) * (size.height as usize)],
             scroll_range: size.into(),
             end_of_line: false,
+            has_focus: true,
         };
         term.reset();
         term
+    }
+
+    pub fn focus_lost(&mut self) {
+        self.has_focus = false;
+    }
+    pub fn focus_gained(&mut self) {
+        self.has_focus = true;
     }
 
     pub fn reset(&mut self) {
@@ -58,7 +67,7 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             .zip(self.screen_buf.iter().rev());
         for (p, cell) in cells {
             let mut cell = *cell;
-            if self.cursor.visible && self.cursor.pos == p {
+            if self.has_focus && self.cursor.visible && self.cursor.pos == p {
                 cell.attr = CellAttribute::default();
                 cell.attr.style = Style::Reverse;
             }

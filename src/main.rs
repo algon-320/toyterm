@@ -160,19 +160,23 @@ fn main() -> Result<()> {
                         term.write_all(&bytes).unwrap();
                         term.flush().unwrap();
                     }
-                    Event::Window {
-                        win_event: WindowEvent::Exposed,
-                        ..
-                    } => {
-                        // redraw
-                        term.render();
-                    }
-                    Event::Window {
-                        win_event: WindowEvent::Resized(width, height),
-                        ..
-                    } => {
-                        log::info!("resized: width={}, height={}", width, height);
-                        // TODO: change screen size
+                    Event::Window { win_event, .. } => {
+                        match win_event {
+                            WindowEvent::Exposed => term.render(), // redraw
+                            WindowEvent::FocusLost => {
+                                term.focus_lost();
+                                term.render();
+                            }
+                            WindowEvent::FocusGained => {
+                                term.focus_gained();
+                                term.render();
+                            }
+                            WindowEvent::Resized(width, height) => {
+                                log::info!("resized: width={}, height={}", width, height);
+                                // TODO: change screen size
+                            }
+                            _ => {}
+                        }
                     }
                     _ => {}
                 }
