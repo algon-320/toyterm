@@ -5,7 +5,8 @@ toyterm is a toy terminal emulator.
 ## Demo
 
 ![demo1.png](./demo/demo1.png)
-![demo2.gif](./demo/demo2.gif)
+
+![demo2.mp4](https://user-images.githubusercontent.com/20703163/111472205-15b06980-876d-11eb-8514-354356ece74d.mp4)
 
 ## Features
 
