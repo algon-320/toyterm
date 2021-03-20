@@ -54,6 +54,13 @@ impl Default for Color {
     }
 }
 
+use std::sync::Mutex;
+lazy_static::lazy_static! {
+    static ref LAST_PALETTE: Mutex<Vec<Color>> = {
+        Mutex::new(vec![Color::default(); 256])
+    };
+}
+
 // decode sixel sequence to bitmap image
 pub fn decode<I>(
     seq: &mut I,
@@ -80,8 +87,10 @@ where
     let mut y = 0;
     let mut x = 0;
     let mut color = Color::default();
-    let mut palette: Vec<Color> = Vec::new();
-    palette.resize_with(256, Default::default);
+    let mut palette = {
+        let lock = LAST_PALETTE.lock().unwrap();
+        lock.clone()
+    };
 
     let mut pixel_w = 1;
     let mut pixel_h = 1;
@@ -138,6 +147,12 @@ where
             }
         }
     }
+
+    {
+        let mut lock = LAST_PALETTE.lock().unwrap();
+        *lock = palette;
+    }
+
     img
 }
 
