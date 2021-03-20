@@ -368,11 +368,8 @@ impl Parser {
     }
     pub fn feed(&mut self, input: &str) -> bool {
         for c in input.chars() {
-            match self.state.transfer(c) {
-                Some(op) => {
-                    self.op_buf.push_back(op);
-                }
-                None => {}
+            if let Some(op) = self.state.transfer(c) {
+                self.op_buf.push_back(op);
             }
         }
         !self.op_buf.is_empty()
