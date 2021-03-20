@@ -277,6 +277,8 @@ impl State {
                 *self = State::Sixel(Vec::new());
                 None
             }
+            '7' => Some(ControlOp::SaveCursor),
+            '8' => Some(ControlOp::RestoreCursor),
             '=' => Some(ControlOp::Ignore),
             '>' => Some(ControlOp::Ignore),
             'c' => Some(ControlOp::Reset),
