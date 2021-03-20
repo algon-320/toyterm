@@ -400,11 +400,20 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
                     img.width,
                     corresponding_lines,
                 );
+                for sixel in &mut self.sixels {
+                    let int = sixel.range.intersection(&range);
+                    if int.top() <= int.bottom() && int.left() <= int.right() {
+                        if let Some(handle) = sixel.handle.take() {
+                            self.renderer.release_sixel(handle);
+                        }
+                    }
+                }
                 let handle = self.renderer.register_sixel(&img);
                 self.sixels.push(SixelImage {
                     range,
                     handle: Some(handle),
                 });
+                self.render();
             }
 
             Ignore => {}
