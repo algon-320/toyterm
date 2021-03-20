@@ -77,10 +77,16 @@ where
                                 let b = (ps[4] * 255 / 100) as u8;
                                 Some(Op::SetColor(reg, Color::new(r, g, b)))
                             }
-                            _ => None,
+                            _ => {
+                                log::warn!("unknown color space: {}", typ);
+                                None
+                            }
                         }
                     }
-                    _ => None,
+                    _ => {
+                        log::warn!("unknown ops: #{:?}", ps);
+                        None
+                    }
                 }
             }
             '\x1b' => {
@@ -113,7 +119,10 @@ where
                     rep: 1,
                 })
             }
-            _ => None,
+            x => {
+                log::warn!("unknown op: {:?}", x);
+                None
+            }
         },
         None => None,
     }
