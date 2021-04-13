@@ -110,6 +110,12 @@ fn main() -> Result<()> {
                 let mut buf = vec![0; 4 * 1024];
                 std::thread::spawn(move || 'thread: loop {
                     match unistd::read(pty.master, &mut buf) {
+                        Ok(0) | Err(_) => {
+                            event_sender
+                                .push_event(Event::Quit { timestamp: 0 })
+                                .unwrap();
+                            break 'thread;
+                        }
                         Ok(nb) => {
                             let bytes = buf[..nb].to_vec();
                             log::trace!("received {} bytes", bytes.len());
@@ -126,12 +132,6 @@ fn main() -> Result<()> {
                                     data2: std::ptr::null_mut::<core::ffi::c_void>(),
                                 })
                                 .unwrap();
-                        }
-                        Err(_) => {
-                            event_sender
-                                .push_event(Event::Quit { timestamp: 0 })
-                                .unwrap();
-                            break 'thread;
                         }
                     }
                 });
