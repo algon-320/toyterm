@@ -124,13 +124,20 @@ where
             }
             Op::Sixel { bits: b, rep: r } => {
                 let required_buf = (y + SIX * pixel_h) * img.width * EACH_PIXEL;
+
                 if img.buf.len() < required_buf {
                     let each_line = img.width * EACH_PIXEL;
                     img.height += (required_buf - img.buf.len() + each_line - 1) / each_line;
                     log::debug!("buffer size changed: h={}", img.height);
                     img.resize();
                 }
+
                 for _ in 0..r as usize * pixel_w {
+                    if x >= img.width {
+                        log::debug!("line overflow");
+                        break;
+                    }
+
                     for i in 0..SIX {
                         if ((b >> i) & 1) > 0 {
                             for k in 0..pixel_h {

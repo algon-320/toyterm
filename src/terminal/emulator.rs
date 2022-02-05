@@ -374,6 +374,11 @@ impl<'ttf, 'texture> Term<'ttf, 'texture> {
             }
 
             Sixel(img) => {
+                if img.width * img.height == 0 {
+                    log::warn!("ignoring empty sixel");
+                    return;
+                }
+
                 let cell_size = self.renderer.cell_size();
                 let cw = cell_size.width as usize;
                 let ch = cell_size.height as usize;

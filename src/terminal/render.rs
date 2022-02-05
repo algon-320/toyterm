@@ -282,6 +282,8 @@ impl<'ttf, 'texture> Renderer<'ttf, 'texture> {
     }
 
     pub fn register_sixel(&mut self, img: &sixel::Image) -> SixelHandle {
+        assert!(img.width * img.height > 0, "empty sixel");
+
         let img_size = Size {
             width: img.width as PixelIdx,
             height: img.height as PixelIdx,
