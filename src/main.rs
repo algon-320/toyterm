@@ -23,7 +23,7 @@ macro_rules! config_get {
         $config
             .get($key)
             .cloned()
-            .and_then(|v| v.try_into::<$result>().ok())
+            .and_then(|v| v.try_deserialize::<$result>().ok())
     }};
 }
 
