@@ -261,19 +261,18 @@ fn main() {
                 WindowEvent::KeyboardInput { input, .. }
                     if input.state == ElementState::Pressed =>
                 {
-                    use crate::control_function::Function;
                     match input.virtual_keycode {
                         Some(VirtualKeyCode::Up) => {
-                            write_pty(&Function::CUU(1).repr());
+                            write_pty(b"\x1b[\x41");
                         }
                         Some(VirtualKeyCode::Down) => {
-                            write_pty(&Function::CUD(1).repr());
+                            write_pty(b"\x1b[\x42");
                         }
                         Some(VirtualKeyCode::Right) => {
-                            write_pty(&Function::CUF(1).repr());
+                            write_pty(b"\x1b[\x43");
                         }
                         Some(VirtualKeyCode::Left) => {
-                            write_pty(&Function::CUB(1).repr());
+                            write_pty(b"\x1b[\x44");
                         }
                         _ => {}
                     }

@@ -162,24 +162,6 @@ pub enum Function<'p> {
     SCP,
 }
 
-use std::borrow::Cow;
-
-impl<'b> Function<'b> {
-    pub fn repr(&self) -> Cow<'b, [u8]> {
-        use Function::*;
-        match self {
-            Unsupported | Invalid => unimplemented!(),
-
-            CUU(1) => Cow::Borrowed(b"\x1b[\x41"),
-            CUD(1) => Cow::Borrowed(b"\x1b[\x42"),
-            CUF(1) => Cow::Borrowed(b"\x1b[\x43"),
-            CUB(1) => Cow::Borrowed(b"\x1b[\x44"),
-
-            _ => todo!(),
-        }
-    }
-}
-
 struct Buffer {
     params: Vec<u16>,
     intermediate: u8,
