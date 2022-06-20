@@ -268,7 +268,12 @@ impl Engine {
 
             use control_function::Function::*;
             match func {
-                Unsupported | Invalid => {}
+                Unsupported => {
+                    log::debug!("unsupported sequence");
+                }
+                Invalid => {
+                    log::debug!("invalid sequence");
+                }
 
                 LF | VT | FF => {
                     self.cursor = self.cursor.next_row();
