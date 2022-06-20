@@ -46,6 +46,10 @@ impl Buffer {
         }
     }
 
+    fn erase_line(&mut self, row: usize) {
+        self.lines[row].fill(Cell::SPACE);
+    }
+
     fn put(&mut self, row: usize, col: usize, cell: Cell) {
         let mut c = col;
         while c > 0 && self.lines[row][c].width == 0 {
@@ -401,6 +405,41 @@ impl Engine {
                     }
                 }
 
+                ED(ps) => match ps {
+                    0 => {
+                        // clear from the the cursor position to the end (inclusive)
+                        let (row, col) = self.cursor.pos();
+                        let prow = drow_to_prow(row, self.prows, buf.lines.len());
+                        for pr in (prow + 1)..self.prows {
+                            let dr = prow_to_drow(pr, self.prows, buf.lines.len());
+                            buf.erase_line(dr);
+                        }
+                        for c in col..buf.cols {
+                            buf.put(row, c, Cell::SPACE);
+                        }
+                    }
+                    1 => {
+                        // clear from the beginning to the cursor position (inclusive)
+                        let (row, col) = self.cursor.pos();
+                        let prow = drow_to_prow(row, self.prows, buf.lines.len());
+                        for pr in 0..prow {
+                            let dr = prow_to_drow(pr, self.prows, buf.lines.len());
+                            buf.erase_line(dr);
+                        }
+                        for c in 0..=col {
+                            buf.put(row, c, Cell::SPACE);
+                        }
+                    }
+                    2 => {
+                        // clear all positions
+                        for pr in 0..self.prows {
+                            let dr = prow_to_drow(pr, self.prows, buf.lines.len());
+                            buf.erase_line(dr);
+                        }
+                    }
+                    _ => unreachable!(),
+                },
+
                 GraphicChar(ch) => {
                     use unicode_width::UnicodeWidthChar as _;
                     let width = ch.width().unwrap();
@@ -486,7 +525,6 @@ impl Engine {
                 CPL => ignore!(),
                 CHA => ignore!(),
                 CHT => ignore!(),
-                ED => ignore!(),
                 EL => ignore!(),
                 IL => ignore!(),
                 DL => ignore!(),
