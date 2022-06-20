@@ -440,6 +440,29 @@ impl Engine {
                     _ => unreachable!(),
                 },
 
+                EL(ps) => match ps {
+                    0 => {
+                        // clear from the cursor position to the line end (inclusive)
+                        let (row, col) = self.cursor.pos();
+                        for c in col..buf.cols {
+                            buf.put(row, c, Cell::SPACE);
+                        }
+                    }
+                    1 => {
+                        // clear from the line beginning to the cursor position (inclusive)
+                        let (row, col) = self.cursor.pos();
+                        for c in 0..=col {
+                            buf.put(row, c, Cell::SPACE);
+                        }
+                    }
+                    2 => {
+                        // clear line
+                        let row = self.cursor.row;
+                        buf.erase_line(row);
+                    }
+                    _ => unreachable!(),
+                },
+
                 GraphicChar(ch) => {
                     use unicode_width::UnicodeWidthChar as _;
                     let width = ch.width().unwrap();
@@ -525,7 +548,6 @@ impl Engine {
                 CPL => ignore!(),
                 CHA => ignore!(),
                 CHT => ignore!(),
-                EL => ignore!(),
                 IL => ignore!(),
                 DL => ignore!(),
                 EF => ignore!(),
