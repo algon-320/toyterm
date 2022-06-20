@@ -1,214 +1,381 @@
-#![feature(step_trait)]
-
-mod basics;
-mod input;
+mod cache;
+mod control_function;
+mod font;
 mod terminal;
+mod utils;
 
-use std::collections::HashMap;
-use std::os::unix::io::RawFd;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
-use anyhow::Result;
-use nix::ioctl_write_ptr_bad;
-use nix::sys::{signal, wait};
-use nix::unistd;
-use sdl2::event::{Event, WindowEvent};
+use glium::{glutin, index, texture, uniform, uniforms, Display};
+use glutin::{dpi::PhysicalSize, event_loop::EventLoop, window::WindowBuilder, ContextBuilder};
 
-use basics::*;
-use terminal::Term;
+fn main() {
+    // Setup env_logger
+    let our_logs = concat!(module_path!(), "=debug");
+    let env = env_logger::Env::default().default_filter_or(our_logs);
+    env_logger::Builder::from_env(env)
+        .format_timestamp(None)
+        .init();
 
-#[macro_export]
-macro_rules! config_get {
-    ($config:expr, $key:expr, $result:ty) => {{
-        $config
-            .get($key)
-            .cloned()
-            .and_then(|v| v.try_deserialize::<$result>().ok())
-    }};
-}
+    let terminal = terminal::Terminal::new();
+    let mut pty_writer = terminal.writer();
 
-fn tiocswinsz(pty_master: RawFd, winsz: &nix::pty::Winsize) -> Result<()> {
-    ioctl_write_ptr_bad!(tiocswinsz, nix::libc::TIOCSWINSZ, nix::pty::Winsize);
-    unsafe { tiocswinsz(pty_master, winsz as *const nix::pty::Winsize) }?;
-    Ok(())
-}
+    let font = font::Font::new();
 
-fn main() -> Result<()> {
-    env_logger::init();
+    // Calculate cell size
+    let (cell_w, cell_h, max_over) = {
+        let mut max_advance_x: i32 = 0;
+        let mut max_over: i32 = 0;
+        let mut max_under: i32 = 0;
 
-    let general_config = {
-        config::Config::default()
-            .merge(config::File::with_name("settings.toml"))
-            .and_then(|c| c.get_table("general"))
-            .unwrap_or_else(|_| HashMap::new())
+        let ascii_visible = ' '..='~';
+        for ch in ascii_visible {
+            let metrics = font.metrics(ch).expect("undefined glyph");
+
+            let advance_x = (metrics.horiAdvance >> 6) as i32;
+            max_advance_x = std::cmp::max(max_advance_x, advance_x);
+
+            let over = (metrics.horiBearingY >> 6) as i32;
+            max_over = std::cmp::max(max_over, over);
+
+            let under = ((metrics.height - metrics.horiBearingY) >> 6) as i32;
+            max_under = std::cmp::max(max_under, under);
+        }
+
+        let cell_w = max_advance_x as u32;
+        let cell_h = (max_over + max_under) as u32;
+
+        (cell_w, cell_h, max_over)
     };
 
-    let rows = config_get!(general_config, "rows", usize).unwrap_or(24);
-    let cols = config_get!(general_config, "columns", usize).unwrap_or(80);
+    // Initialize OpenGL
+    let width = cell_w * 80;
+    let height = cell_h * 24;
+    let win_builder = WindowBuilder::new()
+        .with_title("toyterm")
+        .with_inner_size(PhysicalSize::new(width, height))
+        .with_resizable(false);
+    let ctx_builder = ContextBuilder::new().with_vsync(true).with_srgb(true);
+    let event_loop = EventLoop::<u8>::with_user_event();
+    let display = Display::new(win_builder, ctx_builder, &event_loop).expect("display new");
 
-    let pty = nix::pty::forkpty(None, None).expect("forkpty");
-    match pty.fork_result {
-        unistd::ForkResult::Parent { child, .. } => {
-            // set screen size
-            let winsz = nix::pty::Winsize {
-                ws_row: rows as u16,
-                ws_col: cols as u16,
-                ws_xpixel: 0, // unused
-                ws_ypixel: 0, // unused
+    // Render ASCII characters and cache them as a texture
+    let cache = cache::GlyphCache::build_ascii_visible(&display, &font, cell_w, cell_h);
+
+    // Initialize shaders
+    const VERT_SHADER: &str = include_str!("cell.vert");
+    const FRAG_SHADER: &str = include_str!("cell.frag");
+    const GEOM_SHADER: Option<&str> = None;
+    let program = {
+        use glium::program::{Program, ProgramCreationInput};
+        let input = ProgramCreationInput::SourceCode {
+            vertex_shader: VERT_SHADER,
+            fragment_shader: FRAG_SHADER,
+            geometry_shader: GEOM_SHADER,
+            tessellation_control_shader: None,
+            tessellation_evaluation_shader: None,
+            transform_feedback_varyings: None,
+            outputs_srgb: true,
+            uses_point_size: false,
+        };
+        Program::new(&display, input).unwrap()
+    };
+
+    let (window_width, window_height): (Arc<AtomicU32>, Arc<AtomicU32>) = {
+        let initial_size = display.gl_window().window().inner_size();
+        (
+            Arc::new(AtomicU32::new(initial_size.width)),
+            Arc::new(AtomicU32::new(initial_size.height)),
+        )
+    };
+
+    let mut draw = {
+        let window_width = window_width.clone();
+        let window_height = window_height.clone();
+        let display = display.clone();
+        let mut vertices = Vec::new();
+
+        move || {
+            vertices.clear();
+
+            use glium::Surface as _;
+            let mut surface = display.draw();
+
+            // FIXME
+            surface.clear_color_srgb(0.1137, 0.1254, 0.1294, 1.0);
+
+            let lines: Vec<_> = {
+                // hold the lock during copying lines
+                let lock = terminal.buffer.lock().unwrap();
+                let top = std::cmp::max(lock.lines.len() as isize - 24, 0) as usize;
+                lock.lines.range(top..).cloned().collect()
             };
-            tiocswinsz(pty.master, &winsz)?;
 
-            let sdl_context = sdl2::init().expect("sdl2 init");
-            let ttf_context = sdl2::ttf::init().expect("sdl2 ttf init");
-            let fonts = terminal::render::load_fonts(&ttf_context);
-
-            let win_size: Size<Pixel> = Size {
-                width: fonts.char_size.width * (cols as PixelIdx),
-                height: fonts.char_size.height * (rows as PixelIdx),
-            };
-            log::info!("window size: {:?}", win_size);
-            let window = {
-                let video = sdl_context.video().unwrap();
-                log::info!("video driver: {}", video.current_video_driver());
-                video
-                    .window("toyterm", win_size.width as u32, win_size.height as u32)
-                    .position_centered()
-                    .build()
-                    .unwrap()
-            };
-            let canvas = window
-                .into_canvas()
-                .accelerated()
-                .target_texture()
-                .build()
-                .unwrap();
-            let texture_creator = canvas.texture_creator();
-            let renderer = terminal::render::Renderer::new(fonts, canvas, &texture_creator);
-
-            let mut term = Term::new(
-                renderer,
-                Size {
-                    width: cols as ScreenCellIdx,
-                    height: rows as ScreenCellIdx,
-                },
-            );
-
-            let mut event_pump = sdl_context.event_pump().expect("misuse of event_pump");
-            let event_subsys = sdl_context.event().unwrap();
-            let event_sender = event_subsys.event_sender();
-
-            let master_readable_event_id = unsafe {
-                event_subsys
-                    .register_event()
-                    .expect("too many custom events")
-            };
-
-            let (send, recv) = mpsc::sync_channel(1);
-            {
-                // spawn a thread which reads bytes from the slave
-                // and forwards them to the main thread
-                let mut buf = vec![0; 4 * 1024];
-                std::thread::spawn(move || 'thread: loop {
-                    match unistd::read(pty.master, &mut buf) {
-                        Ok(0) | Err(_) => {
-                            event_sender
-                                .push_event(Event::Quit { timestamp: 0 })
-                                .unwrap();
-                            break 'thread;
-                        }
-                        Ok(nb) => {
-                            let bytes = buf[..nb].to_vec();
-                            log::trace!("received {} bytes", bytes.len());
-                            send.send(bytes).unwrap();
-
-                            // notify
-                            event_sender
-                                .push_event(Event::User {
-                                    timestamp: 0,
-                                    window_id: 0,
-                                    type_: master_readable_event_id,
-                                    code: 0,
-                                    data1: std::ptr::null_mut::<core::ffi::c_void>(),
-                                    data2: std::ptr::null_mut::<core::ffi::c_void>(),
-                                })
-                                .unwrap();
-                        }
+            let mut baseline: u32 = max_over as u32;
+            for row in lines.iter() {
+                let mut leftline = 0;
+                for cell in row.iter() {
+                    if cell.width == 0 {
+                        continue;
                     }
-                });
-            }
 
-            for event in event_pump.wait_iter() {
-                match event {
-                    Event::Quit { .. } => break,
-                    Event::TextInput { .. } | Event::TextEditing { .. } | Event::KeyDown { .. } => {
-                        match input::keyevent_to_bytes(&event) {
-                            None => continue,
-                            Some(bytes) => {
-                                log::trace!("<---(user): {:?}", String::from_utf8_lossy(&bytes));
-                                nix::unistd::write(pty.master, bytes)?;
-                            }
-                        }
-                    }
-                    Event::User {
-                        type_: user_event_id,
-                        ..
-                    } if user_event_id == master_readable_event_id => {
-                        let bytes: Vec<u8> = recv.recv().unwrap();
-                        log::trace!("(shell)-->: {:?}", String::from_utf8_lossy(&bytes));
+                    let window_width = window_width.load(Ordering::Relaxed);
+                    let window_height = window_height.load(Ordering::Relaxed);
 
-                        use std::io::Write;
-                        term.write_all(&bytes).unwrap();
-                        term.flush().unwrap();
-                    }
-                    Event::Window { win_event, .. } => {
-                        match win_event {
-                            WindowEvent::Exposed => term.render(), // redraw
-                            WindowEvent::FocusLost => {
-                                term.focus_lost();
-                                term.render();
-                            }
-                            WindowEvent::FocusGained => {
-                                term.focus_gained();
-                                term.render();
-                            }
-                            WindowEvent::Resized(width, height) => {
-                                log::info!("resized: width={}, height={}", width, height);
-                                // TODO: change screen size
-                            }
-                            _ => {}
+                    if let Some(region) = cache.get(cell.ch) {
+                        if !region.is_empty() {
+                            let metrics = font.metrics(cell.ch).expect("ASCII character");
+                            let bearing_x = (metrics.horiBearingX >> 6) as u32;
+                            let bearing_y = (metrics.horiBearingY >> 6) as u32;
+
+                            let x = leftline as i32 + bearing_x as i32;
+                            let y = baseline as i32 - bearing_y as i32;
+                            let gl_x = x_to_gl(x, window_width);
+                            let gl_y = y_to_gl(y, window_height);
+                            let gl_w = w_to_gl(region.px_w, window_width);
+                            let gl_h = h_to_gl(region.px_h, window_height);
+                            let vs = rectangle_vertices(
+                                gl_x,
+                                gl_y,
+                                gl_w,
+                                gl_h,
+                                region.tx_x,
+                                region.tx_y,
+                                region.tx_w,
+                                region.tx_h,
+                            );
+                            vertices.extend_from_slice(&vs);
                         }
+                    } else if let Some((glyph_image, metrics)) = font.render(cell.ch) {
+                        // for non-ASCII characters
+                        if !glyph_image.data.is_empty() {
+                            let bearing_x = (metrics.horiBearingX >> 6) as u32;
+                            let bearing_y = (metrics.horiBearingY >> 6) as u32;
+
+                            let glyph_width = glyph_image.width;
+                            let glyph_height = glyph_image.height;
+
+                            let gl_x = x_to_gl(leftline as i32 + bearing_x as i32, window_width);
+                            let gl_y = y_to_gl(baseline as i32 - bearing_y as i32, window_height);
+                            let gl_w = w_to_gl(glyph_width, window_width);
+                            let gl_h = h_to_gl(glyph_height, window_height);
+
+                            let vertices =
+                                rectangle_vertices(gl_x, gl_y, gl_w, gl_h, 0.0, 0.0, 1.0, 1.0);
+                            let vertex_buffer =
+                                glium::VertexBuffer::new(&display, &vertices).unwrap();
+                            let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
+
+                            let single_glyph_texture = texture::Texture2d::with_mipmaps(
+                                &display,
+                                glyph_image,
+                                texture::MipmapsOption::NoMipmap,
+                            )
+                            .expect("Failed to create texture");
+
+                            let sampler = single_glyph_texture
+                                .sampled()
+                                .magnify_filter(uniforms::MagnifySamplerFilter::Linear)
+                                .minify_filter(uniforms::MinifySamplerFilter::Linear);
+                            let uniforms = uniform! { tex: sampler };
+
+                            surface
+                                .draw(
+                                    &vertex_buffer,
+                                    indices,
+                                    &program,
+                                    &uniforms,
+                                    &glium::DrawParameters::default(),
+                                )
+                                .expect("draw");
+                        }
+                    } else {
+                        log::trace!("undefined glyph: {:?}", cell.ch);
                     }
-                    _ => {}
+
+                    leftline += cell_w * (cell.width as u32);
                 }
+                baseline += cell_h;
             }
 
-            signal::kill(child, signal::Signal::SIGHUP)?;
-            wait::waitpid(child, None)?;
-            Ok(())
+            let vertex_buffer = glium::VertexBuffer::new(&display, &vertices).unwrap();
+            // Vertices ordering: 3 vertices for single triangle polygon
+            let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
+
+            // Generate a sample from the texture
+            let sampler = cache
+                .texture()
+                .sampled()
+                .magnify_filter(uniforms::MagnifySamplerFilter::Linear)
+                .minify_filter(uniforms::MinifySamplerFilter::Linear);
+            let uniforms = uniform! { tex: sampler };
+
+            // Perform drawing
+            surface
+                .draw(
+                    &vertex_buffer,
+                    indices,
+                    &program,
+                    &uniforms,
+                    &glium::DrawParameters::default(),
+                )
+                .expect("draw");
+
+            surface.finish().expect("finish");
         }
-        unistd::ForkResult::Child => {
-            use std::env;
-            use std::ffi::CString;
+    };
 
-            let shell_fallback = || env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
-            let shell = config_get!(general_config, "shell", String).unwrap_or_else(shell_fallback);
-            let shell = CString::new(shell).expect("null-char");
+    event_loop.run(move |event, _, control_flow| {
+        use glutin::{
+            event::{ElementState, Event, VirtualKeyCode, WindowEvent},
+            event_loop::ControlFlow,
+        };
 
-            let mut args: Vec<CString> = vec![shell.clone()];
-            args.extend(
-                config_get!(general_config, "shell_args", Vec<String>)
-                    .unwrap_or_else(Vec::new)
-                    .into_iter()
-                    .map(|arg| CString::new(arg).expect("null-char")),
-            );
+        let mut write_pty = |bytes: &[u8]| {
+            use std::io::Write;
+            pty_writer.write_all(bytes).unwrap();
+            pty_writer.flush().unwrap();
+        };
 
-            env::set_var("TERM", "toyterm-256color");
-            env::set_var("COLORTERM", "truecolor");
-            env::set_var("COLUMNS", &cols.to_string());
-            env::set_var("LINES", &rows.to_string());
+        match event {
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::CloseRequested => {
+                    *control_flow = ControlFlow::Exit;
+                }
 
-            unistd::execv(&shell, &args).expect("failed to spawn a shell");
-            unreachable!();
+                WindowEvent::Resized(new_size) => {
+                    window_width.store(new_size.width, Ordering::Relaxed);
+                    window_height.store(new_size.height, Ordering::Relaxed);
+                }
+
+                WindowEvent::ReceivedCharacter(ch) => {
+                    if ch.is_control() {
+                        log::debug!("input: {:?}", ch);
+                    }
+                    let mut buf = [0_u8; 4];
+                    let utf8 = ch.encode_utf8(&mut buf).as_bytes();
+                    write_pty(utf8);
+                }
+
+                WindowEvent::KeyboardInput { input, .. }
+                    if input.state == ElementState::Pressed =>
+                {
+                    use crate::control_function::Function;
+                    match input.virtual_keycode {
+                        Some(VirtualKeyCode::Up) => {
+                            write_pty(&Function::CUU(1).repr());
+                        }
+                        Some(VirtualKeyCode::Down) => {
+                            write_pty(&Function::CUD(1).repr());
+                        }
+                        Some(VirtualKeyCode::Right) => {
+                            write_pty(&Function::CUF(1).repr());
+                        }
+                        Some(VirtualKeyCode::Left) => {
+                            write_pty(&Function::CUB(1).repr());
+                        }
+                        _ => {}
+                    }
+                }
+
+                _ => {}
+            },
+
+            Event::MainEventsCleared => {
+                draw();
+            }
+
+            _ => {}
         }
-    }
+
+        *control_flow = ControlFlow::Poll;
+    });
+}
+
+#[derive(Copy, Clone)]
+struct Vertex {
+    position: [f32; 2],
+    tex_coords: [f32; 2],
+}
+glium::implement_vertex!(Vertex, position, tex_coords);
+
+// Converts window coordinate to opengl coordinate
+fn x_to_gl(x: i32, window_width: u32) -> f32 {
+    (x as f32 / window_width as f32) * 2.0 - 1.0
+}
+fn y_to_gl(y: i32, window_height: u32) -> f32 {
+    -(y as f32 / window_height as f32) * 2.0 + 1.0
+}
+fn w_to_gl(w: u32, window_width: u32) -> f32 {
+    (w as f32 / window_width as f32) * 2.0
+}
+fn h_to_gl(h: u32, window_height: u32) -> f32 {
+    (h as f32 / window_height as f32) * 2.0
+}
+
+// Generate vertices for a single cell
+fn rectangle_vertices(
+    gl_x: f32,
+    gl_y: f32,
+    gl_w: f32,
+    gl_h: f32,
+    tx_x: f32,
+    tx_y: f32,
+    tx_w: f32,
+    tx_h: f32,
+) -> [Vertex; 6] {
+    // top-left, bottom-left, bottom-right, top-right
+    let gl_ps = [
+        [gl_x, gl_y],
+        [gl_x, gl_y - gl_h],
+        [gl_x + gl_w, gl_y - gl_h],
+        [gl_x + gl_w, gl_y],
+    ];
+
+    // top-left, bottom-left, bottom-right, top-right
+    let tex_ps = [
+        [tx_x, tx_y],
+        [tx_x, tx_y + tx_h],
+        [tx_x + tx_w, tx_y + tx_h],
+        [tx_x + tx_w, tx_y],
+    ];
+
+    // 0    3
+    // *----*
+    // |\  B|
+    // | \  |
+    // |  \ |
+    // |A  \|
+    // *----*
+    // 1    2
+
+    [
+        // A
+        Vertex {
+            position: gl_ps[0],
+            tex_coords: tex_ps[0],
+        },
+        Vertex {
+            position: gl_ps[1],
+            tex_coords: tex_ps[1],
+        },
+        Vertex {
+            position: gl_ps[2],
+            tex_coords: tex_ps[2],
+        },
+        // B
+        Vertex {
+            position: gl_ps[2],
+            tex_coords: tex_ps[2],
+        },
+        Vertex {
+            position: gl_ps[3],
+            tex_coords: tex_ps[3],
+        },
+        Vertex {
+            position: gl_ps[0],
+            tex_coords: tex_ps[0],
+        },
+    ]
 }
