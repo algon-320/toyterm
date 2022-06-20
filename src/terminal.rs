@@ -381,6 +381,21 @@ impl Engine {
                     self.cursor = self.cursor.exact(row, col);
                 }
 
+                ECH(pn) => {
+                    let mut pn = pn as usize;
+                    if pn == 0 {
+                        pn = 1;
+                    }
+
+                    let (row, col) = self.cursor.pos();
+                    for d in 0..pn {
+                        if col + d >= buf.cols {
+                            break;
+                        }
+                        buf.put(row, col + d, Cell::SPACE);
+                    }
+                }
+
                 GraphicChar(ch) => {
                     use unicode_width::UnicodeWidthChar as _;
                     let width = ch.width().unwrap();
@@ -480,7 +495,6 @@ impl Engine {
                 NP => ignore!(),
                 PP => ignore!(),
                 CTC => ignore!(),
-                ECH => ignore!(),
                 CVT => ignore!(),
                 CBT => ignore!(),
                 SRS => ignore!(),
