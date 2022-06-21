@@ -298,6 +298,7 @@ impl State {
                     ('\x46', _) => Some(CPL),
                     ('\x47', _) => Some(CHA),
                     ('\x48', &[pn1, pn2]) => Some(CUP(pn1, pn2)),
+                    ('\x48', &[pn]) => Some(CUP(pn, 1)),
                     ('\x49', _) => Some(CHT),
                     ('\x4A', &[ps @ 0..=2]) => Some(ED(ps)),
                     ('\x4B', &[ps @ 0..=2]) => Some(EL(ps)),
