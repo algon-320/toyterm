@@ -123,36 +123,38 @@ fn main() {
             };
 
             let mut baseline: u32 = max_over as u32;
-            for (i, row) in lines.iter().enumerate() {
+            let mut i = 0_u32;
+            for row in lines.iter() {
                 let mut leftline = 0;
-                for (j, cell) in row.iter().enumerate() {
-                    // Background
-                    {
-                        let gl_x = x_to_gl((j as u32 * cell_w) as i32, window_width);
-                        let gl_y = y_to_gl((i as u32 * cell_h) as i32, window_height);
-                        let gl_w = w_to_gl(cell_w, window_width);
-                        let gl_h = h_to_gl(cell_h, window_height);
-
-                        let mut fg = cell.attr.fg;
-                        let mut bg = cell.attr.bg;
-
-                        if cell.attr.inversed {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if i == cursor.0 && j == cursor.1 {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        let vs = background_cell(gl_x, gl_y, gl_w, gl_h, fg, bg);
-                        vertices.extend_from_slice(&vs);
-                    }
-
+                let mut j = 0_u32;
+                for cell in row.iter() {
                     if cell.width == 0 {
                         continue;
                     }
 
                     if let Some(region) = cache.get(cell.ch) {
+                        // Background
+                        {
+                            let gl_x = x_to_gl((j * cell_w) as i32, window_width);
+                            let gl_y = y_to_gl((i * cell_h) as i32, window_height);
+                            let gl_w = w_to_gl(cell_w * cell.width as u32, window_width);
+                            let gl_h = h_to_gl(cell_h, window_height);
+
+                            let mut fg = cell.attr.fg;
+                            let mut bg = cell.attr.bg;
+
+                            if cell.attr.inversed {
+                                std::mem::swap(&mut fg, &mut bg);
+                            }
+
+                            if i == cursor.0 as u32 && j == cursor.1 as u32 {
+                                std::mem::swap(&mut fg, &mut bg);
+                            }
+
+                            let vs = background_cell(gl_x, gl_y, gl_w, gl_h, fg, bg);
+                            vertices.extend_from_slice(&vs);
+                        }
+
                         if !region.is_empty() {
                             let metrics = font.metrics(cell.ch).expect("ASCII character");
                             let bearing_x = (metrics.horiBearingX >> 6) as u32;
@@ -172,8 +174,7 @@ fn main() {
                                 std::mem::swap(&mut fg, &mut bg);
                             }
 
-                            // Inverse the cell on which the cursor is
-                            if i == cursor.0 && j == cursor.1 {
+                            if i == cursor.0 as u32 && j == cursor.1 as u32 {
                                 std::mem::swap(&mut fg, &mut bg);
                             }
 
@@ -192,6 +193,30 @@ fn main() {
                             vertices.extend_from_slice(&vs);
                         }
                     } else if let Some((glyph_image, metrics)) = font.render(cell.ch) {
+                        let mut vertices = Vec::with_capacity(12);
+
+                        // Background
+                        {
+                            let gl_x = x_to_gl((j * cell_w) as i32, window_width);
+                            let gl_y = y_to_gl((i * cell_h) as i32, window_height);
+                            let gl_w = w_to_gl(cell_w * cell.width as u32, window_width);
+                            let gl_h = h_to_gl(cell_h, window_height);
+
+                            let mut fg = cell.attr.fg;
+                            let mut bg = cell.attr.bg;
+
+                            if cell.attr.inversed {
+                                std::mem::swap(&mut fg, &mut bg);
+                            }
+
+                            if i == cursor.0 as u32 && j == cursor.1 as u32 {
+                                std::mem::swap(&mut fg, &mut bg);
+                            }
+
+                            let vs = background_cell(gl_x, gl_y, gl_w, gl_h, fg, bg);
+                            vertices.extend_from_slice(&vs);
+                        }
+
                         // for non-ASCII characters
                         if !glyph_image.data.is_empty() {
                             let bearing_x = (metrics.horiBearingX >> 6) as u32;
@@ -212,47 +237,49 @@ fn main() {
                                 std::mem::swap(&mut fg, &mut bg);
                             }
 
-                            // Inverse the cell on which the cursor is
-                            if i == cursor.0 && j == cursor.1 {
+                            if i == cursor.0 as u32 && j == cursor.1 as u32 {
                                 std::mem::swap(&mut fg, &mut bg);
                             }
 
                             let vs =
                                 foreground_cell(gl_x, gl_y, gl_w, gl_h, 0.0, 0.0, 1.0, 1.0, fg, bg);
-
-                            let vertex_buffer = glium::VertexBuffer::new(&display, &vs).unwrap();
-                            let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
-
-                            let single_glyph_texture = texture::Texture2d::with_mipmaps(
-                                &display,
-                                glyph_image,
-                                texture::MipmapsOption::NoMipmap,
-                            )
-                            .expect("Failed to create texture");
-
-                            let sampler = single_glyph_texture
-                                .sampled()
-                                .magnify_filter(uniforms::MagnifySamplerFilter::Linear)
-                                .minify_filter(uniforms::MinifySamplerFilter::Linear);
-                            let uniforms = uniform! { tex: sampler, timestamp: elapsed };
-
-                            surface
-                                .draw(
-                                    &vertex_buffer,
-                                    indices,
-                                    &program,
-                                    &uniforms,
-                                    &glium::DrawParameters::default(),
-                                )
-                                .expect("draw");
+                            vertices.extend_from_slice(&vs);
                         }
+
+                        let vertex_buffer = glium::VertexBuffer::new(&display, &vertices).unwrap();
+                        let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
+
+                        let single_glyph_texture = texture::Texture2d::with_mipmaps(
+                            &display,
+                            glyph_image,
+                            texture::MipmapsOption::NoMipmap,
+                        )
+                        .expect("Failed to create texture");
+
+                        let sampler = single_glyph_texture
+                            .sampled()
+                            .magnify_filter(uniforms::MagnifySamplerFilter::Linear)
+                            .minify_filter(uniforms::MinifySamplerFilter::Linear);
+                        let uniforms = uniform! { tex: sampler, timestamp: elapsed };
+
+                        surface
+                            .draw(
+                                &vertex_buffer,
+                                indices,
+                                &program,
+                                &uniforms,
+                                &glium::DrawParameters::default(),
+                            )
+                            .expect("draw");
                     } else {
                         log::trace!("undefined glyph: {:?}", cell.ch);
                     }
 
                     leftline += cell_w * (cell.width as u32);
+                    j += cell.width as u32;
                 }
                 baseline += cell_h;
+                i += 1;
             }
 
             let vertex_buffer = glium::VertexBuffer::new(&display, &vertices).unwrap();
