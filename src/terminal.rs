@@ -503,6 +503,10 @@ impl Engine {
                             27 => self.attr.inversed = false,
                             30..=37 => self.attr.fg = p as u8 - 30,
                             40..=47 => self.attr.bg = p as u8 - 40,
+
+                            // gaming effect (just for fun!)
+                            70 => self.attr.fg = 0xFF,
+                            80 => self.attr.bg = 0xFF,
                             _ => {}
                         }
                     }

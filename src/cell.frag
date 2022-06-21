@@ -1,10 +1,14 @@
 #version 140
 
 uniform sampler2D tex;
+uniform float timestamp;
 in vec2 v_tex_coords;
 flat in uint v_is_bg;
 flat in uvec2 v_color_idx;
 
+vec3 hsv2rgb(float h, float s, float v) {
+    return ((clamp(abs(fract(h + vec3(0.0, 2.0, 1.0) / 3.0) * 6.0 - 3.0) - 1.0, 0.0, 1.0) - 1.0) * s + 1.0) * v;
+}
 
 vec3 get_color(uint idx) {
     // Base16: gruvbox-dark-hard
@@ -24,6 +28,8 @@ vec3 get_color(uint idx) {
         return vec3(0.5568627450980392, 0.7529411764705882, 0.48627450980392156);
     } else if (idx == 7u) {
         return vec3(0.8352941176470589, 0.7686274509803922, 0.6313725490196078);
+    } else if (idx == 0xFFu) {
+        return hsv2rgb(timestamp / 3000.0, 1.0, 1.0);
     } else {
         return vec3(1.0, 0.0, 0.0);
 	}

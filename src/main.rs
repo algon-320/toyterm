@@ -91,12 +91,15 @@ fn main() {
     };
 
     let mut draw = {
+        let started_time = std::time::Instant::now();
         let window_width = window_width.clone();
         let window_height = window_height.clone();
         let display = display.clone();
         let mut vertices = Vec::new();
 
         move || {
+            let elapsed = started_time.elapsed().as_millis() as f32;
+
             let window_width = window_width.load(Ordering::Relaxed);
             let window_height = window_height.load(Ordering::Relaxed);
 
@@ -231,7 +234,7 @@ fn main() {
                                 .sampled()
                                 .magnify_filter(uniforms::MagnifySamplerFilter::Linear)
                                 .minify_filter(uniforms::MinifySamplerFilter::Linear);
-                            let uniforms = uniform! { tex: sampler };
+                            let uniforms = uniform! { tex: sampler, timestamp: elapsed };
 
                             surface
                                 .draw(
@@ -262,7 +265,7 @@ fn main() {
                 .sampled()
                 .magnify_filter(uniforms::MagnifySamplerFilter::Linear)
                 .minify_filter(uniforms::MinifySamplerFilter::Linear);
-            let uniforms = uniform! { tex: sampler };
+            let uniforms = uniform! { tex: sampler, timestamp: elapsed };
 
             // Perform drawing
             surface
