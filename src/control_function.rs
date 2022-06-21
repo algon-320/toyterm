@@ -265,7 +265,7 @@ impl State {
             '0'..='9' => {
                 let digit = ch.to_digit(10).unwrap() as u16;
                 let last_param = buf.params.last_mut().unwrap();
-                *last_param = (*last_param) * 10 + digit;
+                *last_param = last_param.saturating_mul(10).saturating_add(digit);
                 None
             }
             ':' => {
