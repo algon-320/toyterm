@@ -337,7 +337,7 @@ impl State {
                     ('\x6A', _) => Some(HPB),
                     ('\x6B', _) => Some(VPB),
                     ('\x6C', _) => Some(RM),
-                    ('\x6D', _) => Some(SGR(ps)),
+                    ('\x6D', ps) => Some(SGR(ps)),
                     ('\x6E', _) => Some(DSR),
                     ('\x6F', _) => Some(DAQ),
 

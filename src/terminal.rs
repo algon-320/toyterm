@@ -12,11 +12,37 @@ use crate::utils::utf8;
 pub struct Cell {
     pub ch: char,
     pub width: u16,
+    pub attr: GraphicAttribute,
 }
 
 impl Cell {
-    const VOID: Self = Cell { ch: ' ', width: 0 };
-    const SPACE: Self = Cell { ch: ' ', width: 1 };
+    const VOID: Self = Cell {
+        ch: ' ',
+        width: 0,
+        attr: GraphicAttribute::default(),
+    };
+    const SPACE: Self = Cell {
+        ch: ' ',
+        width: 1,
+        attr: GraphicAttribute::default(),
+    };
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GraphicAttribute {
+    pub fg: u8,
+    pub bg: u8,
+    pub inversed: bool,
+}
+
+impl GraphicAttribute {
+    const fn default() -> Self {
+        GraphicAttribute {
+            fg: 7,
+            bg: 0,
+            inversed: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +204,7 @@ struct Engine {
     cursor: Cursor,
     parser: control_function::Parser,
     tabstops: Vec<usize>,
+    attr: GraphicAttribute,
 }
 
 impl Engine {
@@ -218,6 +245,7 @@ impl Engine {
             cursor,
             parser: control_function::Parser::default(),
             tabstops,
+            attr: GraphicAttribute::default(),
         }
     }
 
@@ -257,6 +285,7 @@ impl Engine {
     }
 
     fn process(&mut self, input: &str) {
+        log::trace!("process: {:?}", input);
         let mut buf = self.buffer.lock().unwrap();
 
         for ch in input.chars() {
@@ -314,6 +343,7 @@ impl Engine {
                     let tab = Cell {
                         ch: ' ',
                         width: advance as u16,
+                        attr: self.attr,
                     };
                     buf.put(row, col, tab);
 
@@ -465,6 +495,19 @@ impl Engine {
                     _ => unreachable!(),
                 },
 
+                SGR(ps) => {
+                    for &p in ps {
+                        match p {
+                            0 => self.attr = GraphicAttribute::default(),
+                            7 => self.attr.inversed = true,
+                            27 => self.attr.inversed = false,
+                            30..=37 => self.attr.fg = p as u8 - 30,
+                            40..=47 => self.attr.bg = p as u8 - 40,
+                            _ => {}
+                        }
+                    }
+                }
+
                 GraphicChar(ch) => {
                     use unicode_width::UnicodeWidthChar as _;
                     let width = ch.width().unwrap();
@@ -479,6 +522,7 @@ impl Engine {
                     let cell = Cell {
                         ch,
                         width: width as u16,
+                        attr: self.attr,
                     };
                     buf.put(row, col, cell);
 
@@ -581,7 +625,6 @@ impl Engine {
                 HPB => ignore!(),
                 VPB => ignore!(),
                 RM => ignore!(),
-                SGR(_) => ignore!(),
                 DSR => ignore!(),
                 DAQ => ignore!(),
 

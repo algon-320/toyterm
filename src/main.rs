@@ -119,21 +119,32 @@ fn main() {
                 cursor = (row - top, col);
             };
 
-            // Cursor
-            {
-                let gl_x = x_to_gl((cursor.1 as u32 * cell_w) as i32, window_width);
-                let gl_y = y_to_gl((cursor.0 as u32 * cell_h) as i32, window_height);
-                let gl_w = w_to_gl(cell_w, window_width);
-                let gl_h = h_to_gl(cell_h, window_height);
-                let mut vs = rectangle_vertices(gl_x, gl_y, gl_w, gl_h, 0.0, 0.0, 0.0, 0.0, true);
-                inversed_cell(&mut vs[..]);
-                vertices.extend_from_slice(&vs);
-            }
-
             let mut baseline: u32 = max_over as u32;
             for (i, row) in lines.iter().enumerate() {
                 let mut leftline = 0;
                 for (j, cell) in row.iter().enumerate() {
+                    // Background
+                    {
+                        let gl_x = x_to_gl((j as u32 * cell_w) as i32, window_width);
+                        let gl_y = y_to_gl((i as u32 * cell_h) as i32, window_height);
+                        let gl_w = w_to_gl(cell_w, window_width);
+                        let gl_h = h_to_gl(cell_h, window_height);
+
+                        let mut fg = cell.attr.fg;
+                        let mut bg = cell.attr.bg;
+
+                        if cell.attr.inversed {
+                            std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        if i == cursor.0 && j == cursor.1 {
+                            std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        let vs = background_cell(gl_x, gl_y, gl_w, gl_h, fg, bg);
+                        vertices.extend_from_slice(&vs);
+                    }
+
                     if cell.width == 0 {
                         continue;
                     }
@@ -150,7 +161,20 @@ fn main() {
                             let gl_y = y_to_gl(y, window_height);
                             let gl_w = w_to_gl(region.px_w, window_width);
                             let gl_h = h_to_gl(region.px_h, window_height);
-                            let mut vs = rectangle_vertices(
+
+                            let mut fg = cell.attr.fg;
+                            let mut bg = cell.attr.bg;
+
+                            if cell.attr.inversed {
+                                std::mem::swap(&mut fg, &mut bg);
+                            }
+
+                            // Inverse the cell on which the cursor is
+                            if i == cursor.0 && j == cursor.1 {
+                                std::mem::swap(&mut fg, &mut bg);
+                            }
+
+                            let vs = foreground_cell(
                                 gl_x,
                                 gl_y,
                                 gl_w,
@@ -159,14 +183,9 @@ fn main() {
                                 region.tx_y,
                                 region.tx_w,
                                 region.tx_h,
-                                false,
+                                fg,
+                                bg,
                             );
-
-                            // Inverse the cell on which the cursor is
-                            if i == cursor.0 && j == cursor.1 {
-                                inversed_cell(&mut vs[..]);
-                            }
-
                             vertices.extend_from_slice(&vs);
                         }
                     } else if let Some((glyph_image, metrics)) = font.render(cell.ch) {
@@ -183,14 +202,20 @@ fn main() {
                             let gl_w = w_to_gl(glyph_width, window_width);
                             let gl_h = h_to_gl(glyph_height, window_height);
 
-                            let mut vs = rectangle_vertices(
-                                gl_x, gl_y, gl_w, gl_h, 0.0, 0.0, 1.0, 1.0, false,
-                            );
+                            let mut fg = cell.attr.fg;
+                            let mut bg = cell.attr.bg;
+
+                            if cell.attr.inversed {
+                                std::mem::swap(&mut fg, &mut bg);
+                            }
 
                             // Inverse the cell on which the cursor is
                             if i == cursor.0 && j == cursor.1 {
-                                inversed_cell(&mut vs[..]);
+                                std::mem::swap(&mut fg, &mut bg);
                             }
+
+                            let vs =
+                                foreground_cell(gl_x, gl_y, gl_w, gl_h, 0.0, 0.0, 1.0, 1.0, fg, bg);
 
                             let vertex_buffer = glium::VertexBuffer::new(&display, &vs).unwrap();
                             let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
@@ -344,7 +369,7 @@ fn h_to_gl(h: u32, window_height: u32) -> f32 {
 }
 
 // Generate vertices for a single cell
-fn rectangle_vertices(
+fn foreground_cell(
     gl_x: f32,
     gl_y: f32,
     gl_w: f32,
@@ -353,7 +378,8 @@ fn rectangle_vertices(
     tx_y: f32,
     tx_w: f32,
     tx_h: f32,
-    is_bg: bool,
+    fg_color: u8,
+    bg_color: u8,
 ) -> [Vertex; 6] {
     // top-left, bottom-left, bottom-right, top-right
     let gl_ps = [
@@ -371,6 +397,13 @@ fn rectangle_vertices(
         [tx_x + tx_w, tx_y],
     ];
 
+    let v = |idx| Vertex {
+        position: gl_ps[idx],
+        tex_coords: tex_ps[idx],
+        color_idx: [bg_color as u32, fg_color as u32],
+        is_bg: 0,
+    };
+
     // 0    3
     // *----*
     // |\  B|
@@ -379,13 +412,6 @@ fn rectangle_vertices(
     // |A  \|
     // *----*
     // 1    2
-
-    let v = |idx| Vertex {
-        position: gl_ps[idx],
-        tex_coords: tex_ps[idx],
-        color_idx: [0, 1],
-        is_bg: if is_bg { 1 } else { 0 },
-    };
 
     [
         // A
@@ -399,9 +425,46 @@ fn rectangle_vertices(
     ]
 }
 
-fn inversed_cell(vertices: &mut [Vertex]) {
-    for v in vertices.iter_mut() {
-        // swap color indices
-        v.color_idx.swap(0, 1);
-    }
+fn background_cell(
+    gl_x: f32,
+    gl_y: f32,
+    gl_w: f32,
+    gl_h: f32,
+    fg_color: u8,
+    bg_color: u8,
+) -> [Vertex; 6] {
+    // top-left, bottom-left, bottom-right, top-right
+    let gl_ps = [
+        [gl_x, gl_y],
+        [gl_x, gl_y - gl_h],
+        [gl_x + gl_w, gl_y - gl_h],
+        [gl_x + gl_w, gl_y],
+    ];
+
+    let v = |idx| Vertex {
+        position: gl_ps[idx],
+        tex_coords: [0.0, 0.0],
+        color_idx: [bg_color as u32, fg_color as u32],
+        is_bg: 1,
+    };
+
+    // 0    3
+    // *----*
+    // |\  B|
+    // | \  |
+    // |  \ |
+    // |A  \|
+    // *----*
+    // 1    2
+
+    [
+        // A
+        v(0),
+        v(1),
+        v(2),
+        // B
+        v(2),
+        v(3),
+        v(0),
+    ]
 }
