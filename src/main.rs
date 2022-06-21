@@ -349,32 +349,19 @@ fn rectangle_vertices(
     // *----*
     // 1    2
 
+    let v = |idx| Vertex {
+        position: gl_ps[idx],
+        tex_coords: tex_ps[idx],
+    };
+
     [
         // A
-        Vertex {
-            position: gl_ps[0],
-            tex_coords: tex_ps[0],
-        },
-        Vertex {
-            position: gl_ps[1],
-            tex_coords: tex_ps[1],
-        },
-        Vertex {
-            position: gl_ps[2],
-            tex_coords: tex_ps[2],
-        },
+        v(0),
+        v(1),
+        v(2),
         // B
-        Vertex {
-            position: gl_ps[2],
-            tex_coords: tex_ps[2],
-        },
-        Vertex {
-            position: gl_ps[3],
-            tex_coords: tex_ps[3],
-        },
-        Vertex {
-            position: gl_ps[0],
-            tex_coords: tex_ps[0],
-        },
+        v(2),
+        v(3),
+        v(0),
     ]
 }
