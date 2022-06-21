@@ -22,6 +22,7 @@ impl Cell {
 #[derive(Debug, Clone)]
 pub struct Buffer {
     pub lines: VecDeque<Vec<Cell>>,
+    pub cursor: (usize, usize),
     cols: usize,
     capacity: usize,
 }
@@ -33,6 +34,7 @@ impl Buffer {
             lines: VecDeque::new(),
             cols,
             capacity,
+            cursor: (0, 0),
         }
     }
 
@@ -626,6 +628,8 @@ impl Engine {
                 SCP => ignore!(),
             }
         }
+
+        buf.cursor = (self.cursor.row, self.cursor.col);
     }
 }
 

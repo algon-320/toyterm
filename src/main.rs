@@ -97,6 +97,9 @@ fn main() {
         let mut vertices = Vec::new();
 
         move || {
+            let window_width = window_width.load(Ordering::Relaxed);
+            let window_height = window_height.load(Ordering::Relaxed);
+
             vertices.clear();
 
             use glium::Surface as _;
@@ -105,23 +108,35 @@ fn main() {
             // FIXME
             surface.clear_color_srgb(0.1137, 0.1254, 0.1294, 1.0);
 
-            let lines: Vec<_> = {
-                // hold the lock during copying lines
-                let lock = terminal.buffer.lock().unwrap();
-                let top = std::cmp::max(lock.lines.len() as isize - 24, 0) as usize;
-                lock.lines.range(top..).cloned().collect()
+            let lines: Vec<Vec<terminal::Cell>>;
+            let cursor: (usize, usize);
+            {
+                // hold the lock during copying states
+                let buf = terminal.buffer.lock().unwrap();
+                let top = std::cmp::max(buf.lines.len() as isize - 24, 0) as usize;
+                lines = buf.lines.range(top..).cloned().collect();
+                let (row, col) = buf.cursor;
+                cursor = (row - top, col);
             };
 
+            // Cursor
+            {
+                let gl_x = x_to_gl((cursor.1 as u32 * cell_w) as i32, window_width);
+                let gl_y = y_to_gl((cursor.0 as u32 * cell_h) as i32, window_height);
+                let gl_w = w_to_gl(cell_w, window_width);
+                let gl_h = h_to_gl(cell_h, window_height);
+                let mut vs = rectangle_vertices(gl_x, gl_y, gl_w, gl_h, 0.0, 0.0, 0.0, 0.0, true);
+                inversed_cell(&mut vs[..]);
+                vertices.extend_from_slice(&vs);
+            }
+
             let mut baseline: u32 = max_over as u32;
-            for row in lines.iter() {
+            for (i, row) in lines.iter().enumerate() {
                 let mut leftline = 0;
-                for cell in row.iter() {
+                for (j, cell) in row.iter().enumerate() {
                     if cell.width == 0 {
                         continue;
                     }
-
-                    let window_width = window_width.load(Ordering::Relaxed);
-                    let window_height = window_height.load(Ordering::Relaxed);
 
                     if let Some(region) = cache.get(cell.ch) {
                         if !region.is_empty() {
@@ -135,7 +150,7 @@ fn main() {
                             let gl_y = y_to_gl(y, window_height);
                             let gl_w = w_to_gl(region.px_w, window_width);
                             let gl_h = h_to_gl(region.px_h, window_height);
-                            let vs = rectangle_vertices(
+                            let mut vs = rectangle_vertices(
                                 gl_x,
                                 gl_y,
                                 gl_w,
@@ -144,7 +159,14 @@ fn main() {
                                 region.tx_y,
                                 region.tx_w,
                                 region.tx_h,
+                                false,
                             );
+
+                            // Inverse the cell on which the cursor is
+                            if i == cursor.0 && j == cursor.1 {
+                                inversed_cell(&mut vs[..]);
+                            }
+
                             vertices.extend_from_slice(&vs);
                         }
                     } else if let Some((glyph_image, metrics)) = font.render(cell.ch) {
@@ -161,10 +183,16 @@ fn main() {
                             let gl_w = w_to_gl(glyph_width, window_width);
                             let gl_h = h_to_gl(glyph_height, window_height);
 
-                            let vertices =
-                                rectangle_vertices(gl_x, gl_y, gl_w, gl_h, 0.0, 0.0, 1.0, 1.0);
-                            let vertex_buffer =
-                                glium::VertexBuffer::new(&display, &vertices).unwrap();
+                            let mut vs = rectangle_vertices(
+                                gl_x, gl_y, gl_w, gl_h, 0.0, 0.0, 1.0, 1.0, false,
+                            );
+
+                            // Inverse the cell on which the cursor is
+                            if i == cursor.0 && j == cursor.1 {
+                                inversed_cell(&mut vs[..]);
+                            }
+
+                            let vertex_buffer = glium::VertexBuffer::new(&display, &vs).unwrap();
                             let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
 
                             let single_glyph_texture = texture::Texture2d::with_mipmaps(
@@ -296,8 +324,10 @@ fn main() {
 struct Vertex {
     position: [f32; 2],
     tex_coords: [f32; 2],
+    color_idx: [u32; 2],
+    is_bg: u32,
 }
-glium::implement_vertex!(Vertex, position, tex_coords);
+glium::implement_vertex!(Vertex, position, tex_coords, color_idx, is_bg);
 
 // Converts window coordinate to opengl coordinate
 fn x_to_gl(x: i32, window_width: u32) -> f32 {
@@ -323,6 +353,7 @@ fn rectangle_vertices(
     tx_y: f32,
     tx_w: f32,
     tx_h: f32,
+    is_bg: bool,
 ) -> [Vertex; 6] {
     // top-left, bottom-left, bottom-right, top-right
     let gl_ps = [
@@ -352,6 +383,8 @@ fn rectangle_vertices(
     let v = |idx| Vertex {
         position: gl_ps[idx],
         tex_coords: tex_ps[idx],
+        color_idx: [0, 1],
+        is_bg: if is_bg { 1 } else { 0 },
     };
 
     [
@@ -364,4 +397,11 @@ fn rectangle_vertices(
         v(3),
         v(0),
     ]
+}
+
+fn inversed_cell(vertices: &mut [Vertex]) {
+    for v in vertices.iter_mut() {
+        // swap color indices
+        v.color_idx.swap(0, 1);
+    }
 }
