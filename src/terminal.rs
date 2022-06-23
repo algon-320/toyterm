@@ -109,10 +109,10 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    pub fn new() -> Self {
+    pub fn new(lines: usize, columns: usize) -> Self {
         let (pty, _child_pid) = init_pty().unwrap();
 
-        let engine = Engine::new(pty.dup().expect("dup"), 24, 80);
+        let engine = Engine::new(pty.dup().expect("dup"), lines, columns);
         let buffer = engine.buffer();
         std::thread::spawn(move || engine.start());
 

@@ -18,7 +18,10 @@ fn main() {
         .format_timestamp(None)
         .init();
 
-    let terminal = terminal::Terminal::new();
+    let lines: usize = 24;
+    let columns: usize = 80;
+
+    let terminal = terminal::Terminal::new(lines, columns);
     let mut pty_writer = terminal.writer();
 
     let font = font::Font::new();
@@ -50,8 +53,8 @@ fn main() {
     };
 
     // Initialize OpenGL
-    let width = cell_w * 80;
-    let height = cell_h * 24;
+    let width = columns as u32 * cell_w;
+    let height = lines as u32 * cell_h;
     let win_builder = WindowBuilder::new()
         .with_title("toyterm")
         .with_inner_size(PhysicalSize::new(width, height))
