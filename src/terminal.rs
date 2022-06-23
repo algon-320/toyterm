@@ -119,9 +119,27 @@ impl Terminal {
         Terminal { pty, buffer }
     }
 
+    /// Writes the given data on PTY master
+    pub fn pty_write(&mut self, data: &[u8]) {
+        use std::io::Write;
+        self.write_all(data).unwrap();
+        self.flush().unwrap();
+    }
+
+    #[allow(unused)]
     pub fn writer(&self) -> impl std::io::Write {
         let new_fd = self.pty.dup().expect("dup");
         new_fd.into_file()
+    }
+}
+
+impl std::io::Write for Terminal {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let nbytes = nix::unistd::write(self.pty.as_raw(), data)?;
+        Ok(nbytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
