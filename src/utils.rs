@@ -35,6 +35,23 @@ pub mod fd {
             let _ = nix::unistd::close(self.0);
         }
     }
+
+    impl std::io::Write for OwnedFd {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            let nb = nix::unistd::write(self.as_raw(), bytes)?;
+            Ok(nb)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl std::io::Read for OwnedFd {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let nb = nix::unistd::read(self.as_raw(), buf)?;
+            Ok(nb)
+        }
+    }
 }
 
 pub mod utf8 {
