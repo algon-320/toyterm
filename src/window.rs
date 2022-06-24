@@ -18,6 +18,37 @@ struct CellSize {
     max_over: i32,
 }
 
+fn calculate_cell_size(font: &Font) -> CellSize {
+    use std::cmp::max;
+
+    let mut max_advance_x: i32 = 0;
+    let mut max_over: i32 = 0;
+    let mut max_under: i32 = 0;
+
+    let ascii_visible = ' '..='~';
+    for ch in ascii_visible {
+        let metrics = font.metrics(ch).expect("undefined glyph");
+
+        let advance_x = (metrics.horiAdvance >> 6) as i32;
+        max_advance_x = max(max_advance_x, advance_x);
+
+        let over = (metrics.horiBearingY >> 6) as i32;
+        max_over = max(max_over, over);
+
+        let under = ((metrics.height - metrics.horiBearingY) >> 6) as i32;
+        max_under = max(max_under, under);
+    }
+
+    let cell_w = max_advance_x as u32;
+    let cell_h = (max_over + max_under) as u32;
+
+    CellSize {
+        w: cell_w,
+        h: cell_h,
+        max_over,
+    }
+}
+
 pub struct TerminalWindow {
     display: Display,
     program: glium::Program,
@@ -38,38 +69,7 @@ impl TerminalWindow {
         let terminal = Terminal::new(lines, columns);
 
         let font = Font::new();
-
-        // Calculate cell size
-        let cell_size = {
-            use std::cmp::max;
-
-            let mut max_advance_x: i32 = 0;
-            let mut max_over: i32 = 0;
-            let mut max_under: i32 = 0;
-
-            let ascii_visible = ' '..='~';
-            for ch in ascii_visible {
-                let metrics = font.metrics(ch).expect("undefined glyph");
-
-                let advance_x = (metrics.horiAdvance >> 6) as i32;
-                max_advance_x = max(max_advance_x, advance_x);
-
-                let over = (metrics.horiBearingY >> 6) as i32;
-                max_over = max(max_over, over);
-
-                let under = ((metrics.height - metrics.horiBearingY) >> 6) as i32;
-                max_under = max(max_under, under);
-            }
-
-            let cell_w = max_advance_x as u32;
-            let cell_h = (max_over + max_under) as u32;
-
-            CellSize {
-                w: cell_w,
-                h: cell_h,
-                max_over,
-            }
-        };
+        let cell_size = calculate_cell_size(&font);
 
         let width = columns as u32 * cell_size.w;
         let height = lines as u32 * cell_size.h;
@@ -120,7 +120,6 @@ impl TerminalWindow {
 
     pub fn draw(&mut self) {
         let elapsed = self.started_time.elapsed().as_millis() as f32;
-
         let window_width = self.window_width;
         let window_height = self.window_height;
         let cell_size = self.cell_size;
@@ -347,6 +346,11 @@ impl TerminalWindow {
                 }
 
                 WindowEvent::ReceivedCharacter(ch) => {
+                    // Handle these characters on WindowEvent::KeyboardInput event
+                    if ch == '-' || ch == '=' {
+                        return;
+                    }
+
                     if ch.is_control() {
                         log::debug!("input: {:?}", ch);
                     }
@@ -354,12 +358,37 @@ impl TerminalWindow {
                     let mut buf = [0_u8; 4];
                     let utf8 = ch.encode_utf8(&mut buf).as_bytes();
                     self.terminal.pty_write(utf8);
+
+                    log::trace!("pty_write: {:?}", utf8);
                 }
 
                 WindowEvent::KeyboardInput { input, .. }
                     if input.state == ElementState::Pressed =>
                 {
                     match input.virtual_keycode {
+                        Some(VirtualKeyCode::Minus) if input.modifiers.ctrl() => {
+                            // font size -
+                            self.font.decrease_size(1);
+                            self.cell_size = calculate_cell_size(&self.font);
+                            self.cache = GlyphCache::build_ascii_visible(
+                                &self.display,
+                                &self.font,
+                                self.cell_size.w,
+                                self.cell_size.h,
+                            );
+                        }
+                        Some(VirtualKeyCode::Equals) if input.modifiers.ctrl() => {
+                            // font size +
+                            self.font.increase_size(1);
+                            self.cell_size = calculate_cell_size(&self.font);
+                            self.cache = GlyphCache::build_ascii_visible(
+                                &self.display,
+                                &self.font,
+                                self.cell_size.w,
+                                self.cell_size.h,
+                            );
+                        }
+
                         Some(VirtualKeyCode::Up) => {
                             self.terminal.pty_write(b"\x1b[\x41");
                         }
@@ -372,6 +401,14 @@ impl TerminalWindow {
                         Some(VirtualKeyCode::Left) => {
                             self.terminal.pty_write(b"\x1b[\x44");
                         }
+
+                        Some(VirtualKeyCode::Minus) => {
+                            self.terminal.pty_write(b"-");
+                        }
+                        Some(VirtualKeyCode::Equals) => {
+                            self.terminal.pty_write(b"=");
+                        }
+
                         _ => {}
                     }
                 }

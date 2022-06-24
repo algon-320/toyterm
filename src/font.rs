@@ -7,6 +7,7 @@ use glium::texture::RawImage2d;
 pub struct Font {
     _freetype: Library,
     face: Face,
+    size: u32,
 }
 
 impl Font {
@@ -20,6 +21,7 @@ impl Font {
         Self {
             _freetype: freetype,
             face,
+            size: 32,
         }
     }
 
@@ -54,5 +56,14 @@ impl Font {
 
             Some((raw_image, metrics))
         }
+    }
+
+    pub fn increase_size(&mut self, inc: u32) {
+        self.size += inc;
+        self.face.set_pixel_sizes(0, self.size).unwrap();
+    }
+    pub fn decrease_size(&mut self, dec: u32) {
+        self.size -= dec;
+        self.face.set_pixel_sizes(0, self.size).unwrap();
     }
 }
