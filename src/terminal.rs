@@ -94,26 +94,26 @@ impl Buffer {
         self.lines[row].fill(Cell::SPACE);
     }
 
-    fn put(&mut self, row: usize, col: usize, cell: Cell) {
+    fn erase(&mut self, row: usize, col: usize) {
         let mut c = col;
         while c > 0 && self.lines[row][c].width == 0 {
             c -= 1;
         }
 
-        if self.lines[row][c].width > 1 {
-            let w = self.lines[row][c].width as usize;
-            for d in 0..w {
-                self.lines[row][c + d] = Cell::SPACE;
-            }
+        let w = self.lines[row][c].width as usize;
+        for d in 0..w {
+            self.lines[row][c + d] = Cell::SPACE;
         }
+    }
 
+    fn put(&mut self, row: usize, col: usize, cell: Cell) {
+        self.erase(row, col);
         self.lines[row][col] = cell;
 
-        if cell.width > 1 {
-            let w = cell.width as usize;
-            for d in 1..w {
-                self.lines[row][col + d] = Cell::VOID;
-            }
+        let w = cell.width as usize;
+        for d in 1..w {
+            self.erase(row, col + d);
+            self.lines[row][col + d] = Cell::VOID;
         }
     }
 }
