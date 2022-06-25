@@ -78,7 +78,7 @@ impl TerminalWindow {
         let win_builder = WindowBuilder::new()
             .with_title("toyterm")
             .with_inner_size(PhysicalSize::new(width, height))
-            .with_resizable(false);
+            .with_resizable(true);
         let ctx_builder = ContextBuilder::new().with_vsync(true).with_srgb(true);
         let display = Display::new(win_builder, ctx_builder, event_loop).expect("display new");
 
@@ -138,7 +138,8 @@ impl TerminalWindow {
         {
             // hold the lock during copying states
             let buf = self.terminal.buffer.lock().unwrap();
-            let top = std::cmp::max(buf.lines.len() as isize - 24, 0) as usize;
+            let prows = self.terminal.size().0;
+            let top = buf.lines.len() - prows;
             lines = buf.lines.range(top..).cloned().collect();
             let (row, col) = buf.cursor;
             cursor = (row - top, col);
@@ -334,6 +335,10 @@ impl TerminalWindow {
     pub fn resize(&mut self, new_width: u32, new_height: u32) {
         self.window_width = new_width;
         self.window_height = new_height;
+
+        let lines = (new_height / self.cell_size.h) as usize;
+        let columns = (new_width / self.cell_size.w) as usize;
+        self.terminal.request_resize(lines, columns);
     }
 
     pub fn on_event(&mut self, event: Event<()>, control_flow: &mut ControlFlow) {
@@ -383,9 +388,14 @@ impl TerminalWindow {
                                 self.cell_size.w,
                                 self.cell_size.h,
                             );
+
+                            let lines = (self.window_height / self.cell_size.h) as usize;
+                            let columns = (self.window_width / self.cell_size.w) as usize;
+                            self.terminal.request_resize(lines, columns);
                         }
                         Some(VirtualKeyCode::Equals) if self.modifiers.ctrl() => {
                             // font size +
+
                             self.font.increase_size(1);
                             self.cell_size = calculate_cell_size(&self.font);
                             self.cache = GlyphCache::build_ascii_visible(
@@ -394,6 +404,10 @@ impl TerminalWindow {
                                 self.cell_size.w,
                                 self.cell_size.h,
                             );
+
+                            let lines = (self.window_height / self.cell_size.h) as usize;
+                            let columns = (self.window_width / self.cell_size.w) as usize;
+                            self.terminal.request_resize(lines, columns);
                         }
 
                         Some(VirtualKeyCode::Up) => {

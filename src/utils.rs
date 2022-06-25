@@ -54,6 +54,17 @@ pub mod fd {
     }
 }
 
+pub mod wrapper {
+    use super::fd::OwnedFd;
+
+    pub fn pipe() -> std::io::Result<(OwnedFd, OwnedFd)> {
+        let (rfd, wfd) = nix::unistd::pipe()?;
+        let rfd = unsafe { OwnedFd::from_raw_fd(rfd) };
+        let wfd = unsafe { OwnedFd::from_raw_fd(wfd) };
+        Ok((rfd, wfd))
+    }
+}
+
 pub mod utf8 {
     pub fn process_utf8<'b, F>(buf: &'b [u8], mut callback: F) -> &[u8]
     where

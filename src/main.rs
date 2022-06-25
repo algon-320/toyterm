@@ -1,6 +1,7 @@
 mod cache;
 mod control_function;
 mod font;
+mod pipe_channel;
 mod terminal;
 mod utils;
 mod window;

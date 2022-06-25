@@ -5,8 +5,24 @@ use std::io::Result;
 use std::sync::{Arc, Mutex};
 
 use crate::control_function;
+use crate::pipe_channel;
 use crate::utils::fd::OwnedFd;
 use crate::utils::utf8;
+
+fn set_term_window_size(pty_master: &OwnedFd, lines: u16, columns: u16) -> Result<()> {
+    let winsize = nix::pty::Winsize {
+        ws_row: lines,
+        ws_col: columns,
+        // TODO
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+
+    nix::ioctl_write_ptr_bad!(tiocswinsz, nix::libc::TIOCSWINSZ, nix::pty::Winsize);
+    unsafe { tiocswinsz(pty_master.as_raw(), &winsize as *const nix::pty::Winsize) }?;
+
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Cell {
@@ -103,20 +119,49 @@ impl Buffer {
 }
 
 #[derive(Debug)]
+enum Command {
+    Resize { lines: usize, columns: usize },
+}
+
+#[derive(Debug)]
 pub struct Terminal {
     pty: OwnedFd,
+    control_req: pipe_channel::Sender<Command>,
+    control_res: pipe_channel::Receiver<i32>,
     pub buffer: Arc<Mutex<Buffer>>,
+    rows: usize,
+    cols: usize,
 }
 
 impl Terminal {
     pub fn new(lines: usize, columns: usize) -> Self {
         let (pty, _child_pid) = init_pty().unwrap();
 
-        let engine = Engine::new(pty.dup().expect("dup"), lines, columns);
+        let (control_req_tx, control_req_rx) = pipe_channel::channel();
+        let (control_res_tx, control_res_rx) = pipe_channel::channel();
+
+        let engine = Engine::new(
+            pty.dup().expect("dup"),
+            control_req_rx,
+            control_res_tx,
+            lines,
+            columns,
+        );
         let buffer = engine.buffer();
         std::thread::spawn(move || engine.start());
 
-        Terminal { pty, buffer }
+        Terminal {
+            pty,
+            control_req: control_req_tx,
+            control_res: control_res_rx,
+            buffer,
+            rows: lines,
+            cols: columns,
+        }
+    }
+
+    pub fn size(&self) -> (usize, usize) {
+        (self.rows, self.cols)
     }
 
     /// Writes the given data on PTY master
@@ -129,6 +174,18 @@ impl Terminal {
     pub fn writer(&self) -> impl std::io::Write {
         let new_fd = self.pty.dup().expect("dup");
         new_fd.into_file()
+    }
+
+    pub fn request_resize(&mut self, lines: usize, columns: usize) {
+        let size_changed = self.rows != lines || self.cols != columns;
+
+        if size_changed {
+            self.control_req.send(Command::Resize { lines, columns });
+            self.control_res.recv();
+
+            self.rows = lines;
+            self.cols = columns;
+        }
     }
 }
 
@@ -205,6 +262,8 @@ impl Cursor {
 
 struct Engine {
     pty: OwnedFd,
+    control_req: pipe_channel::Receiver<Command>,
+    control_res: pipe_channel::Sender<i32>,
     prows: usize,
     pcols: usize,
     buffer: Arc<Mutex<Buffer>>,
@@ -215,7 +274,15 @@ struct Engine {
 }
 
 impl Engine {
-    fn new(pty: OwnedFd, lines: usize, columns: usize) -> Self {
+    fn new(
+        pty: OwnedFd,
+        control_req: pipe_channel::Receiver<Command>,
+        control_res: pipe_channel::Sender<i32>,
+        lines: usize,
+        columns: usize,
+    ) -> Self {
+        set_term_window_size(&pty, lines as u16, columns as u16).unwrap();
+
         let prows = lines;
         let pcols = columns;
 
@@ -246,6 +313,8 @@ impl Engine {
 
         Self {
             pty,
+            control_req,
+            control_res,
             prows,
             pcols,
             buffer,
@@ -260,31 +329,109 @@ impl Engine {
         self.buffer.clone()
     }
 
+    fn resize(&mut self, lines: usize, columns: usize) {
+        log::debug!("resize to {}x{}", lines, columns);
+
+        set_term_window_size(&self.pty, lines as u16, columns as u16).unwrap();
+
+        self.prows = lines;
+        self.pcols = columns;
+
+        self.tabstops.clear();
+        for i in 0..self.pcols {
+            if i % 8 == 0 {
+                self.tabstops.push(i);
+            }
+        }
+
+        let mut buf = self.buffer.lock().unwrap();
+        buf.cols = columns;
+        for line in buf.lines.iter_mut() {
+            line.resize(columns, Cell::SPACE);
+        }
+        while buf.lines.len() < lines {
+            buf.allocate_line();
+        }
+
+        self.cursor.dcols = columns;
+        if self.cursor.col >= columns {
+            self.cursor.col = columns - 1;
+        }
+        self.cursor.row = buf.lines.len() - lines;
+
+        buf.cursor = self.cursor.pos();
+    }
+
     fn start(mut self) {
         let pty_fd = self.pty.as_raw();
+        let ctl_fd = self.control_req.get_fd();
 
         let mut buf = vec![0_u8; 0x1000];
         let mut begin = 0;
 
-        while let Ok(nb) = nix::unistd::read(pty_fd, &mut buf[begin..]) {
-            let end = begin + nb;
-            let bytes = &buf[0..end];
+        use nix::poll::{poll, PollFd, PollFlags};
+        let mut fds = [
+            PollFd::new(pty_fd, PollFlags::POLLIN),
+            PollFd::new(ctl_fd, PollFlags::POLLIN),
+        ];
 
-            let rem = utf8::process_utf8(bytes, |res| match res {
-                Ok(s) => self.process(s),
+        loop {
+            log::trace!("polling");
+            let ready_count = poll(&mut fds, -1).expect("poll");
 
-                // Process invalid sequence as U+FFFD (REPLACEMENT CHARACTER)
-                Err(invalid) => {
-                    log::debug!("invalid UTF-8 sequence: {:?}", invalid);
-                    self.process("\u{FFFD}");
+            if ready_count == 0 {
+                continue;
+            }
+
+            let pty_revents = fds[0].revents();
+            let ctl_revents = fds[1].revents();
+
+            if let Some(flags) = ctl_revents {
+                if flags.contains(PollFlags::POLLIN) {
+                    match self.control_req.recv() {
+                        Command::Resize { lines, columns } => {
+                            self.resize(lines, columns);
+                            self.control_res.send(0);
+                        }
+                    }
+                } else if flags.contains(PollFlags::POLLERR) || flags.contains(PollFlags::POLLHUP) {
+                    break;
                 }
-            });
-            let rem_len = rem.len();
+            }
 
-            // Move remaining bytes to the begining
-            // (these bytes will be parsed in the next process_utf8 call)
-            buf.copy_within((end - rem_len)..end, 0);
-            begin = rem_len;
+            if let Some(flags) = pty_revents {
+                if flags.contains(PollFlags::POLLIN) {
+                    let nb = match nix::unistd::read(pty_fd, &mut buf[begin..]) {
+                        Ok(0) => break,
+                        Ok(nb) => nb,
+                        Err(err) => {
+                            log::error!("PTY read: {}", err);
+                            continue;
+                        }
+                    };
+
+                    let end = begin + nb;
+                    let bytes = &buf[0..end];
+
+                    let rem = utf8::process_utf8(bytes, |res| match res {
+                        Ok(s) => self.process(s),
+
+                        // Process invalid sequence as U+FFFD (REPLACEMENT CHARACTER)
+                        Err(invalid) => {
+                            log::debug!("invalid UTF-8 sequence: {:?}", invalid);
+                            self.process("\u{FFFD}");
+                        }
+                    });
+                    let rem_len = rem.len();
+
+                    // Move remaining bytes to the begining
+                    // (these bytes will be parsed in the next process_utf8 call)
+                    buf.copy_within((end - rem_len)..end, 0);
+                    begin = rem_len;
+                } else if flags.contains(PollFlags::POLLERR) || flags.contains(PollFlags::POLLHUP) {
+                    break;
+                }
+            }
         }
 
         // FIXME: graceful shutdown
