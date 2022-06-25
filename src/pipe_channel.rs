@@ -17,10 +17,14 @@ impl<T> Sender<T> {
         let ptr = &val as *const T as *const u8;
         std::mem::forget(val);
 
-        let bytes: &[u8] = unsafe { std::slice::from_raw_parts(ptr, size) };
+        let val_bytes: &[u8] = unsafe { std::slice::from_raw_parts(ptr, size) };
+
+        let pid = std::process::id();
+        let pid_bytes = pid.to_ne_bytes();
 
         use std::io::Write as _;
-        self.tx.write_all(bytes).unwrap();
+        self.tx.write_all(&pid_bytes).unwrap();
+        self.tx.write_all(val_bytes).unwrap();
     }
 }
 
@@ -44,13 +48,21 @@ impl<T> Receiver<T> {
         let size = std::mem::size_of::<T>();
         debug_assert!(0 < size && size <= self.buf.len());
 
+        let mut pid_buf = [0_u8; std::mem::size_of::<u32>()];
+
         use std::io::Read as _;
+        self.rx.read_exact(&mut pid_buf).unwrap();
         self.rx.read_exact(&mut self.buf[..size]).unwrap();
 
-        use std::mem::MaybeUninit;
-        let mut maybe_uninit: MaybeUninit<T> = MaybeUninit::uninit();
+        let sender_pid = u32::from_ne_bytes(pid_buf);
+        if sender_pid != std::process::id() {
+            panic!("pipe_channel: inter-process passing is not allowed!");
+        }
 
         let val: T = {
+            use std::mem::MaybeUninit;
+            let mut maybe_uninit: MaybeUninit<T> = MaybeUninit::uninit();
+
             let src = self.buf.as_mut_ptr();
             let dst = maybe_uninit.as_mut_ptr() as *mut u8;
             unsafe { std::ptr::copy_nonoverlapping(src, dst, size) };
