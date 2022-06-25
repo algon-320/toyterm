@@ -1,6 +1,6 @@
 use std::cmp::min;
 use std::collections::VecDeque;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::io::Result;
 use std::sync::{Arc, Mutex};
 
@@ -889,7 +889,20 @@ fn exec_shell() -> Result<()> {
 
     let shell = CStr::from_bytes_with_nul(b"/bin/sh\0").unwrap();
     let args: [&CStr; 1] = [shell];
-    let envs: [&CStr; 0] = [];
+
+    let mut vars: std::collections::HashMap<String, String> = std::env::vars().collect();
+
+    // FIXME
+    vars.remove("TERM");
+
+    let envs: Vec<CString> = vars
+        .into_iter()
+        .map(|(key, val)| {
+            let keyval_bytes = format!("{}={}\0", key, val).into_bytes();
+            CString::from_vec_with_nul(keyval_bytes).unwrap()
+        })
+        .collect();
+
     nix::unistd::execve(shell, &args, &envs)?;
     unreachable!();
 }
