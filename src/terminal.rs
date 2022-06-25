@@ -166,6 +166,7 @@ impl Terminal {
 
     /// Writes the given data on PTY master
     pub fn pty_write(&mut self, data: &[u8]) {
+        log::trace!("pty_write: {:x?}", data);
         use std::io::Write as _;
         self.pty.write_all(data).unwrap();
     }

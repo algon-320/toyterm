@@ -410,8 +410,6 @@ impl TerminalWindow {
                     let mut buf = [0_u8; 4];
                     let utf8 = ch.encode_utf8(&mut buf).as_bytes();
                     self.terminal.pty_write(utf8);
-
-                    log::trace!("pty_write: {:?}", utf8);
                 }
 
                 WindowEvent::KeyboardInput { input, .. }
