@@ -39,7 +39,7 @@ impl GlyphCache {
     ) -> Self {
         let texture_w = 16 * cell_w;
         let texture_h = (8 - 2) * cell_h;
-        log::debug!("cache texture: {}x{}", texture_w, texture_h);
+        log::debug!("cache texture: {}x{} (px)", texture_w, texture_h);
 
         let texture = texture::Texture2d::with_mipmaps(
             display,

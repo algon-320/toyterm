@@ -42,6 +42,8 @@ fn calculate_cell_size(font: &Font) -> CellSize {
     let cell_w = max_advance_x as u32;
     let cell_h = (max_over + max_under) as u32;
 
+    log::debug!("cell size: {}x{} (px)", cell_w, cell_h);
+
     CellSize {
         w: cell_w,
         h: cell_h,
@@ -333,6 +335,7 @@ impl TerminalWindow {
     }
 
     pub fn resize(&mut self, new_width: u32, new_height: u32) {
+        log::debug!("window resized: {}x{} (px)", new_width, new_height);
         self.window_width = new_width;
         self.window_height = new_height;
 

@@ -180,6 +180,7 @@ impl Terminal {
         let size_changed = self.rows != lines || self.cols != columns;
 
         if size_changed {
+            log::debug!("request_resize: {}x{} (cell)", lines, columns);
             self.control_req.send(Command::Resize { lines, columns });
             self.control_res.recv();
 
@@ -330,7 +331,7 @@ impl Engine {
     }
 
     fn resize(&mut self, lines: usize, columns: usize) {
-        log::debug!("resize to {}x{}", lines, columns);
+        log::debug!("resize to {}x{} (cell)", lines, columns);
 
         set_term_window_size(&self.pty, lines as u16, columns as u16).unwrap();
 
