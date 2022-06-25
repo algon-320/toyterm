@@ -669,24 +669,24 @@ impl Engine {
 
                 GraphicChar(ch) => {
                     use unicode_width::UnicodeWidthChar as _;
-                    let width = ch.width().unwrap();
+                    if let Some(width) = ch.width() {
+                        // If there is no space for new character, move cursor to the next line.
+                        if self.cursor.right_space() < width {
+                            self.cursor = self.cursor.next_row().first_col();
+                            buffer_scroll_up_if_needed(&mut buf, self.cursor);
+                        }
 
-                    // If there is no space for new character, move cursor to the next line.
-                    if self.cursor.right_space() < width {
-                        self.cursor = self.cursor.next_row().first_col();
-                        buffer_scroll_up_if_needed(&mut buf, self.cursor);
-                    }
+                        let (row, col) = self.cursor.pos();
+                        let cell = Cell {
+                            ch,
+                            width: width as u16,
+                            attr: self.attr,
+                        };
+                        buf.put(row, col, cell);
 
-                    let (row, col) = self.cursor.pos();
-                    let cell = Cell {
-                        ch,
-                        width: width as u16,
-                        attr: self.attr,
-                    };
-                    buf.put(row, col, cell);
-
-                    for _ in 0..width {
-                        self.cursor = self.cursor.next_col();
+                        for _ in 0..width {
+                            self.cursor = self.cursor.next_col();
+                        }
                     }
                 }
 
