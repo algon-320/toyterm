@@ -298,6 +298,44 @@ impl TerminalWindow {
                         .expect("draw");
                 } else {
                     log::trace!("undefined glyph: {:?}", cell.ch);
+
+                    // FIXME
+                    let mut vertices = Vec::with_capacity(6);
+
+                    // Background
+                    {
+                        let gl_x = x_to_gl((j * cell_size.w) as i32, window_width);
+                        let gl_y = y_to_gl((i * cell_size.h) as i32, window_height);
+                        let gl_w = w_to_gl(cell_size.w * cell.width as u32, window_width);
+                        let gl_h = h_to_gl(cell_size.h, window_height);
+
+                        let mut fg = cell.attr.fg;
+                        let mut bg = cell.attr.bg;
+
+                        if cell.attr.inversed {
+                            std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        if i == cursor.0 as u32 && j == cursor.1 as u32 {
+                            std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
+                        vertices.extend_from_slice(&vs);
+                    }
+
+                    let vertex_buffer = glium::VertexBuffer::new(&self.display, &vertices).unwrap();
+                    let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
+                    let uniforms = uniform! { timestamp: elapsed };
+                    surface
+                        .draw(
+                            &vertex_buffer,
+                            indices,
+                            &self.program,
+                            &uniforms,
+                            &glium::DrawParameters::default(),
+                        )
+                        .expect("draw");
                 }
 
                 leftline += cell_size.w * (cell.width as u32);
