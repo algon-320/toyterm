@@ -115,7 +115,7 @@ pub enum Function<'p> {
     VPB,
     RM,
     SGR(&'p [u16]),
-    DSR,
+    DSR(u16),
     DAQ,
 
     // Control Sequence (w/ a single intermediate byte 0x20)
@@ -338,7 +338,7 @@ impl State {
                     ('\x6B', _) => Some(VPB),
                     ('\x6C', _) => Some(RM),
                     ('\x6D', ps) => Some(SGR(ps)),
-                    ('\x6E', _) => Some(DSR),
+                    ('\x6E', &[ps @ 5..=6]) => Some(DSR(ps)),
                     ('\x6F', _) => Some(DAQ),
 
                     ('\x70'..='\x7E', _) => {

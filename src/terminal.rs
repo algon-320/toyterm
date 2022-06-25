@@ -667,6 +667,26 @@ impl Engine {
                     }
                 }
 
+                DSR(ps) => match ps {
+                    5 => {
+                        // ready, no malfunction detected
+                        use std::io::Write as _;
+                        self.pty.write_all(b"\x1b[0\x6E").unwrap();
+                    }
+                    6 => {
+                        let (row, col) = self.cursor.pos();
+                        let prow = drow_to_prow(row, self.prows, buf.lines.len());
+                        let pcol = col;
+
+                        // a report of the active presentation position
+                        use std::io::Write as _;
+                        self.pty
+                            .write_fmt(format_args!("\x1b[{};{}\x52", prow + 1, pcol + 1))
+                            .unwrap();
+                    }
+                    _ => unreachable!(),
+                },
+
                 GraphicChar(ch) => {
                     use unicode_width::UnicodeWidthChar as _;
                     if let Some(width) = ch.width() {
@@ -784,7 +804,6 @@ impl Engine {
                 HPB => ignore!(),
                 VPB => ignore!(),
                 RM => ignore!(),
-                DSR => ignore!(),
                 DAQ => ignore!(),
 
                 SL => ignore!(),
