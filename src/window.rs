@@ -1,7 +1,7 @@
 use glium::{glutin, index, texture, uniform, uniforms, Display};
 use glutin::{
     dpi::PhysicalSize,
-    event::{ElementState, Event, VirtualKeyCode, WindowEvent},
+    event::{ElementState, Event, ModifiersState, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
     ContextBuilder,
@@ -53,6 +53,7 @@ pub struct TerminalWindow {
     display: Display,
     program: glium::Program,
     vertices: Vec<Vertex>,
+    modifiers: ModifiersState,
 
     terminal: Terminal,
     font: Font,
@@ -106,6 +107,7 @@ impl TerminalWindow {
             display,
             program,
             vertices: Vec::new(),
+            modifiers: ModifiersState::empty(),
 
             terminal,
             font,
@@ -345,6 +347,10 @@ impl TerminalWindow {
                     self.resize(new_size.width, new_size.height);
                 }
 
+                WindowEvent::ModifiersChanged(new_states) => {
+                    self.modifiers = new_states;
+                }
+
                 WindowEvent::ReceivedCharacter(ch) => {
                     // Handle these characters on WindowEvent::KeyboardInput event
                     if ch == '-' || ch == '=' {
@@ -366,8 +372,9 @@ impl TerminalWindow {
                     if input.state == ElementState::Pressed =>
                 {
                     match input.virtual_keycode {
-                        Some(VirtualKeyCode::Minus) if input.modifiers.ctrl() => {
+                        Some(VirtualKeyCode::Minus) if self.modifiers.ctrl() => {
                             // font size -
+
                             self.font.decrease_size(1);
                             self.cell_size = calculate_cell_size(&self.font);
                             self.cache = GlyphCache::build_ascii_visible(
@@ -377,7 +384,7 @@ impl TerminalWindow {
                                 self.cell_size.h,
                             );
                         }
-                        Some(VirtualKeyCode::Equals) if input.modifiers.ctrl() => {
+                        Some(VirtualKeyCode::Equals) if self.modifiers.ctrl() => {
                             // font size +
                             self.font.increase_size(1);
                             self.cell_size = calculate_cell_size(&self.font);
