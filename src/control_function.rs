@@ -341,8 +341,8 @@ impl State {
                     ('\x6E', &[ps @ 5..=6]) => Some(DSR(ps)),
                     ('\x6F', _) => Some(DAQ),
 
-                    ('\x70'..='\x7E', _) => {
-                        log::trace!("undefined private sequence");
+                    (fin @ '\x70'..='\x7E', _) => {
+                        log::trace!("undefined private sequence: final=0x{:X}", fin as u8);
                         Some(Unsupported)
                     }
 
@@ -405,8 +405,8 @@ impl State {
                     ('\x6E', _) => Some(Unsupported),
                     ('\x6F', _) => Some(Unsupported),
 
-                    ('\x70'..='\x7E', _) => {
-                        log::trace!("undefined private sequence");
+                    (fin @ '\x70'..='\x7E', _) => {
+                        log::trace!("undefined private sequence: final=0x{:X}", fin as u8);
                         Some(Unsupported)
                     }
 
@@ -414,8 +414,8 @@ impl State {
                 }
             }
 
-            '\x40'..='\x7E' => {
-                log::trace!("unsupported control sequence");
+            fin @ '\x40'..='\x7E' => {
+                log::trace!("unsupported control sequence: final=0x{:X}", fin as u8);
                 Some(Unsupported)
             }
 
