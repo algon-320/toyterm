@@ -718,6 +718,23 @@ impl Engine {
                     _ => unreachable!(),
                 },
 
+                DCH(pn) => {
+                    let mut pn = pn as usize;
+                    if pn == 0 {
+                        pn = 1;
+                    }
+
+                    let (row, col) = self.cursor.pos();
+                    let first = col;
+                    let last_ex = min(col + pn, self.pcols);
+                    for c in first..last_ex {
+                        buf.erase(row, c);
+                    }
+                    buf.lines[row].copy_within(last_ex.., first);
+                    let count = last_ex - first;
+                    buf.lines[row][(self.pcols - count)..].fill(Cell::SPACE);
+                }
+
                 DL(pn) => {
                     let mut pn = pn as usize;
                     if pn == 0 {
@@ -859,7 +876,6 @@ impl Engine {
                 IL => ignore!(),
                 EF => ignore!(),
                 EA => ignore!(),
-                DCH => ignore!(),
                 SSE => ignore!(),
                 CPR => ignore!(),
                 SU => ignore!(),

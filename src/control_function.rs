@@ -86,7 +86,7 @@ pub enum Function<'p> {
     DL(u16),
     EF,
     EA,
-    DCH,
+    DCH(u16),
     SSE,
     CPR,
     SU,
@@ -307,7 +307,7 @@ impl State {
                     ('\x4E', _) => Some(EF),
                     ('\x4F', _) => Some(EA),
 
-                    ('\x50', _) => Some(DCH),
+                    ('\x50', &[pn]) => Some(DCH(pn)),
                     ('\x51', _) => Some(SSE),
                     ('\x52', _) => Some(CPR),
                     ('\x53', _) => Some(SU),
