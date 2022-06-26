@@ -94,6 +94,36 @@ impl Buffer {
         self.lines[row].fill(Cell::SPACE);
     }
 
+    fn copy_lines<R>(&mut self, src: R, dst: usize)
+    where
+        R: std::ops::RangeBounds<usize>,
+    {
+        use std::ops::Bound;
+        let src_first = match src.start_bound() {
+            Bound::Included(&i) => i,
+            Bound::Excluded(&i) => i + 1,
+            Bound::Unbounded => 0,
+        };
+        let src_last = match src.end_bound() {
+            Bound::Included(&i) => i,
+            Bound::Excluded(&i) => i - 1,
+            Bound::Unbounded => self.lines.len() - 1,
+        };
+        let src_count = src_last - src_first + 1;
+
+        if src_first > dst {
+            for i in 0..src_count {
+                self.lines[dst + i] = self.lines[src_first + i].clone();
+            }
+        } else {
+            for i in (0..src_count).rev() {
+                if dst + i < self.lines.len() {
+                    self.lines[dst + i] = self.lines[src_first + i].clone();
+                }
+            }
+        }
+    }
+
     fn erase(&mut self, row: usize, col: usize) {
         let mut c = col;
         while c > 0 && self.lines[row][c].width == 0 {
@@ -688,6 +718,34 @@ impl Engine {
                     _ => unreachable!(),
                 },
 
+                DL(pn) => {
+                    let mut pn = pn as usize;
+                    if pn == 0 {
+                        pn = 1;
+                    }
+
+                    let (row, _) = self.cursor.pos();
+                    let prow = drow_to_prow(row, self.prows, buf.lines.len());
+
+                    // NOTE: assume VEM == FOLLOWING here
+
+                    let first = {
+                        let r = min(prow + pn, self.prows - 1);
+                        prow_to_drow(r, self.prows, buf.lines.len())
+                    };
+                    let last = {
+                        let r = self.prows - 1;
+                        prow_to_drow(r, self.prows, buf.lines.len())
+                    };
+
+                    buf.copy_lines(first..=last, row);
+
+                    for i in 0..pn {
+                        let r = prow_to_drow(self.prows - 1 - i, self.prows, buf.lines.len());
+                        buf.erase_line(r);
+                    }
+                }
+
                 GraphicChar(ch) => {
                     use unicode_width::UnicodeWidthChar as _;
                     if let Some(width) = ch.width() {
@@ -775,7 +833,6 @@ impl Engine {
                 CHA => ignore!(),
                 CHT => ignore!(),
                 IL => ignore!(),
-                DL => ignore!(),
                 EF => ignore!(),
                 EA => ignore!(),
                 DCH => ignore!(),
