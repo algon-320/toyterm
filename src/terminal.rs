@@ -746,6 +746,31 @@ impl Engine {
                     }
                 }
 
+                ICH(pn) => {
+                    let mut pn = pn as usize;
+                    if pn == 0 {
+                        pn = 1;
+                    }
+
+                    let (row, col) = self.cursor.pos();
+                    let first = col;
+                    let last = self.pcols as isize - 1 - pn as isize;
+                    if (first as isize) < last {
+                        let last = last as usize;
+                        buf.lines[row].copy_within(first..=last, first + pn);
+
+                        let mut c = self.pcols - 1;
+                        while c > 0 && buf.lines[row][c].width == 0 {
+                            c -= 1;
+                        }
+                        let space = self.pcols - c;
+                        if buf.lines[row][c].width as usize > space {
+                            buf.erase(row, c);
+                        }
+                    }
+                    buf.lines[row][first..min(first + pn, self.pcols)].fill(Cell::SPACE);
+                }
+
                 GraphicChar(ch) => {
                     use unicode_width::UnicodeWidthChar as _;
                     if let Some(width) = ch.width() {
@@ -827,7 +852,6 @@ impl Engine {
                 PM => ignore!(),
                 APC => ignore!(),
 
-                ICH => ignore!(),
                 CNL => ignore!(),
                 CPL => ignore!(),
                 CHA => ignore!(),

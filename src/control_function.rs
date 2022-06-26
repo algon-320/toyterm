@@ -70,7 +70,7 @@ pub enum Function<'p> {
     APC,
 
     // Control Sequence (w/o intermediate bytes)
-    ICH,
+    ICH(u16),
     CUU(u16),
     CUD(u16),
     CUF(u16),
@@ -289,7 +289,7 @@ impl State {
             fin @ '\x40'..='\x7E' if buf.intermediate == 0 => {
                 let ps = buf.params.as_slice();
                 match (fin, ps) {
-                    ('\x40', _) => Some(ICH),
+                    ('\x40', &[pn]) => Some(ICH(pn)),
                     ('\x41', &[pn]) => Some(CUU(pn)),
                     ('\x42', &[pn]) => Some(CUD(pn)),
                     ('\x43', &[pn]) => Some(CUF(pn)),
