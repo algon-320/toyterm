@@ -735,6 +735,27 @@ impl Engine {
                     buf.lines[row][(self.pcols - count)..].fill(Cell::SPACE);
                 }
 
+                IL(pn) => {
+                    let mut pn = pn as usize;
+                    if pn == 0 {
+                        pn = 1;
+                    }
+
+                    let (row, _) = self.cursor.pos();
+                    let prow = drow_to_prow(row, self.prows, buf.lines.len());
+
+                    // NOTE: assume VEM == FOLLOWING here
+
+                    if pn < self.prows - prow {
+                        let first = row;
+                        let last = prow_to_drow(self.prows - pn, self.prows, buf.lines.len());
+                        buf.copy_lines(first..last, first + pn);
+                    }
+                    for r in row..row + min(pn, self.prows - prow) {
+                        buf.erase_line(r);
+                    }
+                }
+
                 DL(pn) => {
                     let mut pn = pn as usize;
                     if pn == 0 {
@@ -873,7 +894,6 @@ impl Engine {
                 CPL => ignore!(),
                 CHA => ignore!(),
                 CHT => ignore!(),
-                IL => ignore!(),
                 EF => ignore!(),
                 EA => ignore!(),
                 SSE => ignore!(),
