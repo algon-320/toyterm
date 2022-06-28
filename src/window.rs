@@ -9,7 +9,7 @@ use glutin::{
 
 use crate::cache::GlyphCache;
 use crate::font::Font;
-use crate::terminal::{Cell, Terminal};
+use crate::terminal::{Cell, Color, Terminal};
 
 #[derive(Debug, Clone, Copy)]
 struct CellSize {
@@ -489,10 +489,10 @@ impl TerminalWindow {
 struct Vertex {
     position: [f32; 2],
     tex_coords: [f32; 2],
-    color_idx: [u32; 2],
+    color: [u32; 2],
     is_bg: u32,
 }
-glium::implement_vertex!(Vertex, position, tex_coords, color_idx, is_bg);
+glium::implement_vertex!(Vertex, position, tex_coords, color, is_bg);
 
 // Converts window coordinate to opengl coordinate
 fn x_to_gl(x: i32, window_width: u32) -> f32 {
@@ -508,6 +508,30 @@ fn h_to_gl(h: u32, window_height: u32) -> f32 {
     (h as f32 / window_height as f32) * 2.0
 }
 
+fn color_to_rgba(color: Color) -> u32 {
+    match color {
+        // Base16 Gruvbox dark hard
+        // Dawid Kurek (dawikur@gmail.com), morhetz (https://github.com/morhetz/gruvbox)
+        Color::Black => 0x1d2021ff,
+        Color::Red => 0xfb4934ff,
+        Color::Yellow => 0xb8bb26ff,
+        Color::Green => 0xfabd2fff,
+        Color::Blue => 0x83a598ff,
+        Color::Magenta => 0xd3869bff,
+        Color::Cyan => 0x8ec07cff,
+        Color::White => 0xd5c4a1ff,
+
+        Color::Rgb { r, g, b } => {
+            let r = (r as u32) << 24;
+            let g = (g as u32) << 16;
+            let b = (b as u32) << 8;
+            let a = 0xFF;
+            r | g | b | a
+        }
+        Color::Special => 0xFFFFFF00,
+    }
+}
+
 /// Generate vertices for a single glyph image
 fn glyph_vertices(
     gl_x: f32,
@@ -518,8 +542,8 @@ fn glyph_vertices(
     tx_y: f32,
     tx_w: f32,
     tx_h: f32,
-    fg_color: u8,
-    bg_color: u8,
+    fg_color: Color,
+    bg_color: Color,
 ) -> [Vertex; 6] {
     // top-left, bottom-left, bottom-right, top-right
     let gl_ps = [
@@ -540,7 +564,7 @@ fn glyph_vertices(
     let v = |idx| Vertex {
         position: gl_ps[idx],
         tex_coords: tex_ps[idx],
-        color_idx: [bg_color as u32, fg_color as u32],
+        color: [color_to_rgba(bg_color), color_to_rgba(fg_color)],
         is_bg: 0,
     };
 
@@ -571,8 +595,8 @@ fn cell_vertices(
     gl_y: f32,
     gl_w: f32,
     gl_h: f32,
-    fg_color: u8,
-    bg_color: u8,
+    fg_color: Color,
+    bg_color: Color,
 ) -> [Vertex; 6] {
     // top-left, bottom-left, bottom-right, top-right
     let gl_ps = [
@@ -585,7 +609,7 @@ fn cell_vertices(
     let v = |idx| Vertex {
         position: gl_ps[idx],
         tex_coords: [0.0, 0.0],
-        color_idx: [bg_color as u32, fg_color as u32],
+        color: [color_to_rgba(bg_color), color_to_rgba(fg_color)],
         is_bg: 1,
     };
 
