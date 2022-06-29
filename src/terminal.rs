@@ -622,6 +622,15 @@ impl Engine {
                     self.cursor = self.cursor.exact(row, col);
                 }
 
+                CHA(pn) => {
+                    let mut pn = pn as usize;
+                    if pn > 0 {
+                        pn -= 1;
+                    }
+                    let (row, _) = self.cursor.pos();
+                    self.cursor = self.cursor.exact(row, pn);
+                }
+
                 ECH(pn) => {
                     let mut pn = pn as usize;
                     if pn == 0 {
@@ -960,7 +969,6 @@ impl Engine {
 
                 CNL => ignore!(),
                 CPL => ignore!(),
-                CHA => ignore!(),
                 CHT => ignore!(),
                 EF => ignore!(),
                 EA => ignore!(),
