@@ -279,144 +279,146 @@ impl State {
                 None
             }
 
+            // private
+            '<' | '=' | '>' | '?' => None,
+
             // intermediate bytes
             '\x20'..='\x2F' => {
                 buf.intermediate = ch as u8;
                 None
             }
 
-            // final bytes (w/o intermediate bytes)
-            fin @ '\x40'..='\x7E' if buf.intermediate == 0 => {
-                let ps = buf.params.as_slice();
-                match (fin, ps) {
-                    ('\x40', &[pn]) => Some(ICH(pn)),
-                    ('\x41', &[pn]) => Some(CUU(pn)),
-                    ('\x42', &[pn]) => Some(CUD(pn)),
-                    ('\x43', &[pn]) => Some(CUF(pn)),
-                    ('\x44', &[pn]) => Some(CUB(pn)),
-                    ('\x45', _) => Some(CNL),
-                    ('\x46', _) => Some(CPL),
-                    ('\x47', _) => Some(CHA),
-                    ('\x48', &[pn1, pn2]) => Some(CUP(pn1, pn2)),
-                    ('\x48', &[pn]) => Some(CUP(pn, 1)),
-                    ('\x49', _) => Some(CHT),
-                    ('\x4A', &[ps @ 0..=2]) => Some(ED(ps)),
-                    ('\x4B', &[ps @ 0..=2]) => Some(EL(ps)),
-                    ('\x4C', &[pn]) => Some(IL(pn)),
-                    ('\x4D', &[pn]) => Some(DL(pn)),
-                    ('\x4E', _) => Some(EF),
-                    ('\x4F', _) => Some(EA),
+            '\x40'..='\x7E' => {
+                match (buf.intermediate, ch, buf.params.as_slice()) {
+                    // final bytes (w/o intermediate bytes)
+                    (0, '\x40', &[pn]) => Some(ICH(pn)),
+                    (0, '\x41', &[pn]) => Some(CUU(pn)),
+                    (0, '\x42', &[pn]) => Some(CUD(pn)),
+                    (0, '\x43', &[pn]) => Some(CUF(pn)),
+                    (0, '\x44', &[pn]) => Some(CUB(pn)),
+                    (0, '\x45', _) => Some(CNL),
+                    (0, '\x46', _) => Some(CPL),
+                    (0, '\x47', _) => Some(CHA),
+                    (0, '\x48', &[pn1, pn2]) => Some(CUP(pn1, pn2)),
+                    (0, '\x48', &[pn]) => Some(CUP(pn, 1)),
+                    (0, '\x49', _) => Some(CHT),
+                    (0, '\x4A', &[ps @ (0 | 1 | 2)]) => Some(ED(ps)),
+                    (0, '\x4B', &[ps @ (0 | 1 | 2)]) => Some(EL(ps)),
+                    (0, '\x4C', &[pn]) => Some(IL(pn)),
+                    (0, '\x4D', &[pn]) => Some(DL(pn)),
+                    (0, '\x4E', _) => Some(EF),
+                    (0, '\x4F', _) => Some(EA),
+                    (0, '\x50', &[pn]) => Some(DCH(pn)),
+                    (0, '\x51', _) => Some(SSE),
+                    (0, '\x52', _) => Some(CPR),
+                    (0, '\x53', _) => Some(SU),
+                    (0, '\x54', _) => Some(SD),
+                    (0, '\x55', _) => Some(NP),
+                    (0, '\x56', _) => Some(PP),
+                    (0, '\x57', _) => Some(CTC),
+                    (0, '\x58', &[pn]) => Some(ECH(pn)),
+                    (0, '\x59', _) => Some(CVT),
+                    (0, '\x5A', _) => Some(CBT),
+                    (0, '\x5B', _) => Some(SRS),
+                    (0, '\x5C', _) => Some(PTX),
+                    (0, '\x5D', _) => Some(SDS),
+                    (0, '\x5E', _) => Some(SIMD),
+                    (0, '\x5F', _) => Some(Unsupported),
+                    (0, '\x60', _) => Some(HPA),
+                    (0, '\x61', _) => Some(HPR),
+                    (0, '\x62', _) => Some(REP),
+                    (0, '\x63', _) => Some(DA),
+                    (0, '\x64', _) => Some(VPA),
+                    (0, '\x65', _) => Some(VPR),
+                    (0, '\x66', _) => Some(HVP),
+                    (0, '\x67', _) => Some(TBC),
+                    (0, '\x68', _) => Some(SM),
+                    (0, '\x69', _) => Some(MC),
+                    (0, '\x6A', _) => Some(HPB),
+                    (0, '\x6B', _) => Some(VPB),
+                    (0, '\x6C', _) => Some(RM),
+                    (0, '\x6D', ps) => Some(SGR(ps)),
+                    (0, '\x6E', &[ps @ (5 | 6)]) => Some(DSR(ps)),
+                    (0, '\x6F', _) => Some(DAQ),
+                    (0, '\x70'..='\x7E', params) => {
+                        log::trace!(
+                            "undefined private sequence: i=N/A, final=0x{:X}, params={:?}",
+                            ch as u8,
+                            params
+                        );
+                        Some(Unsupported)
+                    }
 
-                    ('\x50', &[pn]) => Some(DCH(pn)),
-                    ('\x51', _) => Some(SSE),
-                    ('\x52', _) => Some(CPR),
-                    ('\x53', _) => Some(SU),
-                    ('\x54', _) => Some(SD),
-                    ('\x55', _) => Some(NP),
-                    ('\x56', _) => Some(PP),
-                    ('\x57', _) => Some(CTC),
-                    ('\x58', &[pn]) => Some(ECH(pn)),
-                    ('\x59', _) => Some(CVT),
-                    ('\x5A', _) => Some(CBT),
-                    ('\x5B', _) => Some(SRS),
-                    ('\x5C', _) => Some(PTX),
-                    ('\x5D', _) => Some(SDS),
-                    ('\x5E', _) => Some(SIMD),
-                    ('\x5F', _) => Some(Unsupported),
+                    // final bytes (w/ a single intermediate bytes \x20)
+                    (b'\x20', '\x40', _) => Some(SL),
+                    (b'\x20', '\x41', _) => Some(SR),
+                    (b'\x20', '\x42', _) => Some(GSM),
+                    (b'\x20', '\x43', _) => Some(GSS),
+                    (b'\x20', '\x44', _) => Some(FNT),
+                    (b'\x20', '\x45', _) => Some(TSS),
+                    (b'\x20', '\x46', _) => Some(JFY),
+                    (b'\x20', '\x47', _) => Some(SPI),
+                    (b'\x20', '\x48', _) => Some(QUAD),
+                    (b'\x20', '\x49', _) => Some(SSU),
+                    (b'\x20', '\x4A', _) => Some(PFS),
+                    (b'\x20', '\x4B', _) => Some(SHS),
+                    (b'\x20', '\x4C', _) => Some(SVS),
+                    (b'\x20', '\x4D', _) => Some(IGS),
+                    (b'\x20', '\x4E', _) => Some(Unsupported),
+                    (b'\x20', '\x4F', _) => Some(IDCS),
+                    (b'\x20', '\x50', _) => Some(PPA),
+                    (b'\x20', '\x51', _) => Some(PPR),
+                    (b'\x20', '\x52', _) => Some(PPB),
+                    (b'\x20', '\x53', _) => Some(SPD),
+                    (b'\x20', '\x54', _) => Some(DTA),
+                    (b'\x20', '\x55', _) => Some(SHL),
+                    (b'\x20', '\x56', _) => Some(SLL),
+                    (b'\x20', '\x57', _) => Some(FNK),
+                    (b'\x20', '\x58', _) => Some(SPQR),
+                    (b'\x20', '\x59', _) => Some(SEF),
+                    (b'\x20', '\x5A', _) => Some(PEC),
+                    (b'\x20', '\x5B', _) => Some(SSW),
+                    (b'\x20', '\x5C', _) => Some(SACS),
+                    (b'\x20', '\x5D', _) => Some(SAPV),
+                    (b'\x20', '\x5E', _) => Some(STAB),
+                    (b'\x20', '\x5F', _) => Some(GCC),
+                    (b'\x20', '\x60', _) => Some(TATE),
+                    (b'\x20', '\x61', _) => Some(TALE),
+                    (b'\x20', '\x62', _) => Some(TAC),
+                    (b'\x20', '\x63', _) => Some(TCC),
+                    (b'\x20', '\x64', _) => Some(TSR),
+                    (b'\x20', '\x65', _) => Some(SCO),
+                    (b'\x20', '\x66', _) => Some(SRCS),
+                    (b'\x20', '\x67', _) => Some(SCS),
+                    (b'\x20', '\x68', _) => Some(SLS),
+                    (b'\x20', '\x69', _) => Some(Unsupported),
+                    (b'\x20', '\x6A', _) => Some(Unsupported),
+                    (b'\x20', '\x6B', _) => Some(SCP),
+                    (b'\x20', '\x6C', _) => Some(Unsupported),
+                    (b'\x20', '\x6D', _) => Some(Unsupported),
+                    (b'\x20', '\x6E', _) => Some(Unsupported),
+                    (b'\x20', '\x6F', _) => Some(Unsupported),
+                    (b'\x20', '\x70'..='\x7E', params) => {
+                        log::trace!(
+                            "undefined private sequence: i=0x20, final=0x{:X}, params={:?}",
+                            ch as u8,
+                            params,
+                        );
+                        Some(Unsupported)
+                    }
 
-                    ('\x60', _) => Some(HPA),
-                    ('\x61', _) => Some(HPR),
-                    ('\x62', _) => Some(REP),
-                    ('\x63', _) => Some(DA),
-                    ('\x64', _) => Some(VPA),
-                    ('\x65', _) => Some(VPR),
-                    ('\x66', _) => Some(HVP),
-                    ('\x67', _) => Some(TBC),
-                    ('\x68', _) => Some(SM),
-                    ('\x69', _) => Some(MC),
-                    ('\x6A', _) => Some(HPB),
-                    ('\x6B', _) => Some(VPB),
-                    ('\x6C', _) => Some(RM),
-                    ('\x6D', ps) => Some(SGR(ps)),
-                    ('\x6E', &[ps @ 5..=6]) => Some(DSR(ps)),
-                    ('\x6F', _) => Some(DAQ),
-
-                    (fin @ '\x70'..='\x7E', _) => {
-                        log::trace!("undefined private sequence: final=0x{:X}", fin as u8);
+                    (i @ b'\x21'..=b'\x2F', '\x40'..='\x7E', params) => {
+                        log::trace!(
+                            "unsupported control sequence: i=0x{:X}, final=0x{:X}, params={:?}",
+                            i,
+                            ch as u8,
+                            params,
+                        );
                         Some(Unsupported)
                     }
 
                     _ => Some(Invalid),
                 }
-            }
-
-            // final bytes (w/ a single intermediate byte 0x20)
-            fin @ '\x40'..='\x7E' if buf.intermediate == b'\x20' => {
-                let ps = buf.params.as_slice();
-                match (fin, ps) {
-                    ('\x40', _) => Some(SL),
-                    ('\x41', _) => Some(SR),
-                    ('\x42', _) => Some(GSM),
-                    ('\x43', _) => Some(GSS),
-                    ('\x44', _) => Some(FNT),
-                    ('\x45', _) => Some(TSS),
-                    ('\x46', _) => Some(JFY),
-                    ('\x47', _) => Some(SPI),
-                    ('\x48', _) => Some(QUAD),
-                    ('\x49', _) => Some(SSU),
-                    ('\x4A', _) => Some(PFS),
-                    ('\x4B', _) => Some(SHS),
-                    ('\x4C', _) => Some(SVS),
-                    ('\x4D', _) => Some(IGS),
-                    ('\x4E', _) => Some(Unsupported),
-                    ('\x4F', _) => Some(IDCS),
-
-                    ('\x50', _) => Some(PPA),
-                    ('\x51', _) => Some(PPR),
-                    ('\x52', _) => Some(PPB),
-                    ('\x53', _) => Some(SPD),
-                    ('\x54', _) => Some(DTA),
-                    ('\x55', _) => Some(SHL),
-                    ('\x56', _) => Some(SLL),
-                    ('\x57', _) => Some(FNK),
-                    ('\x58', _) => Some(SPQR),
-                    ('\x59', _) => Some(SEF),
-                    ('\x5A', _) => Some(PEC),
-                    ('\x5B', _) => Some(SSW),
-                    ('\x5C', _) => Some(SACS),
-                    ('\x5D', _) => Some(SAPV),
-                    ('\x5E', _) => Some(STAB),
-                    ('\x5F', _) => Some(GCC),
-
-                    ('\x60', _) => Some(TATE),
-                    ('\x61', _) => Some(TALE),
-                    ('\x62', _) => Some(TAC),
-                    ('\x63', _) => Some(TCC),
-                    ('\x64', _) => Some(TSR),
-                    ('\x65', _) => Some(SCO),
-                    ('\x66', _) => Some(SRCS),
-                    ('\x67', _) => Some(SCS),
-                    ('\x68', _) => Some(SLS),
-                    ('\x69', _) => Some(Unsupported),
-                    ('\x6A', _) => Some(Unsupported),
-                    ('\x6B', _) => Some(SCP),
-                    ('\x6C', _) => Some(Unsupported),
-                    ('\x6D', _) => Some(Unsupported),
-                    ('\x6E', _) => Some(Unsupported),
-                    ('\x6F', _) => Some(Unsupported),
-
-                    (fin @ '\x70'..='\x7E', _) => {
-                        log::trace!("undefined private sequence: final=0x{:X}", fin as u8);
-                        Some(Unsupported)
-                    }
-
-                    _ => unreachable!(),
-                }
-            }
-
-            fin @ '\x40'..='\x7E' => {
-                log::trace!("unsupported control sequence: final=0x{:X}", fin as u8);
-                Some(Unsupported)
             }
 
             _ => {
