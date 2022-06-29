@@ -868,6 +868,15 @@ impl Engine {
                     buf.lines[row][first..min(first + pn, self.pcols)].fill(Cell::SPACE);
                 }
 
+                VPA(pn) => {
+                    let mut pn = pn as usize;
+                    if pn > 0 {
+                        pn -= 1;
+                    }
+                    let row = min(pn, self.prows - 1);
+                    self.cursor.row = prow_to_drow(row, self.prows, buf.lines.len());
+                }
+
                 GraphicChar(ch) => {
                     use unicode_width::UnicodeWidthChar as _;
                     if let Some(width) = ch.width() {
@@ -972,7 +981,6 @@ impl Engine {
                 HPR => ignore!(),
                 REP => ignore!(),
                 DA => ignore!(),
-                VPA => ignore!(),
                 VPR => ignore!(),
                 HVP => ignore!(),
                 TBC => ignore!(),
