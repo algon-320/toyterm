@@ -836,18 +836,20 @@ impl Engine {
                     // NOTE: assume VEM == FOLLOWING here
 
                     let first = {
-                        let r = min(prow + pn, self.prows - 1);
+                        let r = min(prow + pn, self.prows);
                         prow_to_drow(r, self.prows, buf.lines.len())
                     };
                     let last = {
                         let r = self.prows - 1;
                         prow_to_drow(r, self.prows, buf.lines.len())
                     };
+                    let shifted_lines = 1 + last - first;
+                    if first <= last {
+                        buf.copy_lines(first..=last, row);
+                    }
 
-                    buf.copy_lines(first..=last, row);
-
-                    for i in 0..pn {
-                        let r = prow_to_drow(self.prows - 1 - i, self.prows, buf.lines.len());
+                    for r in (prow + shifted_lines)..self.prows {
+                        let r = prow_to_drow(r, self.prows, buf.lines.len());
                         buf.erase_line(r);
                     }
                 }
