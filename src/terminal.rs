@@ -1099,8 +1099,13 @@ fn exec_shell() -> Result<()> {
     let sigdfl = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
     unsafe { sigaction(Signal::SIGPIPE, &sigdfl).expect("sigaction") };
 
-    let shell = CStr::from_bytes_with_nul(b"/bin/sh\0").unwrap();
-    let args: [&CStr; 1] = [shell];
+    let shell = {
+        let mut bytes = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
+        bytes.push('\0');
+        CString::from_vec_with_nul(bytes.into_bytes()).unwrap()
+    };
+
+    let args: [&CStr; 1] = [&shell];
 
     let mut vars: std::collections::HashMap<String, String> = std::env::vars().collect();
 
@@ -1115,6 +1120,6 @@ fn exec_shell() -> Result<()> {
         })
         .collect();
 
-    nix::unistd::execve(shell, &args, &envs)?;
+    nix::unistd::execve(&args[0], &args, &envs)?;
     unreachable!();
 }
