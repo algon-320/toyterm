@@ -9,7 +9,7 @@ use glutin::{
 
 use crate::cache::GlyphCache;
 use crate::font::Font;
-use crate::terminal::{Cell, Color, Terminal};
+use crate::terminal::{Cell, Color, Terminal, TerminalSize};
 
 #[derive(Debug, Clone, Copy)]
 struct CellSize {
@@ -68,14 +68,14 @@ pub struct TerminalWindow {
 }
 
 impl TerminalWindow {
-    pub fn new(event_loop: &EventLoop<()>, lines: usize, columns: usize) -> Self {
-        let terminal = Terminal::new(lines, columns);
+    pub fn new(event_loop: &EventLoop<()>, size: TerminalSize) -> Self {
+        let terminal = Terminal::new(size);
 
         let font = Font::new();
         let cell_size = calculate_cell_size(&font);
 
-        let width = columns as u32 * cell_size.w;
-        let height = lines as u32 * cell_size.h;
+        let width = size.cols as u32 * cell_size.w;
+        let height = size.rows as u32 * cell_size.h;
 
         let win_builder = WindowBuilder::new()
             .with_title("toyterm")
@@ -375,9 +375,9 @@ impl TerminalWindow {
         self.window_width = new_width;
         self.window_height = new_height;
 
-        let lines = (new_height / self.cell_size.h) as usize;
-        let columns = (new_width / self.cell_size.w) as usize;
-        self.terminal.request_resize(lines, columns);
+        let rows = (self.window_height / self.cell_size.h) as usize;
+        let cols = (self.window_width / self.cell_size.w) as usize;
+        self.terminal.request_resize(TerminalSize { rows, cols });
     }
 
     pub fn on_event(&mut self, event: Event<()>, control_flow: &mut ControlFlow) {
@@ -426,9 +426,9 @@ impl TerminalWindow {
                                 self.cell_size.h,
                             );
 
-                            let lines = (self.window_height / self.cell_size.h) as usize;
-                            let columns = (self.window_width / self.cell_size.w) as usize;
-                            self.terminal.request_resize(lines, columns);
+                            let rows = (self.window_height / self.cell_size.h) as usize;
+                            let cols = (self.window_width / self.cell_size.w) as usize;
+                            self.terminal.request_resize(TerminalSize { rows, cols });
                         }
                         Some(VirtualKeyCode::Equals) if self.modifiers.ctrl() => {
                             // font size +
@@ -442,9 +442,9 @@ impl TerminalWindow {
                                 self.cell_size.h,
                             );
 
-                            let lines = (self.window_height / self.cell_size.h) as usize;
-                            let columns = (self.window_width / self.cell_size.w) as usize;
-                            self.terminal.request_resize(lines, columns);
+                            let rows = (self.window_height / self.cell_size.h) as usize;
+                            let cols = (self.window_width / self.cell_size.w) as usize;
+                            self.terminal.request_resize(TerminalSize { rows, cols });
                         }
 
                         Some(VirtualKeyCode::Up) => {

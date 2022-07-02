@@ -9,10 +9,16 @@ use crate::pipe_channel;
 use crate::utils::fd::OwnedFd;
 use crate::utils::utf8;
 
-fn set_term_window_size(pty_master: &OwnedFd, lines: u16, columns: u16) -> Result<()> {
+#[derive(Debug, Clone, Copy)]
+pub struct TerminalSize {
+    pub rows: usize,
+    pub cols: usize,
+}
+
+fn set_term_window_size(pty_master: &OwnedFd, size: TerminalSize) -> Result<()> {
     let winsize = nix::pty::Winsize {
-        ws_row: lines,
-        ws_col: columns,
+        ws_row: size.rows as u16,
+        ws_col: size.cols as u16,
         // TODO
         ws_xpixel: 0,
         ws_ypixel: 0,
@@ -79,38 +85,34 @@ impl GraphicAttribute {
 pub struct Buffer {
     pub lines: VecDeque<Vec<Cell>>,
     pub cursor: (usize, usize),
-    cols: usize,
-    rows: usize,
+    sz: TerminalSize,
 }
 
 impl Buffer {
-    pub fn new(rows: usize, cols: usize) -> Self {
-        assert!(rows > 0 && cols > 0);
+    pub fn new(sz: TerminalSize) -> Self {
+        assert!(sz.rows > 0 && sz.cols > 0);
 
-        let lines: VecDeque<_> = std::iter::repeat_with(|| vec![Cell::SPACE; cols])
-            .take(rows)
+        let lines: VecDeque<_> = std::iter::repeat_with(|| vec![Cell::SPACE; sz.cols])
+            .take(sz.rows)
             .collect();
 
         Self {
             lines,
-            cols,
-            rows,
             cursor: (0, 0),
+            sz,
         }
     }
 
-    fn resize(&mut self, rows: usize, cols: usize) {
-        self.rows = rows;
-        self.cols = cols;
+    fn resize(&mut self, sz: TerminalSize) {
+        self.sz = sz;
 
         for line in self.lines.iter_mut() {
             // FIXME: this "chop" might produce broken cells
-            line.resize(cols, Cell::SPACE);
+            line.resize(sz.cols, Cell::SPACE);
         }
 
-        self.lines.resize_with(rows, || vec![Cell::SPACE; cols]);
-
-        debug_assert_eq!(self.rows, self.lines.len());
+        self.lines
+            .resize_with(sz.rows, || vec![Cell::SPACE; sz.cols]);
     }
 
     fn rotate_line(&mut self) {
@@ -165,7 +167,7 @@ impl Buffer {
     }
 
     fn put(&mut self, row: usize, col: usize, cell: Cell) {
-        debug_assert!(col + cell.width as usize <= self.cols);
+        debug_assert!(col + cell.width as usize <= self.sz.cols);
 
         self.erase(row, col);
         self.lines[row][col] = cell;
@@ -180,7 +182,7 @@ impl Buffer {
 
 #[derive(Debug)]
 enum Command {
-    Resize { lines: usize, columns: usize },
+    Resize(TerminalSize),
 }
 
 #[derive(Debug)]
@@ -192,7 +194,7 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    pub fn new(lines: usize, columns: usize) -> Self {
+    pub fn new(size: TerminalSize) -> Self {
         let (pty, _child_pid) = init_pty().unwrap();
 
         let (control_req_tx, control_req_rx) = pipe_channel::channel();
@@ -202,8 +204,7 @@ impl Terminal {
             pty.dup().expect("dup"),
             control_req_rx,
             control_res_tx,
-            lines,
-            columns,
+            size,
         );
         let buffer = engine.buffer();
         std::thread::spawn(move || engine.start());
@@ -223,17 +224,16 @@ impl Terminal {
         self.pty.write_all(data).unwrap();
     }
 
-    pub fn request_resize(&mut self, lines: usize, columns: usize) {
-        log::debug!("request_resize: {}x{} (cell)", lines, columns);
-        self.control_req.send(Command::Resize { lines, columns });
+    pub fn request_resize(&mut self, size: TerminalSize) {
+        log::debug!("request_resize: {}x{} (cell)", size.rows, size.cols);
+        self.control_req.send(Command::Resize(size));
         self.control_res.recv();
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 struct Cursor {
-    rows: usize,
-    cols: usize,
+    sz: TerminalSize,
     row: usize,
     col: usize,
     end: bool,
@@ -248,13 +248,13 @@ impl Cursor {
         if self.end {
             0
         } else {
-            self.cols - self.col
+            self.sz.cols - self.col
         }
     }
 
     fn exact(mut self, row: usize, col: usize) -> Self {
-        self.row = min(self.rows - 1, row);
-        self.col = min(self.cols - 1, col);
+        self.row = min(row, self.sz.rows - 1);
+        self.col = min(col, self.sz.cols - 1);
         self.end = false;
         self
     }
@@ -266,7 +266,7 @@ impl Cursor {
     }
 
     fn next_col(mut self) -> Self {
-        if self.col + 1 < self.cols {
+        if self.col + 1 < self.sz.cols {
             self.col += 1;
         } else {
             self.end = true;
@@ -276,7 +276,7 @@ impl Cursor {
 
     fn prev_col(mut self) -> Self {
         if self.end {
-            debug_assert_eq!(self.col, self.cols - 1);
+            debug_assert_eq!(self.col, self.sz.cols - 1);
             self.end = false;
         } else if 0 < self.col {
             self.col -= 1;
@@ -286,7 +286,7 @@ impl Cursor {
 
     fn next_row(mut self) -> Self {
         self.end = false;
-        if self.row + 1 < self.rows {
+        if self.row + 1 < self.sz.rows {
             self.row += 1;
         }
         self
@@ -305,8 +305,7 @@ struct Engine {
     pty: OwnedFd,
     control_req: pipe_channel::Receiver<Command>,
     control_res: pipe_channel::Sender<i32>,
-    rows: usize,
-    cols: usize,
+    sz: TerminalSize,
     buffer: Arc<Mutex<Buffer>>,
     cursor: Cursor,
     parser: control_function::Parser,
@@ -319,27 +318,22 @@ impl Engine {
         pty: OwnedFd,
         control_req: pipe_channel::Receiver<Command>,
         control_res: pipe_channel::Sender<i32>,
-        lines: usize,
-        columns: usize,
+        sz: TerminalSize,
     ) -> Self {
-        set_term_window_size(&pty, lines as u16, columns as u16).unwrap();
-
-        let rows = lines;
-        let cols = columns;
+        set_term_window_size(&pty, sz).unwrap();
 
         // Initialize tabulation stops
         let mut tabstops = Vec::new();
-        for i in 0..cols {
+        for i in 0..sz.cols {
             if i % 8 == 0 {
                 tabstops.push(i);
             }
         }
 
-        let buffer = Arc::new(Mutex::new(Buffer::new(rows, cols)));
+        let buffer = Arc::new(Mutex::new(Buffer::new(sz)));
 
         let cursor = Cursor {
-            rows,
-            cols,
+            sz,
             row: 0,
             col: 0,
             end: false,
@@ -349,8 +343,7 @@ impl Engine {
             pty,
             control_req,
             control_res,
-            rows,
-            cols,
+            sz,
             buffer,
             cursor,
             parser: control_function::Parser::default(),
@@ -363,31 +356,29 @@ impl Engine {
         self.buffer.clone()
     }
 
-    fn resize(&mut self, lines: usize, columns: usize) {
-        log::debug!("resize to {}x{} (cell)", lines, columns);
+    fn resize(&mut self, sz: TerminalSize) {
+        log::debug!("resize to {}x{} (cell)", sz.rows, sz.cols);
 
-        set_term_window_size(&self.pty, lines as u16, columns as u16).unwrap();
+        set_term_window_size(&self.pty, sz).unwrap();
 
-        self.rows = lines;
-        self.cols = columns;
+        self.sz = sz;
 
         self.tabstops.clear();
-        for i in 0..self.cols {
+        for i in 0..self.sz.cols {
             if i % 8 == 0 {
                 self.tabstops.push(i);
             }
         }
 
-        self.cursor.rows = lines;
-        self.cursor.cols = columns;
+        self.cursor.sz = sz;
 
         self.cursor.row = 0; // FIXME
-        if self.cursor.col >= columns {
-            self.cursor.col = columns - 1;
+        if self.cursor.col >= sz.cols {
+            self.cursor.col = sz.cols - 1;
         }
 
         let mut buf = self.buffer.lock().unwrap();
-        buf.resize(lines, columns);
+        buf.resize(sz);
         buf.cursor = self.cursor.pos();
     }
 
@@ -418,8 +409,8 @@ impl Engine {
             if let Some(flags) = ctl_revents {
                 if flags.contains(PollFlags::POLLIN) {
                     match self.control_req.recv() {
-                        Command::Resize { lines, columns } => {
-                            self.resize(lines, columns);
+                        Command::Resize(new_size) => {
+                            self.resize(new_size);
                             self.control_res.send(0);
                         }
                     }
@@ -510,7 +501,7 @@ impl Engine {
                     let (row, col) = self.cursor.pos();
 
                     // If the cursor is already at the end, do nothing
-                    if col == self.cols - 1 {
+                    if col == self.sz.cols - 1 {
                         return;
                     }
 
@@ -518,7 +509,7 @@ impl Engine {
                     let next = match self.tabstops.binary_search(&(col + 1)) {
                         Ok(i) => self.tabstops[i],
                         Err(i) if i < self.tabstops.len() => self.tabstops[i],
-                        _ => self.cols - 1,
+                        _ => self.sz.cols - 1,
                     };
                     let advance = next - col;
                     debug_assert!(advance > 0);
@@ -555,7 +546,7 @@ impl Engine {
                     }
 
                     let row = self.cursor.row;
-                    let down = min(self.rows - row - 1, pn);
+                    let down = min(self.sz.rows - row - 1, pn);
                     for _ in 0..down {
                         self.cursor = self.cursor.next_row();
                     }
@@ -568,7 +559,7 @@ impl Engine {
                     }
 
                     let col = self.cursor.col;
-                    let right = min(self.cols - 1 - col, pn);
+                    let right = min(self.sz.cols - 1 - col, pn);
                     for _ in 0..right {
                         self.cursor = self.cursor.next_col();
                     }
@@ -620,7 +611,7 @@ impl Engine {
 
                     let (row, col) = self.cursor.pos();
                     for d in 0..pn {
-                        if col + d >= buf.cols {
+                        if col + d >= self.sz.cols {
                             break;
                         }
                         buf.put(row, col + d, Cell::SPACE);
@@ -631,10 +622,10 @@ impl Engine {
                     0 => {
                         // clear from the the cursor position to the end (inclusive)
                         let (row, col) = self.cursor.pos();
-                        for r in (row + 1)..self.rows {
+                        for r in (row + 1)..self.sz.rows {
                             buf.erase_line(r);
                         }
-                        for c in col..buf.cols {
+                        for c in col..self.sz.cols {
                             buf.put(row, c, Cell::SPACE);
                         }
                     }
@@ -650,7 +641,7 @@ impl Engine {
                     }
                     2 => {
                         // clear all positions
-                        for r in 0..self.rows {
+                        for r in 0..self.sz.rows {
                             buf.erase_line(r);
                         }
                     }
@@ -661,7 +652,7 @@ impl Engine {
                     0 => {
                         // clear from the cursor position to the line end (inclusive)
                         let (row, col) = self.cursor.pos();
-                        for c in col..buf.cols {
+                        for c in col..self.sz.cols {
                             buf.put(row, c, Cell::SPACE);
                         }
                     }
@@ -768,13 +759,13 @@ impl Engine {
 
                     let (row, col) = self.cursor.pos();
                     let first = col;
-                    let last_ex = min(col + pn, self.cols);
+                    let last_ex = min(col + pn, self.sz.cols);
                     for c in first..last_ex {
                         buf.erase(row, c);
                     }
                     buf.lines[row].copy_within(last_ex.., first);
                     let count = last_ex - first;
-                    buf.lines[row][(self.cols - count)..].fill(Cell::SPACE);
+                    buf.lines[row][(self.sz.cols - count)..].fill(Cell::SPACE);
                 }
 
                 IL(pn) => {
@@ -787,12 +778,12 @@ impl Engine {
 
                     // NOTE: assume VEM == FOLLOWING here
 
-                    if pn < self.rows - row {
+                    if pn < self.sz.rows - row {
                         let first = row;
-                        let last = self.rows - pn;
+                        let last = self.sz.rows - pn;
                         buf.copy_lines(first..last, first + pn);
                     }
-                    for r in row..row + min(pn, self.rows - row) {
+                    for r in row..row + min(pn, self.sz.rows - row) {
                         buf.erase_line(r);
                     }
                 }
@@ -807,14 +798,14 @@ impl Engine {
 
                     // NOTE: assume VEM == FOLLOWING here
 
-                    let first = min(row + pn, self.rows);
-                    let last = self.rows - 1;
+                    let first = min(row + pn, self.sz.rows);
+                    let last = self.sz.rows - 1;
                     let shifted_lines = 1 + last - first;
                     if first <= last {
                         buf.copy_lines(first..=last, row);
                     }
 
-                    for r in (row + shifted_lines)..self.rows {
+                    for r in (row + shifted_lines)..self.sz.rows {
                         buf.erase_line(r);
                     }
                 }
@@ -827,21 +818,21 @@ impl Engine {
 
                     let (row, col) = self.cursor.pos();
                     let first = col;
-                    let last = self.cols as isize - 1 - pn as isize;
+                    let last = self.sz.cols as isize - 1 - pn as isize;
                     if (first as isize) < last {
                         let last = last as usize;
                         buf.lines[row].copy_within(first..=last, first + pn);
 
-                        let mut c = self.cols - 1;
+                        let mut c = self.sz.cols - 1;
                         while c > 0 && buf.lines[row][c].width == 0 {
                             c -= 1;
                         }
-                        let space = self.cols - c;
+                        let space = self.sz.cols - c;
                         if buf.lines[row][c].width as usize > space {
                             buf.erase(row, c);
                         }
                     }
-                    buf.lines[row][first..min(first + pn, self.cols)].fill(Cell::SPACE);
+                    buf.lines[row][first..min(first + pn, self.sz.cols)].fill(Cell::SPACE);
                 }
 
                 VPA(pn) => {
@@ -849,7 +840,7 @@ impl Engine {
                     if pn > 0 {
                         pn -= 1;
                     }
-                    self.cursor.row = min(pn, self.rows - 1);
+                    self.cursor.row = min(pn, self.sz.rows - 1);
                 }
 
                 GraphicChar(ch) => {
@@ -1014,7 +1005,7 @@ impl Engine {
 }
 
 fn buffer_scroll_up_if_needed(buf: &mut Buffer, cursor: Cursor) {
-    if cursor.row + 1 == buf.rows {
+    if cursor.row + 1 == cursor.sz.rows {
         buf.rotate_line();
     }
 }
