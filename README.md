@@ -52,3 +52,11 @@ Currently toyterm supports the following functions.
 - IL
 - SGR
 - VPA
+
+
+## License
+
+This software is licensed under MIT License.
+
+The embedded font (M PLUS 1 Code) itself is redistributed under the Open Font License (OFL).
+See `font/OFL.txt` for more details.
