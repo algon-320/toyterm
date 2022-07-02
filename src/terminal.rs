@@ -698,7 +698,7 @@ impl Engine {
                 },
 
                 SGR(ps) => {
-                    let mut ps = ps.into_iter().peekable();
+                    let mut ps = ps.iter().peekable();
                     while let Some(&p) = ps.next() {
                         match p {
                             0 => self.attr = GraphicAttribute::default(),
@@ -1088,6 +1088,6 @@ fn exec_shell() -> Result<()> {
         })
         .collect();
 
-    nix::unistd::execve(&args[0], &args, &envs)?;
+    nix::unistd::execve(args[0], &args, &envs)?;
     unreachable!();
 }
