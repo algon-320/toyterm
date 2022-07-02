@@ -223,12 +223,6 @@ impl Terminal {
         self.pty.write_all(data).unwrap();
     }
 
-    #[allow(unused)]
-    pub fn writer(&self) -> impl std::io::Write {
-        let new_fd = self.pty.dup().expect("dup");
-        new_fd.into_file()
-    }
-
     pub fn request_resize(&mut self, lines: usize, columns: usize) {
         log::debug!("request_resize: {}x{} (cell)", lines, columns);
         self.control_req.send(Command::Resize { lines, columns });
