@@ -7,7 +7,7 @@ toyterm is a toy terminal emulator.
 - hardware accelerated graphics
 - toyterm assumes UTF-8 encoding
 - following basic functions are TODO
-    - mouse support
+    - text selection with mouse
     - clipboard support
     - font selection & fallback
     - configuration (shell, color scheme, keybindings, etc.)

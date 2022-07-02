@@ -443,6 +443,27 @@ impl TerminalWindow {
                     self.terminal.pty_write(utf8);
                 }
 
+                WindowEvent::MouseWheel { delta, .. } => {
+                    match delta {
+                        glutin::event::MouseScrollDelta::LineDelta(dx, dy) => {
+                            // Vertical
+                            if dy >= 0.20 {
+                                self.terminal.pty_write(b"\x1b[\x41"); // Up
+                            } else if dy <= -0.20 {
+                                self.terminal.pty_write(b"\x1b[\x42"); // Down
+                            }
+
+                            // Horizontal
+                            if dx >= 0.20 {
+                                self.terminal.pty_write(b"\x1b[\x43"); // Right
+                            } else if dx <= -0.20 {
+                                self.terminal.pty_write(b"\x1b[\x44"); // Left
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
                 WindowEvent::KeyboardInput { input, .. }
                     if input.state == ElementState::Pressed =>
                 {
