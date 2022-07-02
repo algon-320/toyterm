@@ -174,6 +174,10 @@ impl TerminalWindow {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
+                        if cell.attr.concealed {
+                            fg = bg;
+                        }
+
                         let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
                         self.vertices.extend_from_slice(&vs);
                     }
@@ -199,6 +203,10 @@ impl TerminalWindow {
 
                         if i == cursor.0 as u32 && j == cursor.1 as u32 {
                             std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        if cell.attr.concealed {
+                            fg = bg;
                         }
 
                         let vs = glyph_vertices(
@@ -238,6 +246,10 @@ impl TerminalWindow {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
+                        if cell.attr.concealed {
+                            fg = bg;
+                        }
+
                         let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
                         vertices.extend_from_slice(&vs);
                     }
@@ -264,6 +276,10 @@ impl TerminalWindow {
 
                         if i == cursor.0 as u32 && j == cursor.1 as u32 {
                             std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        if cell.attr.concealed {
+                            fg = bg;
                         }
 
                         let vs = glyph_vertices(
@@ -329,6 +345,10 @@ impl TerminalWindow {
 
                         if i == cursor.0 as u32 && j == cursor.1 as u32 {
                             std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        if cell.attr.concealed {
+                            fg = bg;
                         }
 
                         let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);

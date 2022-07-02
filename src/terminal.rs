@@ -70,6 +70,7 @@ pub struct GraphicAttribute {
     pub bg: Color,
     pub inversed: bool,
     pub blinking: u8,
+    pub concealed: bool,
 }
 
 impl GraphicAttribute {
@@ -79,6 +80,7 @@ impl GraphicAttribute {
             bg: Color::Black,
             inversed: false,
             blinking: 0,
+            concealed: false,
         }
     }
 }
@@ -685,6 +687,9 @@ impl Engine {
 
                             7 => self.attr.inversed = true,
                             27 => self.attr.inversed = false,
+
+                            8 => self.attr.concealed = true,
+                            28 => self.attr.concealed = false,
 
                             30 => self.attr.fg = Color::Black,
                             31 => self.attr.fg = Color::Red,
