@@ -699,7 +699,16 @@ impl Engine {
                             35 => self.attr.fg = Color::Magenta,
                             36 => self.attr.fg = Color::Cyan,
                             37 => self.attr.fg = Color::White,
-                            39 => self.attr.fg = Color::White,
+                            38 => {
+                                let s = ps.next();
+                                let (r, g, b) = (ps.next(), ps.next(), ps.next());
+                                if let (Some(2), Some(&r), Some(&g), Some(&b)) = (s, r, g, b) {
+                                    let (r, g, b) = (r as u8, g as u8, b as u8);
+                                    self.attr.fg = Color::Rgb { r, g, b };
+                                }
+                            }
+                            70 => self.attr.fg = Color::Special,
+                            39 => self.attr.fg = GraphicAttribute::default().fg,
 
                             40 => self.attr.bg = Color::Black,
                             41 => self.attr.bg = Color::Red,
@@ -709,38 +718,16 @@ impl Engine {
                             45 => self.attr.bg = Color::Magenta,
                             46 => self.attr.bg = Color::Cyan,
                             47 => self.attr.bg = Color::White,
-                            49 => self.attr.bg = Color::Black,
-
-                            70 => self.attr.fg = Color::Special,
-                            80 => self.attr.bg = Color::Special,
-
-                            38 => {
-                                let s = ps.next();
-                                let r = ps.next();
-                                let g = ps.next();
-                                let b = ps.next();
-                                if let (Some(2), Some(&r), Some(&g), Some(&b)) = (s, r, g, b) {
-                                    self.attr.fg = Color::Rgb {
-                                        r: r as u8,
-                                        g: g as u8,
-                                        b: b as u8,
-                                    };
-                                }
-                            }
-
                             48 => {
                                 let s = ps.next();
-                                let r = ps.next();
-                                let g = ps.next();
-                                let b = ps.next();
+                                let (r, g, b) = (ps.next(), ps.next(), ps.next());
                                 if let (Some(2), Some(&r), Some(&g), Some(&b)) = (s, r, g, b) {
-                                    self.attr.bg = Color::Rgb {
-                                        r: r as u8,
-                                        g: g as u8,
-                                        b: b as u8,
-                                    };
+                                    let (r, g, b) = (r as u8, g as u8, b as u8);
+                                    self.attr.bg = Color::Rgb { r, g, b };
                                 }
                             }
+                            80 => self.attr.bg = Color::Special,
+                            49 => self.attr.bg = GraphicAttribute::default().bg,
 
                             _ => {}
                         }
