@@ -14,10 +14,15 @@ toyterm is a toy terminal emulator.
 
 ## Keybinding
 
-|Combination|Function|
+|Key|Function|
 |:----------|:-------|
 |Ctrl + `-` |Decrease font size|
 |Ctrl + `=` |Increase font size|
+|Up key|Send `\x1b[[A`|
+|Down key|Send `\x1b[[B`|
+|Right key|Send `\x1b[[C`|
+|Left key|Send `\x1b[[D`|
+|Mouse Wheel|Same effect as arrow keys (Up/Down/Right/Left)|
 
 ## Control Functions
 
