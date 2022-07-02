@@ -140,11 +140,9 @@ impl TerminalWindow {
         {
             // hold the lock during copying states
             let buf = self.terminal.buffer.lock().unwrap();
-            let prows = self.terminal.size().0;
-            let top = buf.lines.len() - prows;
-            lines = buf.lines.range(top..).cloned().collect();
-            let (row, col) = buf.cursor;
-            cursor = (row - top, col);
+
+            lines = buf.lines.iter().cloned().collect();
+            cursor = buf.cursor;
         };
 
         let mut baseline: u32 = cell_size.max_over as u32;
