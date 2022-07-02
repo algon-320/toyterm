@@ -128,33 +128,26 @@ impl Buffer {
         self.lines[row].fill(Cell::SPACE);
     }
 
-    fn copy_lines<R>(&mut self, src: R, dst: usize)
-    where
-        R: std::ops::RangeBounds<usize>,
-    {
-        use std::ops::Bound;
-        let src_first = match src.start_bound() {
-            Bound::Included(&i) => i,
-            Bound::Excluded(&i) => i + 1,
-            Bound::Unbounded => 0,
-        };
-        let src_last = match src.end_bound() {
-            Bound::Included(&i) => i,
-            Bound::Excluded(&i) => i - 1,
-            Bound::Unbounded => self.lines.len() - 1,
-        };
+    /// Copy lines[src.0..=src.1] to lines[dst..]
+    fn copy_lines(&mut self, src: (usize, usize), dst_first: usize) {
+        let (src_first, src_last) = src;
         let src_count = src_last - src_first + 1;
+        let room = self.sz.rows - dst_first;
+        let copies = min(src_count, room);
 
-        if src_first > dst {
-            for i in 0..src_count {
-                self.lines[dst + i] = self.lines[src_first + i].clone();
-            }
+        let mut first_to_last = 0..copies;
+        let mut last_to_first = (0..copies).rev();
+
+        let iter = if dst_first < src_first {
+            &mut first_to_last as &mut dyn Iterator<Item = usize>
         } else {
-            for i in (0..src_count).rev() {
-                if dst + i < self.lines.len() {
-                    self.lines[dst + i] = self.lines[src_first + i].clone();
-                }
-            }
+            &mut last_to_first as &mut dyn Iterator<Item = usize>
+        };
+
+        for i in iter {
+            use crate::utils::extension::GetMutPair as _;
+            let (src, dst) = self.lines.get_mut_pair(src_first + i, dst_first + i);
+            dst.copy_from_slice(src);
         }
     }
 
@@ -781,8 +774,8 @@ impl Engine {
 
                     if pn < self.sz.rows - row {
                         let first = row;
-                        let last = self.sz.rows - pn;
-                        buf.copy_lines(first..last, first + pn);
+                        let last = self.sz.rows - 1 - pn;
+                        buf.copy_lines((first, last), first + pn);
                     }
                     for r in row..row + min(pn, self.sz.rows - row) {
                         buf.erase_line(r);
@@ -803,7 +796,7 @@ impl Engine {
                     let last = self.sz.rows - 1;
                     let shifted_lines = 1 + last - first;
                     if first <= last {
-                        buf.copy_lines(first..=last, row);
+                        buf.copy_lines((first, last), row);
                     }
 
                     for r in (row + shifted_lines)..self.sz.rows {
