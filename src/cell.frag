@@ -4,6 +4,7 @@ uniform sampler2D tex;
 uniform float timestamp;
 in vec2 v_tex_coords;
 flat in uint v_is_bg;
+flat in uint v_blinking;
 flat in uvec2 v_color;
 
 vec3 hsv2rgb(float h, float s, float v) {
@@ -24,6 +25,13 @@ vec3 get_color(uint color) {
 void main() {
     vec3 back = get_color(v_color[0]);
     vec3 fore = get_color(v_color[1]);
+
+    uint phase = uint(timestamp / 250.0);
+    if (v_blinking == 1u && phase % 8u < 4u) {
+        fore = back;
+    } else if (v_blinking == 2u && phase % 2u < 1u) {
+        fore = back;
+    }
 
     if (v_is_bg == 1u) {
         gl_FragColor = vec4(back, 1.0);

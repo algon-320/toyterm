@@ -212,6 +212,7 @@ impl TerminalWindow {
                             region.tx_h,
                             fg,
                             bg,
+                            cell.attr.blinking,
                         );
                         self.vertices.extend_from_slice(&vs);
                     }
@@ -265,7 +266,19 @@ impl TerminalWindow {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
-                        let vs = glyph_vertices(gl_x, gl_y, gl_w, gl_h, 0.0, 0.0, 1.0, 1.0, fg, bg);
+                        let vs = glyph_vertices(
+                            gl_x,
+                            gl_y,
+                            gl_w,
+                            gl_h,
+                            0.0,
+                            0.0,
+                            1.0,
+                            1.0,
+                            fg,
+                            bg,
+                            cell.attr.blinking,
+                        );
                         vertices.extend_from_slice(&vs);
                     }
 
@@ -489,8 +502,9 @@ struct Vertex {
     tex_coords: [f32; 2],
     color: [u32; 2],
     is_bg: u32,
+    blinking: u32,
 }
-glium::implement_vertex!(Vertex, position, tex_coords, color, is_bg);
+glium::implement_vertex!(Vertex, position, tex_coords, color, is_bg, blinking);
 
 // Converts window coordinate to opengl coordinate
 fn x_to_gl(x: i32, window_width: u32) -> f32 {
@@ -542,6 +556,7 @@ fn glyph_vertices(
     tx_h: f32,
     fg_color: Color,
     bg_color: Color,
+    blinking: u8,
 ) -> [Vertex; 6] {
     // top-left, bottom-left, bottom-right, top-right
     let gl_ps = [
@@ -564,6 +579,7 @@ fn glyph_vertices(
         tex_coords: tex_ps[idx],
         color: [color_to_rgba(bg_color), color_to_rgba(fg_color)],
         is_bg: 0,
+        blinking: blinking as u32,
     };
 
     // 0    3
@@ -609,6 +625,7 @@ fn cell_vertices(
         tex_coords: [0.0, 0.0],
         color: [color_to_rgba(bg_color), color_to_rgba(fg_color)],
         is_bg: 1,
+        blinking: 0,
     };
 
     // 0    3

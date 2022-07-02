@@ -69,6 +69,7 @@ pub struct GraphicAttribute {
     pub fg: Color,
     pub bg: Color,
     pub inversed: bool,
+    pub blinking: u8,
 }
 
 impl GraphicAttribute {
@@ -77,6 +78,7 @@ impl GraphicAttribute {
             fg: Color::White,
             bg: Color::Black,
             inversed: false,
+            blinking: 0,
         }
     }
 }
@@ -676,6 +678,11 @@ impl Engine {
                     while let Some(&p) = ps.next() {
                         match p {
                             0 => self.attr = GraphicAttribute::default(),
+
+                            5 => self.attr.blinking = 1,
+                            6 => self.attr.blinking = 2,
+                            25 => self.attr.blinking = 0,
+
                             7 => self.attr.inversed = true,
                             27 => self.attr.inversed = false,
 
