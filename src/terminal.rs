@@ -694,6 +694,7 @@ impl Engine {
                             35 => self.attr.fg = Color::Magenta,
                             36 => self.attr.fg = Color::Cyan,
                             37 => self.attr.fg = Color::White,
+                            39 => self.attr.fg = Color::White,
 
                             40 => self.attr.bg = Color::Black,
                             41 => self.attr.bg = Color::Red,
@@ -703,6 +704,7 @@ impl Engine {
                             45 => self.attr.bg = Color::Magenta,
                             46 => self.attr.bg = Color::Cyan,
                             47 => self.attr.bg = Color::White,
+                            49 => self.attr.bg = Color::Black,
 
                             70 => self.attr.fg = Color::Special,
                             80 => self.attr.bg = Color::Special,
