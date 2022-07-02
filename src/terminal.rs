@@ -80,28 +80,44 @@ pub struct Buffer {
     pub lines: VecDeque<Vec<Cell>>,
     pub cursor: (usize, usize),
     cols: usize,
-    capacity: usize,
+    rows: usize,
 }
 
 impl Buffer {
-    pub fn new(capacity: usize, cols: usize) -> Self {
-        assert!(capacity > 0);
+    pub fn new(rows: usize, cols: usize) -> Self {
+        assert!(rows > 0 && cols > 0);
+        let lines: VecDeque<_> = std::iter::repeat_with(|| vec![Cell::SPACE; cols])
+            .take(rows)
+            .collect();
         Self {
-            lines: VecDeque::new(),
+            lines,
             cols,
-            capacity,
+            rows,
             cursor: (0, 0),
         }
     }
 
-    fn allocate_line(&mut self) {
-        if self.lines.len() == self.capacity {
-            self.lines.rotate_left(1);
-            self.lines[self.capacity - 1].fill(Cell::SPACE);
-        } else {
-            let fresh_line = vec![Cell::SPACE; self.cols];
-            self.lines.push_back(fresh_line);
+    fn resize(&mut self, rows: usize, cols: usize) {
+        self.rows = rows;
+        self.cols = cols;
+
+        for line in self.lines.iter_mut() {
+            line.resize(cols, Cell::SPACE);
         }
+
+        while self.lines.len() < rows {
+            self.lines.push_back(vec![Cell::SPACE; cols]);
+        }
+        while self.lines.len() > rows {
+            self.lines.pop_back();
+        }
+
+        debug_assert_eq!(self.rows, self.lines.len());
+    }
+
+    fn rotate_line(&mut self) {
+        self.lines.rotate_left(1);
+        self.lines.back_mut().unwrap().fill(Cell::SPACE);
     }
 
     fn erase_line(&mut self, row: usize) {
@@ -332,8 +348,7 @@ impl Engine {
         let prows = lines;
         let pcols = columns;
 
-        let capacity = 10000;
-        let drows = capacity;
+        let drows = prows;
         let dcols = pcols;
 
         // Initialize tabulation stops
@@ -344,11 +359,8 @@ impl Engine {
             }
         }
 
-        let buffer = {
-            let mut buf = Buffer::new(drows, dcols);
-            (0..prows).for_each(|_| buf.allocate_line());
-            Arc::new(Mutex::new(buf))
-        };
+        let buffer = Arc::new(Mutex::new(Buffer::new(drows, dcols)));
+
         let cursor = Cursor {
             drows,
             dcols,
@@ -390,21 +402,16 @@ impl Engine {
             }
         }
 
-        let mut buf = self.buffer.lock().unwrap();
-        buf.cols = columns;
-        for line in buf.lines.iter_mut() {
-            line.resize(columns, Cell::SPACE);
-        }
-        while buf.lines.len() < lines {
-            buf.allocate_line();
-        }
-
+        self.cursor.drows = lines;
         self.cursor.dcols = columns;
+
+        self.cursor.row = 0; // FIXME
         if self.cursor.col >= columns {
             self.cursor.col = columns - 1;
         }
-        self.cursor.row = buf.lines.len() - lines;
 
+        let mut buf = self.buffer.lock().unwrap();
+        buf.resize(lines, columns);
         buf.cursor = self.cursor.pos();
     }
 
@@ -511,8 +518,8 @@ impl Engine {
                 }
 
                 LF | VT | FF => {
-                    self.cursor = self.cursor.next_row();
                     buffer_scroll_up_if_needed(&mut buf, self.cursor);
+                    self.cursor = self.cursor.next_row();
                 }
 
                 CR => {
@@ -893,8 +900,8 @@ impl Engine {
                     if let Some(width) = ch.width() {
                         // If there is no space for new character, move cursor to the next line.
                         if self.cursor.right_space() < width {
-                            self.cursor = self.cursor.next_row().first_col();
                             buffer_scroll_up_if_needed(&mut buf, self.cursor);
+                            self.cursor = self.cursor.next_row().first_col();
                         }
 
                         let (row, col) = self.cursor.pos();
@@ -1050,12 +1057,8 @@ impl Engine {
 }
 
 fn buffer_scroll_up_if_needed(buf: &mut Buffer, cursor: Cursor) {
-    if cursor.row + 1 == buf.capacity {
-        buf.allocate_line();
-    } else {
-        while cursor.row >= buf.lines.len() {
-            buf.allocate_line();
-        }
+    if cursor.row + 1 == buf.rows {
+        buf.rotate_line();
     }
 }
 
