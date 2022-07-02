@@ -189,8 +189,6 @@ pub struct Terminal {
     control_req: pipe_channel::Sender<Command>,
     control_res: pipe_channel::Receiver<i32>,
     pub buffer: Arc<Mutex<Buffer>>,
-    rows: usize,
-    cols: usize,
 }
 
 impl Terminal {
@@ -215,8 +213,6 @@ impl Terminal {
             control_req: control_req_tx,
             control_res: control_res_rx,
             buffer,
-            rows: lines,
-            cols: columns,
         }
     }
 
@@ -234,16 +230,9 @@ impl Terminal {
     }
 
     pub fn request_resize(&mut self, lines: usize, columns: usize) {
-        let size_changed = self.rows != lines || self.cols != columns;
-
-        if size_changed {
-            log::debug!("request_resize: {}x{} (cell)", lines, columns);
-            self.control_req.send(Command::Resize { lines, columns });
-            self.control_res.recv();
-
-            self.rows = lines;
-            self.cols = columns;
-        }
+        log::debug!("request_resize: {}x{} (cell)", lines, columns);
+        self.control_req.send(Command::Resize { lines, columns });
+        self.control_res.recv();
     }
 }
 
