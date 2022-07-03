@@ -148,6 +148,10 @@ impl Line {
         }
     }
 
+    fn erase_all(&mut self) {
+        self.0.fill(Cell::SPACE);
+    }
+
     fn erase_at(&mut self, at: usize) {
         let head = at - self.0[at].backlink as usize;
         let width = self.0[head].width as usize;
@@ -252,7 +256,7 @@ impl Buffer {
     fn rotate_line(&mut self) {
         self.lines.rotate_left(1);
         let last = self.lines.back_mut().unwrap();
-        last.erase(..);
+        last.erase_all();
     }
 
     /// Copy lines[src.0..=src.1] to lines[dst..]
@@ -729,21 +733,21 @@ impl Engine {
                         let (row, col) = self.cursor.pos();
                         buf.lines[row].erase(col..);
                         for line in buf.lines.range_mut(row + 1..) {
-                            line.erase(..);
+                            line.erase_all();
                         }
                     }
                     1 => {
                         // clear from the beginning to the cursor position (inclusive)
                         let (row, col) = self.cursor.pos();
                         for line in buf.lines.range_mut(0..row) {
-                            line.erase(..);
+                            line.erase_all();
                         }
                         buf.lines[row].erase(0..=col);
                     }
                     2 => {
                         // clear all positions
                         for line in buf.lines.iter_mut() {
-                            line.erase(..);
+                            line.erase_all();
                         }
                     }
                     _ => unreachable!(),
@@ -763,7 +767,7 @@ impl Engine {
                     2 => {
                         // clear line
                         let row = self.cursor.row;
-                        buf.lines[row].erase(..);
+                        buf.lines[row].erase_all();
                     }
                     _ => unreachable!(),
                 },
@@ -836,7 +840,7 @@ impl Engine {
                         buf.copy_lines((src, src + count - 1), dst);
                     }
                     for line in buf.lines.range_mut(src..dst) {
-                        line.erase(..);
+                        line.erase_all();
                     }
                 }
 
@@ -856,7 +860,7 @@ impl Engine {
                         buf.copy_lines((src, src + count - 1), dst);
                     }
                     for line in buf.lines.range_mut(dst + count..) {
-                        line.erase(..);
+                        line.erase_all();
                     }
                 }
 
