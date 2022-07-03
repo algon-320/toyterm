@@ -34,6 +34,7 @@ fn set_term_window_size(pty_master: &OwnedFd, size: TerminalSize) -> Result<()> 
 pub struct Cell {
     pub ch: char,
     pub width: u16,
+    backlink: u16,
     pub attr: GraphicAttribute,
 }
 
@@ -41,11 +42,13 @@ impl Cell {
     const VOID: Self = Cell {
         ch: ' ',
         width: 0,
+        backlink: u16::MAX,
         attr: GraphicAttribute::default(),
     };
     const SPACE: Self = Cell {
         ch: ' ',
         width: 1,
+        backlink: 0,
         attr: GraphicAttribute::default(),
     };
 }
@@ -85,9 +88,137 @@ impl GraphicAttribute {
     }
 }
 
+use std::ops::RangeBounds;
+
+#[derive(Debug, Clone)]
+pub struct Line(Vec<Cell>);
+
+impl Line {
+    fn new(len: usize) -> Self {
+        Line(vec![Cell::SPACE; len])
+    }
+
+    fn copy_from(&mut self, src: &Self) {
+        self.0.copy_from_slice(&src.0);
+    }
+
+    // [ret.0, ret.1)
+    fn range<R: RangeBounds<usize>>(&self, range: R) -> (usize, usize) {
+        let len = self.0.len();
+
+        use std::ops::Bound;
+        let start = match range.start_bound() {
+            Bound::Included(&p) => p,
+            Bound::Excluded(&p) => p + 1,
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(&p) => p + 1,
+            Bound::Excluded(&p) => p,
+            Bound::Unbounded => len,
+        };
+
+        let start = min(start, len);
+        let end = min(end, len);
+        debug_assert!(start <= len && end <= len && start <= end);
+
+        (start, end)
+    }
+
+    fn copy_within<R: RangeBounds<usize> + Clone>(&mut self, src: R, dst: usize) {
+        let (start, end) = self.range(src.clone());
+        let count = end - start;
+        if count == 0 {
+            return;
+        }
+
+        self.0.copy_within(src, dst);
+
+        let head = self.get_head_pos(dst + count - 1);
+        if head + self.0[head].width as usize > dst + count {
+            let dst_end = dst + count;
+            self.0[head..dst_end].fill(Cell::SPACE);
+        }
+    }
+
+    fn erase<R: RangeBounds<usize>>(&mut self, range: R) {
+        let (start, end) = self.range(range);
+        for i in start..end {
+            self.erase_at(i);
+        }
+    }
+
+    fn erase_at(&mut self, at: usize) {
+        let head = at - self.0[at].backlink as usize;
+        let width = self.0[head].width as usize;
+
+        #[cfg(debug_assertions)]
+        for d in 1..width {
+            debug_assert_eq!(self.0[head + d].width, 0);
+            debug_assert_eq!(self.0[head + d].backlink as usize, d);
+        }
+
+        self.0[head..head + width].fill(Cell::SPACE);
+    }
+
+    fn get_head_pos(&self, at: usize) -> usize {
+        at - self.0[at].backlink as usize
+    }
+
+    fn resize(&mut self, new_len: usize) {
+        self.0.resize(new_len, Cell::SPACE);
+
+        let head = self.get_head_pos(new_len - 1);
+        let width = self.0[head].width as usize;
+        if head + width >= self.0.len() {
+            self.erase_at(head);
+        }
+    }
+
+    fn put(&mut self, at: usize, cell: Cell) {
+        let width = cell.width as usize;
+
+        debug_assert!(at + width <= self.0.len());
+
+        self.erase(at..at + width);
+        self.0[at] = cell;
+        for d in 1..width {
+            let mut cell = Cell::VOID;
+            cell.backlink = d as u16;
+            self.0[at + d] = cell;
+        }
+    }
+
+    /// Returns a iterator that yeilds cells on the line (skip zero-width cells)
+    pub fn iter(&self) -> CellIter {
+        CellIter {
+            slice: self.0.as_slice(),
+            next: 0,
+        }
+    }
+}
+
+pub struct CellIter<'b> {
+    slice: &'b [Cell],
+    next: usize,
+}
+
+impl<'b> Iterator for CellIter<'b> {
+    type Item = Cell;
+    fn next(&mut self) -> Option<Cell> {
+        if self.next == self.slice.len() {
+            None
+        } else {
+            let cell = self.slice[self.next];
+            self.next += cell.width as usize;
+            Some(cell)
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Buffer {
-    pub lines: VecDeque<Vec<Cell>>,
+    pub lines: VecDeque<Line>,
     pub cursor: (usize, usize),
     sz: TerminalSize,
 }
@@ -96,7 +227,7 @@ impl Buffer {
     pub fn new(sz: TerminalSize) -> Self {
         assert!(sz.rows > 0 && sz.cols > 0);
 
-        let lines: VecDeque<_> = std::iter::repeat_with(|| vec![Cell::SPACE; sz.cols])
+        let lines: VecDeque<_> = std::iter::repeat_with(|| Line::new(sz.cols))
             .take(sz.rows)
             .collect();
 
@@ -110,26 +241,24 @@ impl Buffer {
     fn resize(&mut self, sz: TerminalSize) {
         self.sz = sz;
 
-        for line in self.lines.iter_mut() {
-            // FIXME: this "chop" might produce broken cells
-            line.resize(sz.cols, Cell::SPACE);
-        }
+        self.lines.resize_with(sz.rows, || Line::new(sz.cols));
 
-        self.lines
-            .resize_with(sz.rows, || vec![Cell::SPACE; sz.cols]);
+        for line in self.lines.iter_mut() {
+            line.resize(sz.cols);
+        }
     }
 
+    /// Scroll up the buffer by 1 line
     fn rotate_line(&mut self) {
         self.lines.rotate_left(1);
-        self.lines.back_mut().unwrap().fill(Cell::SPACE);
-    }
-
-    fn erase_line(&mut self, row: usize) {
-        self.lines[row].fill(Cell::SPACE);
+        let last = self.lines.back_mut().unwrap();
+        last.erase(..);
     }
 
     /// Copy lines[src.0..=src.1] to lines[dst..]
     fn copy_lines(&mut self, src: (usize, usize), dst_first: usize) {
+        // FIXME: avoid unnecessary heap allocations
+
         let (src_first, src_last) = src;
         let src_count = src_last - src_first + 1;
         let room = self.sz.rows - dst_first;
@@ -147,32 +276,7 @@ impl Buffer {
         for i in iter {
             use crate::utils::extension::GetMutPair as _;
             let (src, dst) = self.lines.get_mut_pair(src_first + i, dst_first + i);
-            dst.copy_from_slice(src);
-        }
-    }
-
-    fn erase(&mut self, row: usize, col: usize) {
-        let mut c = col;
-        while c > 0 && self.lines[row][c].width == 0 {
-            c -= 1;
-        }
-
-        let w = self.lines[row][c].width as usize;
-        for d in 0..w {
-            self.lines[row][c + d] = Cell::SPACE;
-        }
-    }
-
-    fn put(&mut self, row: usize, col: usize, cell: Cell) {
-        debug_assert!(col + cell.width as usize <= self.sz.cols);
-
-        self.erase(row, col);
-        self.lines[row][col] = cell;
-
-        let w = cell.width as usize;
-        for d in 1..w {
-            self.erase(row, col + d);
-            self.lines[row][col + d] = Cell::VOID;
+            dst.copy_from(src);
         }
     }
 }
@@ -360,6 +464,7 @@ impl Engine {
 
         self.sz = sz;
 
+        // Update tabulation stops
         self.tabstops.clear();
         for i in 0..self.sz.cols {
             if i % 8 == 0 {
@@ -367,12 +472,9 @@ impl Engine {
             }
         }
 
+        let (row, col) = self.cursor.pos();
         self.cursor.sz = sz;
-
-        self.cursor.row = 0; // FIXME
-        if self.cursor.col >= sz.cols {
-            self.cursor.col = sz.cols - 1;
-        }
+        self.cursor = self.cursor.exact(row, col);
 
         let mut buf = self.buffer.lock().unwrap();
         buf.resize(sz);
@@ -514,9 +616,10 @@ impl Engine {
                     let tab = Cell {
                         ch: ' ',
                         width: advance as u16,
+                        backlink: 0,
                         attr: self.attr,
                     };
-                    buf.put(row, col, tab);
+                    buf.lines[row].put(col, tab);
 
                     for _ in 0..advance {
                         self.cursor = self.cursor.next_col();
@@ -529,8 +632,8 @@ impl Engine {
                         pn = 1
                     }
 
-                    let row = self.cursor.row;
-                    let up = min(row, pn);
+                    let (row, _) = self.cursor.pos();
+                    let up = min(pn, row);
                     for _ in 0..up {
                         self.cursor = self.cursor.prev_row();
                     }
@@ -542,8 +645,8 @@ impl Engine {
                         pn = 1
                     }
 
-                    let row = self.cursor.row;
-                    let down = min(self.sz.rows - row - 1, pn);
+                    let (row, _) = self.cursor.pos();
+                    let down = min(pn, self.sz.rows - 1 - row);
                     for _ in 0..down {
                         self.cursor = self.cursor.next_row();
                     }
@@ -555,8 +658,8 @@ impl Engine {
                         pn = 1
                     }
 
-                    let col = self.cursor.col;
-                    let right = min(self.sz.cols - 1 - col, pn);
+                    let (_, col) = self.cursor.pos();
+                    let right = min(pn, self.sz.cols - 1 - col);
                     for _ in 0..right {
                         self.cursor = self.cursor.next_col();
                     }
@@ -568,8 +671,8 @@ impl Engine {
                         pn = 1
                     }
 
-                    let col = self.cursor.col;
-                    let left = min(col, pn);
+                    let (_, col) = self.cursor.pos();
+                    let left = min(pn, col);
                     for _ in 0..left {
                         self.cursor = self.cursor.prev_col();
                     }
@@ -577,18 +680,16 @@ impl Engine {
 
                 CUP(pn1, pn2) => {
                     let mut pn1 = pn1 as usize;
-                    let mut pn2 = pn2 as usize;
-
                     if pn1 > 0 {
                         pn1 -= 1;
                     }
+
+                    let mut pn2 = pn2 as usize;
                     if pn2 > 0 {
                         pn2 -= 1;
                     }
 
-                    let row = pn1;
-                    let col = pn2;
-                    self.cursor = self.cursor.exact(row, col);
+                    self.cursor = self.cursor.exact(pn1, pn2);
                 }
 
                 CHA(pn) => {
@@ -596,8 +697,20 @@ impl Engine {
                     if pn > 0 {
                         pn -= 1;
                     }
+
                     let (row, _) = self.cursor.pos();
                     self.cursor = self.cursor.exact(row, pn);
+                }
+
+                VPA(pn) => {
+                    let mut pn = pn as usize;
+                    if pn > 0 {
+                        pn -= 1;
+                    }
+
+                    let (_, col) = self.cursor.pos();
+                    let row = min(pn, self.sz.rows - 1);
+                    self.cursor = self.cursor.exact(row, col);
                 }
 
                 ECH(pn) => {
@@ -607,39 +720,30 @@ impl Engine {
                     }
 
                     let (row, col) = self.cursor.pos();
-                    for d in 0..pn {
-                        if col + d >= self.sz.cols {
-                            break;
-                        }
-                        buf.put(row, col + d, Cell::SPACE);
-                    }
+                    buf.lines[row].erase(col..col + pn);
                 }
 
                 ED(ps) => match ps {
                     0 => {
                         // clear from the the cursor position to the end (inclusive)
                         let (row, col) = self.cursor.pos();
-                        for r in (row + 1)..self.sz.rows {
-                            buf.erase_line(r);
-                        }
-                        for c in col..self.sz.cols {
-                            buf.put(row, c, Cell::SPACE);
+                        buf.lines[row].erase(col..);
+                        for line in buf.lines.range_mut(row + 1..) {
+                            line.erase(..);
                         }
                     }
                     1 => {
                         // clear from the beginning to the cursor position (inclusive)
                         let (row, col) = self.cursor.pos();
-                        for r in 0..row {
-                            buf.erase_line(r);
+                        for line in buf.lines.range_mut(0..row) {
+                            line.erase(..);
                         }
-                        for c in 0..=col {
-                            buf.put(row, c, Cell::SPACE);
-                        }
+                        buf.lines[row].erase(0..=col);
                     }
                     2 => {
                         // clear all positions
-                        for r in 0..self.sz.rows {
-                            buf.erase_line(r);
+                        for line in buf.lines.iter_mut() {
+                            line.erase(..);
                         }
                     }
                     _ => unreachable!(),
@@ -649,24 +753,112 @@ impl Engine {
                     0 => {
                         // clear from the cursor position to the line end (inclusive)
                         let (row, col) = self.cursor.pos();
-                        for c in col..self.sz.cols {
-                            buf.put(row, c, Cell::SPACE);
-                        }
+                        buf.lines[row].erase(col..);
                     }
                     1 => {
                         // clear from the line beginning to the cursor position (inclusive)
                         let (row, col) = self.cursor.pos();
-                        for c in 0..=col {
-                            buf.put(row, c, Cell::SPACE);
-                        }
+                        buf.lines[row].erase(0..=col);
                     }
                     2 => {
                         // clear line
                         let row = self.cursor.row;
-                        buf.erase_line(row);
+                        buf.lines[row].erase(..);
                     }
                     _ => unreachable!(),
                 },
+
+                DSR(ps) => match ps {
+                    5 => {
+                        // ready, no malfunction detected
+                        use std::io::Write as _;
+                        self.pty.write_all(b"\x1b[0\x6E").unwrap();
+                    }
+                    6 => {
+                        let (row, col) = self.cursor.pos();
+
+                        // a report of the active position
+                        use std::io::Write as _;
+                        self.pty
+                            .write_fmt(format_args!("\x1b[{};{}\x52", row + 1, col + 1))
+                            .unwrap();
+                    }
+                    _ => unreachable!(),
+                },
+
+                ICH(pn) => {
+                    let mut pn = pn as usize;
+                    if pn == 0 {
+                        pn = 1;
+                    }
+
+                    let (row, col) = self.cursor.pos();
+                    let line = &mut buf.lines[row];
+
+                    let src = col;
+                    let dst = min(src + pn, self.sz.cols);
+                    let count = self.sz.cols - dst;
+
+                    line.copy_within(src..src + count, dst);
+                    line.erase(src..dst);
+                }
+
+                DCH(pn) => {
+                    let mut pn = pn as usize;
+                    if pn == 0 {
+                        pn = 1;
+                    }
+
+                    let (row, col) = self.cursor.pos();
+                    let line = &mut buf.lines[row];
+
+                    let src = min(col + pn, self.sz.cols);
+                    let dst = col;
+                    let count = self.sz.cols - src;
+
+                    line.copy_within(src..src + count, dst);
+                    line.erase(dst + count..);
+                }
+
+                IL(pn) => {
+                    let mut pn = pn as usize;
+                    if pn == 0 {
+                        pn = 1;
+                    }
+
+                    let (row, _) = self.cursor.pos();
+
+                    let src = row;
+                    let dst = min(row + pn, self.sz.rows);
+                    let count = self.sz.rows - dst;
+
+                    if count > 0 {
+                        buf.copy_lines((src, src + count - 1), dst);
+                    }
+                    for line in buf.lines.range_mut(src..dst) {
+                        line.erase(..);
+                    }
+                }
+
+                DL(pn) => {
+                    let mut pn = pn as usize;
+                    if pn == 0 {
+                        pn = 1;
+                    }
+
+                    let (row, _) = self.cursor.pos();
+
+                    let src = min(row + pn, self.sz.rows);
+                    let dst = row;
+                    let count = self.sz.rows - src;
+
+                    if count > 0 {
+                        buf.copy_lines((src, src + count - 1), dst);
+                    }
+                    for line in buf.lines.range_mut(dst + count..) {
+                        line.erase(..);
+                    }
+                }
 
                 SGR(ps) => {
                     let mut ps = ps.iter().peekable();
@@ -727,119 +919,9 @@ impl Engine {
                     }
                 }
 
-                DSR(ps) => match ps {
-                    5 => {
-                        // ready, no malfunction detected
-                        use std::io::Write as _;
-                        self.pty.write_all(b"\x1b[0\x6E").unwrap();
-                    }
-                    6 => {
-                        let (row, col) = self.cursor.pos();
-
-                        // a report of the active position
-                        use std::io::Write as _;
-                        self.pty
-                            .write_fmt(format_args!("\x1b[{};{}\x52", row + 1, col + 1))
-                            .unwrap();
-                    }
-                    _ => unreachable!(),
-                },
-
-                DCH(pn) => {
-                    let mut pn = pn as usize;
-                    if pn == 0 {
-                        pn = 1;
-                    }
-
-                    let (row, col) = self.cursor.pos();
-                    let first = col;
-                    let last_ex = min(col + pn, self.sz.cols);
-                    for c in first..last_ex {
-                        buf.erase(row, c);
-                    }
-                    buf.lines[row].copy_within(last_ex.., first);
-                    let count = last_ex - first;
-                    buf.lines[row][(self.sz.cols - count)..].fill(Cell::SPACE);
-                }
-
-                IL(pn) => {
-                    let mut pn = pn as usize;
-                    if pn == 0 {
-                        pn = 1;
-                    }
-
-                    let (row, _) = self.cursor.pos();
-
-                    // NOTE: assume VEM == FOLLOWING here
-
-                    if pn < self.sz.rows - row {
-                        let first = row;
-                        let last = self.sz.rows - 1 - pn;
-                        buf.copy_lines((first, last), first + pn);
-                    }
-                    for r in row..row + min(pn, self.sz.rows - row) {
-                        buf.erase_line(r);
-                    }
-                }
-
-                DL(pn) => {
-                    let mut pn = pn as usize;
-                    if pn == 0 {
-                        pn = 1;
-                    }
-
-                    let (row, _) = self.cursor.pos();
-
-                    // NOTE: assume VEM == FOLLOWING here
-
-                    let first = min(row + pn, self.sz.rows);
-                    let last = self.sz.rows - 1;
-                    let shifted_lines = 1 + last - first;
-                    if first <= last {
-                        buf.copy_lines((first, last), row);
-                    }
-
-                    for r in (row + shifted_lines)..self.sz.rows {
-                        buf.erase_line(r);
-                    }
-                }
-
-                ICH(pn) => {
-                    let mut pn = pn as usize;
-                    if pn == 0 {
-                        pn = 1;
-                    }
-
-                    let (row, col) = self.cursor.pos();
-                    let first = col;
-                    let last = self.sz.cols as isize - 1 - pn as isize;
-                    if (first as isize) < last {
-                        let last = last as usize;
-                        buf.lines[row].copy_within(first..=last, first + pn);
-
-                        let mut c = self.sz.cols - 1;
-                        while c > 0 && buf.lines[row][c].width == 0 {
-                            c -= 1;
-                        }
-                        let space = self.sz.cols - c;
-                        if buf.lines[row][c].width as usize > space {
-                            buf.erase(row, c);
-                        }
-                    }
-                    buf.lines[row][first..min(first + pn, self.sz.cols)].fill(Cell::SPACE);
-                }
-
-                VPA(pn) => {
-                    let mut pn = pn as usize;
-                    if pn > 0 {
-                        pn -= 1;
-                    }
-                    self.cursor.row = min(pn, self.sz.rows - 1);
-                }
-
                 GraphicChar(ch) => {
                     use unicode_width::UnicodeWidthChar as _;
-                    if let Some(width) = ch.width() {
+                    if let Some(width @ 1..) = ch.width() {
                         // If there is no space for new character, move cursor to the next line.
                         if self.cursor.right_space() < width {
                             buffer_scroll_up_if_needed(&mut buf, self.cursor);
@@ -850,9 +932,10 @@ impl Engine {
                         let cell = Cell {
                             ch,
                             width: width as u16,
+                            backlink: 0,
                             attr: self.attr,
                         };
-                        buf.put(row, col, cell);
+                        buf.lines[row].put(col, cell);
 
                         for _ in 0..width {
                             self.cursor = self.cursor.next_col();
@@ -861,8 +944,7 @@ impl Engine {
                 }
 
                 ESC => {
-                    log::warn!("the parser should not produce ESC function.");
-                    continue;
+                    unreachable!();
                 }
 
                 NUL => ignore!(),
@@ -994,7 +1076,9 @@ impl Engine {
             }
         }
 
-        buf.cursor = (self.cursor.row, self.cursor.col);
+        let (row, col) = self.cursor.pos();
+        let col = buf.lines[row].get_head_pos(col);
+        buf.cursor = (row, col);
     }
 }
 

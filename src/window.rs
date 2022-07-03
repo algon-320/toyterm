@@ -9,7 +9,7 @@ use glutin::{
 
 use crate::cache::GlyphCache;
 use crate::font::Font;
-use crate::terminal::{Cell, Color, Terminal, TerminalSize};
+use crate::terminal::{Color, Line, Terminal, TerminalSize};
 
 #[derive(Debug, Clone, Copy)]
 struct CellSize {
@@ -135,7 +135,7 @@ impl TerminalWindow {
 
         surface.clear_color_srgb(0.0, 0.0, 0.0, 1.0); // black
 
-        let lines: Vec<Vec<Cell>>;
+        let lines: Vec<Line>;
         let cursor: (usize, usize);
         {
             // hold the lock during copying states
@@ -151,10 +151,6 @@ impl TerminalWindow {
             let mut leftline: u32 = 0;
             let mut j: u32 = 0;
             for cell in row.iter() {
-                if cell.width == 0 {
-                    continue;
-                }
-
                 if let Some(region) = self.cache.get(cell.ch) {
                     // Background
                     {
