@@ -214,6 +214,17 @@ impl<'b> Iterator for CellIter<'b> {
             None
         } else {
             let cell = self.slice[self.next];
+
+            #[cfg(debug_assertions)]
+            {
+                let w = cell.width as usize;
+                debug_assert!(w > 0);
+                for i in 1..w {
+                    debug_assert_eq!(self.slice[self.next + i].width, 0);
+                    debug_assert_eq!(self.slice[self.next + i].backlink as usize, i);
+                }
+            }
+
             self.next += cell.width as usize;
             Some(cell)
         }
