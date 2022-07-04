@@ -90,6 +90,24 @@ impl GraphicAttribute {
 
 use std::ops::RangeBounds;
 
+/// A single line of terminal buffer
+///
+/// A `Line` consists of multiple `Cell`s, which may have different width.
+/// The number of cells is the same as terminal columns.
+/// If there are multi-width cells, the following invariants must be met.
+///
+/// ## Invariants
+/// - If a cell has multiple width (let's call this "head" cell),
+///   each of following cells that are covered by the "head" must be 0-width.
+/// - Every cell must have a `backlink` field, which represents a distance from the "head" cell.
+///
+/// ## Example
+/// If we have a cell
+/// `Cell { ch: '\t', width: 4, backlink: 0 }`, then it should be followed by
+/// `Cell { ch: '#',  width: 0, backlink: 1 }`,
+/// `Cell { ch: '#',  width: 0, backlink: 2 }`, and
+/// `Cell { ch: '#',  width: 0, backlink: 3 }`.
+///
 #[derive(Clone)]
 pub struct Line(Vec<Cell>);
 
@@ -1149,8 +1167,8 @@ fn buffer_scroll_up_if_needed(buf: &mut Buffer, cursor: Cursor) {
     }
 }
 
-// Open PTY device and spawn a shell
-// Returns a pair (PTY master, PID of shell)
+/// Opens PTY device and spawn a shell
+/// `init_pty` returns a pair (PTY master, PID of shell)
 fn init_pty() -> Result<(OwnedFd, nix::unistd::Pid)> {
     use nix::unistd::ForkResult;
 
@@ -1173,7 +1191,7 @@ fn init_pty() -> Result<(OwnedFd, nix::unistd::Pid)> {
     }
 }
 
-// Execute the shell
+/// Setup process states and execute shell
 fn exec_shell() -> Result<()> {
     // Restore the default handler for SIGPIPE (terminate)
     use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
