@@ -40,7 +40,7 @@ pub struct Cell {
 
 impl Cell {
     const VOID: Self = Cell {
-        ch: ' ',
+        ch: '#',
         width: 0,
         backlink: u16::MAX,
         attr: GraphicAttribute::default(),
@@ -90,7 +90,7 @@ impl GraphicAttribute {
 
 use std::ops::RangeBounds;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Line(Vec<Cell>);
 
 impl Line {
@@ -126,18 +126,45 @@ impl Line {
     }
 
     fn copy_within<R: RangeBounds<usize> + Clone>(&mut self, src: R, dst: usize) {
-        let (start, end) = self.range(src.clone());
-        let count = end - start;
+        let (src_start, src_end) = self.range(src);
+        let count = min(src_end - src_start, self.0.len() - dst);
         if count == 0 {
             return;
         }
 
-        self.0.copy_within(src, dst);
+        self.0.copy_within(src_start..src_start + count, dst);
 
-        let head = self.get_head_pos(dst + count - 1);
-        if head + self.0[head].width as usize > dst + count {
-            let dst_end = dst + count;
-            self.0[head..dst_end].fill(Cell::SPACE);
+        let (dst_start, dst_end) = (dst, dst + count);
+
+        // Correct boundaries because the above `copy_within` may violates the invariant.
+        {
+            // correct ..dst_start)
+            if dst_start > 0 {
+                let head = self.get_head_pos(dst_start - 1);
+                if head + self.0[head].width as usize > dst_start {
+                    self.0[head..dst_start].fill(Cell::SPACE);
+                }
+            }
+
+            // correct [dst_start..
+            let mut i = dst_start;
+            while i < dst_end && self.0[i].width == 0 {
+                self.0[i] = Cell::SPACE;
+                i += 1;
+            }
+
+            // correct ..dst_end)
+            let head = self.get_head_pos(dst_end - 1);
+            if head + self.0[head].width as usize > dst_end {
+                self.0[head..dst_end].fill(Cell::SPACE);
+            }
+
+            // correct [dst_end..
+            let mut i = dst + count;
+            while i < self.0.len() && self.0[i].width == 0 {
+                self.0[i] = Cell::SPACE;
+                i += 1;
+            }
         }
     }
 
@@ -153,16 +180,17 @@ impl Line {
     }
 
     fn erase_at(&mut self, at: usize) {
-        let head = at - self.0[at].backlink as usize;
+        let head = self.get_head_pos(at);
         let width = self.0[head].width as usize;
+        let end = min(head + width, self.0.len());
 
         #[cfg(debug_assertions)]
-        for d in 1..width {
-            debug_assert_eq!(self.0[head + d].width, 0);
-            debug_assert_eq!(self.0[head + d].backlink as usize, d);
+        for i in head + 1..end {
+            debug_assert_eq!(self.0[i].width, 0);
+            debug_assert_eq!(self.0[i].backlink as usize, i - head);
         }
 
-        self.0[head..head + width].fill(Cell::SPACE);
+        self.0[head..end].fill(Cell::SPACE);
     }
 
     fn get_head_pos(&self, at: usize) -> usize {
@@ -174,7 +202,7 @@ impl Line {
 
         let head = self.get_head_pos(new_len - 1);
         let width = self.0[head].width as usize;
-        if head + width >= self.0.len() {
+        if head + width > self.0.len() {
             self.erase_at(head);
         }
     }
@@ -199,6 +227,21 @@ impl Line {
             slice: self.0.as_slice(),
             next: 0,
         }
+    }
+}
+
+impl std::fmt::Debug for Line {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "[\n")?;
+        for c in self.0.iter() {
+            write!(
+                f,
+                "\tch: {}, width: {}, backlink: {}\n",
+                c.ch, c.width, c.backlink
+            )?;
+        }
+        write!(f, "]\n")?;
+        Ok(())
     }
 }
 
@@ -939,6 +982,9 @@ impl Engine {
                     if let Some(width @ 1..) = ch.width() {
                         // If there is no space for new character, move cursor to the next line.
                         if self.cursor.right_space() < width {
+                            let (row, col) = self.cursor.pos();
+                            buf.lines[row].erase(col..);
+
                             buffer_scroll_up_if_needed(&mut buf, self.cursor);
                             self.cursor = self.cursor.next_row().first_col();
                         }
