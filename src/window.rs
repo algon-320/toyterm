@@ -133,7 +133,14 @@ impl TerminalWindow {
         use glium::Surface as _;
         let mut surface = self.display.draw();
 
-        surface.clear_color_srgb(0.0, 0.0, 0.0, 1.0); // black
+        // TODO: config
+        {
+            // Base16 Gruvbox dark hard
+            let r = 29.0 / 255.0;
+            let g = 32.0 / 255.0;
+            let b = 33.0 / 255.0;
+            surface.clear_color_srgb(r, g, b, 1.0);
+        }
 
         let lines: Vec<Line>;
         let cursor: (usize, usize);
@@ -558,6 +565,7 @@ fn h_to_gl(h: u32, window_height: u32) -> f32 {
 }
 
 fn color_to_rgba(color: Color) -> u32 {
+    // TODO: config
     match color {
         // Base16 Gruvbox dark hard
         // Dawid Kurek (dawikur@gmail.com), morhetz (https://github.com/morhetz/gruvbox)
