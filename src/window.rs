@@ -84,6 +84,12 @@ impl TerminalWindow {
         let ctx_builder = ContextBuilder::new().with_vsync(true).with_srgb(true);
         let display = Display::new(win_builder, ctx_builder, event_loop).expect("display new");
 
+        // Use I-beam mouse cursor
+        display
+            .gl_window()
+            .window()
+            .set_cursor_icon(glutin::window::CursorIcon::Text);
+
         // Initialize shaders
         let program = {
             use glium::program::{Program, ProgramCreationInput};
