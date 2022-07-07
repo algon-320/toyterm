@@ -2,6 +2,7 @@ mod cache;
 mod control_function;
 mod font;
 mod pipe_channel;
+mod sixel;
 mod terminal;
 mod utils;
 mod window;

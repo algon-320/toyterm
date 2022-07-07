@@ -1022,6 +1022,11 @@ impl Engine {
                     }
                 }
 
+                SixelImage(image) => {
+                    log::debug!("image: {}x{}", image.width, image.height);
+                    // TODO
+                }
+
                 ESC => {
                     unreachable!();
                 }
