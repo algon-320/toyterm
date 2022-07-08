@@ -9,7 +9,7 @@ use glutin::{
 
 use crate::cache::GlyphCache;
 use crate::font::Font;
-use crate::terminal::{Color, Line, Terminal, TerminalSize};
+use crate::terminal::{Color, Line, PositionedImage, Terminal, TerminalSize};
 
 #[derive(Debug, Clone, Copy)]
 struct CellSize {
@@ -54,6 +54,7 @@ fn calculate_cell_size(font: &Font) -> CellSize {
 pub struct TerminalWindow {
     display: Display,
     program: glium::Program,
+    image_program: glium::Program,
     vertices: Vec<Vertex>,
     modifiers: ModifiersState,
 
@@ -68,7 +69,7 @@ pub struct TerminalWindow {
 }
 
 impl TerminalWindow {
-    pub fn new(event_loop: &EventLoop<()>, size: TerminalSize) -> Self {
+    pub fn new(event_loop: &EventLoop<()>, mut size: TerminalSize) -> Self {
         let terminal = Terminal::new(size);
 
         let font = Font::new();
@@ -76,6 +77,9 @@ impl TerminalWindow {
 
         let width = size.cols as u32 * cell_size.w;
         let height = size.rows as u32 * cell_size.h;
+
+        size.cell_wpx = cell_size.w;
+        size.cell_hpx = cell_size.h;
 
         let win_builder = WindowBuilder::new()
             .with_title("toyterm")
@@ -106,6 +110,21 @@ impl TerminalWindow {
             Program::new(&display, input).unwrap()
         };
 
+        let image_program = {
+            use glium::program::{Program, ProgramCreationInput};
+            let input = ProgramCreationInput::SourceCode {
+                vertex_shader: include_str!("image.vert"),
+                fragment_shader: include_str!("image.frag"),
+                geometry_shader: None,
+                tessellation_control_shader: None,
+                tessellation_evaluation_shader: None,
+                transform_feedback_varyings: None,
+                outputs_srgb: true,
+                uses_point_size: false,
+            };
+            Program::new(&display, input).unwrap()
+        };
+
         // Rasterize ASCII characters and cache them as a texture
         let cache = GlyphCache::build_ascii_visible(&display, &font, cell_size.w, cell_size.h);
 
@@ -114,6 +133,7 @@ impl TerminalWindow {
         TerminalWindow {
             display,
             program,
+            image_program,
             vertices: Vec::new(),
             modifiers: ModifiersState::empty(),
 
@@ -150,13 +170,15 @@ impl TerminalWindow {
 
         let lines: Vec<Line>;
         let cursor: (usize, usize);
+        let images: Vec<PositionedImage>;
         {
             // hold the lock during copying states
             let buf = self.terminal.buffer.lock().unwrap();
 
             lines = buf.lines.iter().cloned().collect();
             cursor = buf.cursor;
-        };
+            images = buf.images.clone();
+        }
 
         let mut baseline: u32 = cell_size.max_over as u32;
         let mut i: u32 = 0;
@@ -409,6 +431,46 @@ impl TerminalWindow {
             )
             .expect("draw");
 
+        // Draw Sixel graphics
+        for img in images {
+            let gl_x = x_to_gl(img.col as i32 * cell_size.w as i32, window_width);
+            let gl_y = y_to_gl(img.row as i32 * cell_size.h as i32, window_height);
+            let gl_w = w_to_gl(img.width as u32, window_width);
+            let gl_h = h_to_gl(img.height as u32, window_height);
+            let vs = image_vertices(gl_x, gl_y, gl_w, gl_h);
+
+            let vertex_buffer = glium::VertexBuffer::new(&self.display, &vs).unwrap();
+            let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
+
+            let single_glyph_texture = texture::Texture2d::with_mipmaps(
+                &self.display,
+                glium::texture::RawImage2d {
+                    data: img.data.into(),
+                    width: img.width as u32,
+                    height: img.height as u32,
+                    format: glium::texture::ClientFormat::U8U8U8,
+                },
+                texture::MipmapsOption::NoMipmap,
+            )
+            .expect("Failed to create texture");
+
+            let sampler = single_glyph_texture
+                .sampled()
+                .magnify_filter(uniforms::MagnifySamplerFilter::Linear)
+                .minify_filter(uniforms::MinifySamplerFilter::Linear);
+            let uniforms = uniform! { tex: sampler };
+
+            surface
+                .draw(
+                    &vertex_buffer,
+                    indices,
+                    &self.image_program,
+                    &uniforms,
+                    &glium::DrawParameters::default(),
+                )
+                .expect("draw");
+        }
+
         surface.finish().expect("finish");
     }
 
@@ -419,7 +481,12 @@ impl TerminalWindow {
 
         let rows = (self.window_height / self.cell_size.h) as usize;
         let cols = (self.window_width / self.cell_size.w) as usize;
-        self.terminal.request_resize(TerminalSize { rows, cols });
+        self.terminal.request_resize(TerminalSize {
+            rows,
+            cols,
+            cell_hpx: self.cell_size.h,
+            cell_wpx: self.cell_size.w,
+        });
     }
 
     pub fn on_event(&mut self, event: Event<()>, control_flow: &mut ControlFlow) {
@@ -491,7 +558,12 @@ impl TerminalWindow {
 
                             let rows = (self.window_height / self.cell_size.h) as usize;
                             let cols = (self.window_width / self.cell_size.w) as usize;
-                            self.terminal.request_resize(TerminalSize { rows, cols });
+                            self.terminal.request_resize(TerminalSize {
+                                rows,
+                                cols,
+                                cell_hpx: self.cell_size.h,
+                                cell_wpx: self.cell_size.w,
+                            });
                         }
                         Some(VirtualKeyCode::Equals) if self.modifiers.ctrl() => {
                             // font size +
@@ -507,7 +579,12 @@ impl TerminalWindow {
 
                             let rows = (self.window_height / self.cell_size.h) as usize;
                             let cols = (self.window_width / self.cell_size.w) as usize;
-                            self.terminal.request_resize(TerminalSize { rows, cols });
+                            self.terminal.request_resize(TerminalSize {
+                                rows,
+                                cols,
+                                cell_hpx: self.cell_size.h,
+                                cell_wpx: self.cell_size.w,
+                            });
                         }
 
                         Some(VirtualKeyCode::Up) => {
@@ -698,4 +775,29 @@ fn cell_vertices(
         v(3),
         v(0),
     ]
+}
+
+#[derive(Clone, Copy)]
+struct SimpleVertex {
+    position: [f32; 2],
+    tex_coords: [f32; 2],
+}
+glium::implement_vertex!(SimpleVertex, position, tex_coords);
+
+/// Generate vertices for a single sixel image
+fn image_vertices(gl_x: f32, gl_y: f32, gl_w: f32, gl_h: f32) -> [SimpleVertex; 6] {
+    let gl_ps = [
+        [gl_x, gl_y],
+        [gl_x, gl_y - gl_h],
+        [gl_x + gl_w, gl_y - gl_h],
+        [gl_x + gl_w, gl_y],
+    ];
+    let tex_ps = [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]];
+
+    let v = |idx| SimpleVertex {
+        position: gl_ps[idx],
+        tex_coords: tex_ps[idx],
+    };
+
+    [v(0), v(1), v(2), v(2), v(3), v(0)]
 }

@@ -4,7 +4,7 @@ use std::iter::Peekable;
 
 const PIXEL_SIZE: usize = 3; // RGB
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Image {
     pub width: u64,
     pub height: u64,

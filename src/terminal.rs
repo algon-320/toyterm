@@ -9,10 +9,30 @@ use crate::pipe_channel;
 use crate::utils::fd::OwnedFd;
 use crate::utils::utf8;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
+pub struct PositionedImage {
+    pub row: isize,
+    pub col: isize,
+    pub height: u64,
+    pub width: u64,
+    pub data: Vec<u8>,
+}
+
+fn overwrap(outer: &PositionedImage, inner: &PositionedImage) -> bool {
+    let a = outer;
+    let b = inner;
+    a.row <= b.row
+        && a.col <= b.col
+        && b.row + b.height as isize <= a.row + a.height as isize
+        && b.col + b.width as isize <= a.col + a.width as isize
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalSize {
     pub rows: usize,
     pub cols: usize,
+    pub cell_hpx: u32,
+    pub cell_wpx: u32,
 }
 
 fn set_term_window_size(pty_master: &OwnedFd, size: TerminalSize) -> Result<()> {
@@ -295,6 +315,7 @@ impl<'b> Iterator for CellIter<'b> {
 #[derive(Debug, Clone)]
 pub struct Buffer {
     pub lines: VecDeque<Line>,
+    pub images: Vec<PositionedImage>,
     pub cursor: (usize, usize),
     sz: TerminalSize,
 }
@@ -309,6 +330,7 @@ impl Buffer {
 
         Self {
             lines,
+            images: Vec::new(),
             cursor: (0, 0),
             sz,
         }
@@ -555,6 +577,9 @@ impl Engine {
         let mut buf = self.buffer.lock().unwrap();
         buf.resize(sz);
         buf.cursor = self.cursor.pos();
+
+        debug_assert_eq!(self.sz, buf.sz);
+        debug_assert_eq!(self.sz, self.cursor.sz);
     }
 
     fn start(mut self) {
@@ -1024,7 +1049,43 @@ impl Engine {
 
                 SixelImage(image) => {
                     log::debug!("image: {}x{}", image.width, image.height);
-                    // TODO
+                    let (cursor_row, cursor_col) = self.cursor.pos();
+
+                    let cell_wpx = self.sz.cell_wpx as u64;
+                    let cell_hpx = self.sz.cell_hpx as u64;
+
+                    // FIXME: check Sixel Scrolling Mode
+                    let (row, col) = if true {
+                        (cursor_row as isize, cursor_col as isize)
+                    } else {
+                        (0, 0)
+                    };
+
+                    let new_image = PositionedImage {
+                        row,
+                        col,
+                        width: image.width,
+                        height: image.height,
+                        data: image.data,
+                    };
+
+                    buf.images.retain(|img| !overwrap(&new_image, &img));
+                    buf.images.push(new_image);
+
+                    log::debug!("total {} images", buf.images.len());
+
+                    if true {
+                        let advance_h = (image.width + cell_wpx - 1) / cell_wpx;
+                        let advance_v = (image.height + cell_hpx - 1) / cell_hpx - 1;
+
+                        for _ in 0..advance_h {
+                            self.cursor = self.cursor.next_col();
+                        }
+                        for _ in 0..advance_v {
+                            buffer_scroll_up_if_needed(&mut buf, self.cursor);
+                            self.cursor = self.cursor.next_row();
+                        }
+                    }
                 }
 
                 ESC => {
@@ -1169,6 +1230,18 @@ impl Engine {
 fn buffer_scroll_up_if_needed(buf: &mut Buffer, cursor: Cursor) {
     if cursor.row + 1 == cursor.sz.rows {
         buf.rotate_line();
+
+        if !buf.images.is_empty() {
+            let sz = buf.sz;
+            for img in buf.images.iter_mut() {
+                img.row -= 1;
+            }
+            buf.images.retain(|img| {
+                let v_cells = ((img.height as u32 + sz.cell_hpx - 1) / sz.cell_hpx) as isize;
+                (-v_cells) < img.row
+            });
+            println!("{} images retained", buf.images.len());
+        }
     }
 }
 
