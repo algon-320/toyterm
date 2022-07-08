@@ -111,11 +111,11 @@ pub enum Function<'p> {
     VPR,
     HVP,
     TBC,
-    SM,
+    SM(u8, u16),
     MC,
     HPB,
     VPB,
-    RM,
+    RM(u8, u16),
     SGR(&'p [u16]),
     DSR(u16),
     DAQ,
@@ -178,6 +178,7 @@ struct Buffer {
     // for control seqence
     params: Vec<u16>,
     intermediate: u8,
+    private: Option<u8>,
 
     // for control string
     string: Vec<char>,
@@ -188,6 +189,7 @@ impl Default for Buffer {
         let mut buf = Self {
             params: Vec::with_capacity(16),
             intermediate: 0,
+            private: None,
             string: Vec::with_capacity(0x1000),
         };
         buf.clear();
@@ -200,6 +202,7 @@ impl Buffer {
         self.params.clear();
         self.params.push(0); // default value
         self.intermediate = 0;
+        self.private = None;
         self.string.clear();
     }
 }
@@ -297,7 +300,10 @@ fn parse_control_sequence<'b>(
         }
 
         // private
-        '<' | '=' | '>' | '?' => None,
+        '<' | '=' | '>' | '?' => {
+            buf.private = Some(ch as u8);
+            None
+        }
 
         // intermediate bytes
         '\x20'..='\x2F' => {
@@ -349,11 +355,17 @@ fn parse_control_sequence<'b>(
                 (0, '\x65', _) => Some(VPR),
                 (0, '\x66', _) => Some(HVP),
                 (0, '\x67', _) => Some(TBC),
-                (0, '\x68', _) => Some(SM),
+                (0, '\x68', &[ps]) => {
+                    let private = buf.private.unwrap_or(0);
+                    Some(SM(private, ps))
+                }
                 (0, '\x69', _) => Some(MC),
                 (0, '\x6A', _) => Some(HPB),
                 (0, '\x6B', _) => Some(VPB),
-                (0, '\x6C', _) => Some(RM),
+                (0, '\x6C', &[ps]) => {
+                    let private = buf.private.unwrap_or(0);
+                    Some(RM(private, ps))
+                }
                 (0, '\x6D', ps) => Some(SGR(ps)),
                 (0, '\x6E', &[ps @ (5 | 6)]) => Some(DSR(ps)),
                 (0, '\x6F', _) => Some(DAQ),

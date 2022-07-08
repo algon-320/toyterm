@@ -510,6 +510,8 @@ struct Engine {
     parser: control_function::Parser,
     tabstops: Vec<usize>,
     attr: GraphicAttribute,
+
+    sixel_scrolling_mode: bool,
 }
 
 impl Engine {
@@ -548,6 +550,8 @@ impl Engine {
             parser: control_function::Parser::default(),
             tabstops,
             attr: GraphicAttribute::default(),
+
+            sixel_scrolling_mode: true,
         }
     }
 
@@ -1054,8 +1058,7 @@ impl Engine {
                     let cell_wpx = self.sz.cell_wpx as u64;
                     let cell_hpx = self.sz.cell_hpx as u64;
 
-                    // FIXME: check Sixel Scrolling Mode
-                    let (row, col) = if true {
+                    let (row, col) = if self.sixel_scrolling_mode {
                         (cursor_row as isize, cursor_col as isize)
                     } else {
                         (0, 0)
@@ -1074,7 +1077,7 @@ impl Engine {
 
                     log::debug!("total {} images", buf.images.len());
 
-                    if true {
+                    if self.sixel_scrolling_mode {
                         let advance_h = (image.width + cell_wpx - 1) / cell_wpx;
                         let advance_v = (image.height + cell_hpx - 1) / cell_hpx - 1;
 
@@ -1087,6 +1090,28 @@ impl Engine {
                         }
                     }
                 }
+
+                SM(b'?', ps) => match ps {
+                    80 => {
+                        self.sixel_scrolling_mode = true;
+                        log::debug!("Sixel Scrolling Mode Enabled");
+                    }
+                    _ => {
+                        log::debug!("Set ? mode: {}", ps);
+                    }
+                },
+                SM(..) => ignore!(),
+
+                RM(b'?', ps) => match ps {
+                    80 => {
+                        self.sixel_scrolling_mode = false;
+                        log::debug!("Sixel Scrolling Mode Disabled");
+                    }
+                    _ => {
+                        log::debug!("Reset ? mode: {}", ps);
+                    }
+                },
+                RM(..) => ignore!(),
 
                 ESC => {
                     unreachable!();
@@ -1170,11 +1195,9 @@ impl Engine {
                 VPR => ignore!(),
                 HVP => ignore!(),
                 TBC => ignore!(),
-                SM => ignore!(),
                 MC => ignore!(),
                 HPB => ignore!(),
                 VPB => ignore!(),
-                RM => ignore!(),
                 DAQ => ignore!(),
 
                 SL => ignore!(),
