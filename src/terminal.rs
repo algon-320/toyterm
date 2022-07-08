@@ -836,6 +836,14 @@ impl Engine {
                         for line in buf.lines.range_mut(row + 1..) {
                             line.erase_all();
                         }
+
+                        // Remove sixel graphics
+                        let cell_hpx = self.sz.cell_hpx;
+                        buf.images.retain(|img| {
+                            let v_cells = ((img.height as u32 + cell_hpx - 1) / cell_hpx) as isize;
+                            let bottom_row = img.row + v_cells;
+                            bottom_row <= row as isize
+                        });
                     }
                     1 => {
                         // clear from the beginning to the cursor position (inclusive)
@@ -844,12 +852,18 @@ impl Engine {
                             line.erase_all();
                         }
                         buf.lines[row].erase(0..=col);
+
+                        // Remove sixel graphics
+                        buf.images.retain(|img| img.row >= row as isize);
                     }
                     2 => {
                         // clear all positions
                         for line in buf.lines.iter_mut() {
                             line.erase_all();
                         }
+
+                        // Remove sixel graphics
+                        buf.images.clear();
                     }
                     _ => unreachable!(),
                 },
