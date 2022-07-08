@@ -5,6 +5,7 @@ toyterm is a toy terminal emulator.
 ## Features/Limitations
 
 - hardware accelerated graphics
+- support for SIXEL graphics
 - toyterm assumes UTF-8 encoding
 - following basic functions are TODO
     - text selection with mouse
@@ -63,6 +64,10 @@ Currently toyterm supports the following functions.
 - SGR
 - VPA
 
+## Device Control Function
+
+- DCS `q` (sixel string...) ST
+    - see <https://www.vt100.net/docs/vt3xx-gp/chapter14.html> for the representation
 
 ## License
 
