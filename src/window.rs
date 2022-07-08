@@ -57,6 +57,8 @@ pub struct TerminalWindow {
     image_program: glium::Program,
     vertices: Vec<Vertex>,
     modifiers: ModifiersState,
+    mouse_wheel_delta_x: f32,
+    mouse_wheel_delta_y: f32,
 
     terminal: Terminal,
     font: Font,
@@ -136,6 +138,8 @@ impl TerminalWindow {
             image_program,
             vertices: Vec::new(),
             modifiers: ModifiersState::empty(),
+            mouse_wheel_delta_x: 0.0,
+            mouse_wheel_delta_y: 0.0,
 
             terminal,
             font,
@@ -519,26 +523,39 @@ impl TerminalWindow {
                     self.terminal.pty_write(utf8);
                 }
 
-                WindowEvent::MouseWheel { delta, .. } => {
-                    match delta {
-                        glutin::event::MouseScrollDelta::LineDelta(dx, dy) => {
-                            // Vertical
-                            if dy >= 0.20 {
+                WindowEvent::MouseWheel { delta, .. } => match delta {
+                    glutin::event::MouseScrollDelta::LineDelta(dx, dy) => {
+                        self.mouse_wheel_delta_x += dx;
+                        self.mouse_wheel_delta_y += dy;
+
+                        let horizontal = self.mouse_wheel_delta_x.trunc() as isize;
+                        self.mouse_wheel_delta_x = self.mouse_wheel_delta_x % 1.0;
+
+                        let vertical = self.mouse_wheel_delta_y.trunc() as isize;
+                        self.mouse_wheel_delta_y = self.mouse_wheel_delta_y % 1.0;
+
+                        if vertical > 0 {
+                            for _ in 0..vertical.abs() {
                                 self.terminal.pty_write(b"\x1b[\x41"); // Up
-                            } else if dy <= -0.20 {
+                            }
+                        } else {
+                            for _ in 0..vertical.abs() {
                                 self.terminal.pty_write(b"\x1b[\x42"); // Down
                             }
+                        }
 
-                            // Horizontal
-                            if dx >= 0.20 {
+                        if horizontal > 0 {
+                            for _ in 0..horizontal.abs() {
                                 self.terminal.pty_write(b"\x1b[\x43"); // Right
-                            } else if dx <= -0.20 {
+                            }
+                        } else {
+                            for _ in 0..horizontal.abs() {
                                 self.terminal.pty_write(b"\x1b[\x44"); // Left
                             }
                         }
-                        _ => {}
                     }
-                }
+                    _ => {}
+                },
 
                 WindowEvent::KeyboardInput { input, .. }
                     if input.state == ElementState::Pressed =>
