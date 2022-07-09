@@ -844,6 +844,7 @@ impl Engine {
                             let bottom_row = img.row + v_cells;
                             bottom_row <= row as isize
                         });
+                        log::debug!("{} images retained", buf.images.len());
                     }
                     1 => {
                         // clear from the beginning to the cursor position (inclusive)
@@ -855,6 +856,7 @@ impl Engine {
 
                         // Remove sixel graphics
                         buf.images.retain(|img| img.row >= row as isize);
+                        log::debug!("{} images retained", buf.images.len());
                     }
                     2 => {
                         // clear all positions
@@ -1277,7 +1279,7 @@ fn buffer_scroll_up_if_needed(buf: &mut Buffer, cursor: Cursor) {
                 let v_cells = ((img.height as u32 + sz.cell_hpx - 1) / sz.cell_hpx) as isize;
                 (-v_cells) < img.row
             });
-            println!("{} images retained", buf.images.len());
+            log::debug!("{} images retained", buf.images.len());
         }
     }
 }
