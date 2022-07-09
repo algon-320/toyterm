@@ -23,6 +23,8 @@ toyterm is a toy terminal emulator.
 |Down key|Send `\x1b[[B`|
 |Right key|Send `\x1b[[C`|
 |Left key|Send `\x1b[[D`|
+|Delete key|Send `\x1b[3~`|
+|Backspace key|Send `\x7f`|
 |Mouse Wheel|Same effect as arrow keys (Up/Down/Right/Left)|
 
 ## Control Functions

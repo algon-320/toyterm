@@ -510,7 +510,7 @@ impl TerminalWindow {
 
                 WindowEvent::ReceivedCharacter(ch) => {
                     // Handle these characters on WindowEvent::KeyboardInput event
-                    if ch == '-' || ch == '=' {
+                    if ch == '-' || ch == '=' || ch == '\x7F' || ch == '\x08' {
                         return;
                     }
 
@@ -602,6 +602,16 @@ impl TerminalWindow {
                                 cell_hpx: self.cell_size.h,
                                 cell_wpx: self.cell_size.w,
                             });
+                        }
+
+                        // Backspace
+                        Some(VirtualKeyCode::Back) => {
+                            // Note: send DEL instead of BS
+                            self.terminal.pty_write(b"\x7f");
+                        }
+
+                        Some(VirtualKeyCode::Delete) => {
+                            self.terminal.pty_write(b"\x1b[3~");
                         }
 
                         Some(VirtualKeyCode::Up) => {
