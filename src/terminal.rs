@@ -317,6 +317,7 @@ pub struct Buffer {
     pub lines: VecDeque<Line>,
     pub images: Vec<PositionedImage>,
     pub cursor: (usize, usize),
+    pub bracketed_paste_mode: bool,
     sz: TerminalSize,
 }
 
@@ -332,6 +333,7 @@ impl Buffer {
             lines,
             images: Vec::new(),
             cursor: (0, 0),
+            bracketed_paste_mode: false,
             sz,
         }
     }
@@ -1112,6 +1114,12 @@ impl Engine {
                         self.sixel_scrolling_mode = true;
                         log::debug!("Sixel Scrolling Mode Enabled");
                     }
+
+                    2004 => {
+                        buf.bracketed_paste_mode = true;
+                        log::debug!("Bracketed Paste Mode Enabled");
+                    }
+
                     _ => {
                         log::debug!("Set ? mode: {}", ps);
                     }
@@ -1123,6 +1131,12 @@ impl Engine {
                         self.sixel_scrolling_mode = false;
                         log::debug!("Sixel Scrolling Mode Disabled");
                     }
+
+                    2004 => {
+                        buf.bracketed_paste_mode = false;
+                        log::debug!("Bracketed Paste Mode Disabled");
+                    }
+
                     _ => {
                         log::debug!("Reset ? mode: {}", ps);
                     }

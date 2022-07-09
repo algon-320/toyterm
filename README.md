@@ -19,6 +19,7 @@ toyterm is a toy terminal emulator.
 |:----------|:-------|
 |Ctrl + `-` |Decrease font size|
 |Ctrl + `=` |Increase font size|
+|Ctrl + Shift + `v` |Paste clipboard text|
 |Up key|Send `\x1b[[A`|
 |Down key|Send `\x1b[[B`|
 |Right key|Send `\x1b[[C`|

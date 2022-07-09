@@ -4,6 +4,7 @@ mod font;
 mod pipe_channel;
 mod sixel;
 mod terminal;
+mod clipboard;
 mod utils;
 mod window;
 

@@ -818,6 +818,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick-xml"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8533f14c8382aaad0d592c812ac3b826162128b65662331e1127b45c3d18536b"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -991,6 +1000,7 @@ dependencies = [
  "log",
  "nix 0.24.1",
  "unicode-width",
+ "x11-clipboard",
 ]
 
 [[package]]
@@ -1266,6 +1276,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "x11-clipboard"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a7468a5768fea473e6c8c0d4b60d6d7001a64acceaac267207ca0281e1337e8"
+dependencies = [
+ "xcb",
+]
+
+[[package]]
 name = "x11-dl"
 version = "2.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1274,6 +1293,17 @@ dependencies = [
  "lazy_static",
  "libc",
  "pkg-config",
+]
+
+[[package]]
+name = "xcb"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b127bf5bfe9dbb39118d6567e3773d4bbc795411a8e1ef7b7e056bccac0011a9"
+dependencies = [
+ "bitflags",
+ "libc",
+ "quick-xml",
 ]
 
 [[package]]

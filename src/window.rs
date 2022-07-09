@@ -8,6 +8,7 @@ use glutin::{
 };
 
 use crate::cache::GlyphCache;
+use crate::clipboard::X11Clipboard;
 use crate::font::Font;
 use crate::terminal::{Color, Line, PositionedImage, Terminal, TerminalSize};
 
@@ -68,6 +69,9 @@ pub struct TerminalWindow {
     window_height: u32,
     cell_size: CellSize,
     started_time: std::time::Instant,
+
+    clipboard: X11Clipboard,
+    bracketed_paste_mode: bool,
 }
 
 impl TerminalWindow {
@@ -132,6 +136,8 @@ impl TerminalWindow {
 
         let initial_size = display.gl_window().window().inner_size();
 
+        let clipboard = X11Clipboard::new();
+
         TerminalWindow {
             display,
             program,
@@ -149,6 +155,9 @@ impl TerminalWindow {
             window_height: initial_size.height,
             cell_size,
             started_time: std::time::Instant::now(),
+
+            clipboard,
+            bracketed_paste_mode: false,
         }
     }
 
@@ -182,6 +191,8 @@ impl TerminalWindow {
             lines = buf.lines.iter().cloned().collect();
             cursor = buf.cursor;
             images = buf.images.clone();
+
+            self.bracketed_paste_mode = buf.bracketed_paste_mode;
         }
 
         let mut baseline: u32 = cell_size.max_over as u32;
@@ -493,6 +504,30 @@ impl TerminalWindow {
         });
     }
 
+    fn copy_clipboard(&mut self) {
+        let text = "HELLO FROM TOYTERM"; // FIXME
+        log::debug!("copy: {:?}", text);
+        let _ = self.clipboard.store(text);
+    }
+
+    fn paste_clipboard(&mut self) {
+        match self.clipboard.load() {
+            Ok(text) => {
+                log::debug!("paste: {:?}", text);
+                if self.bracketed_paste_mode {
+                    self.terminal.pty_write(b"\x1b[200~");
+                    self.terminal.pty_write(text.as_bytes());
+                    self.terminal.pty_write(b"\x1b[201~");
+                } else {
+                    self.terminal.pty_write(text.as_bytes());
+                }
+            }
+            Err(_) => {
+                log::error!("Failed to paste something from clipboard");
+            }
+        }
+    }
+
     pub fn on_event(&mut self, event: Event<()>, control_flow: &mut ControlFlow) {
         match event {
             Event::WindowEvent { event, .. } => match event {
@@ -510,7 +545,13 @@ impl TerminalWindow {
 
                 WindowEvent::ReceivedCharacter(ch) => {
                     // Handle these characters on WindowEvent::KeyboardInput event
-                    if ch == '-' || ch == '=' || ch == '\x7F' || ch == '\x08' {
+                    if ch == '-'
+                        || ch == '='
+                        || ch == '\x7F'
+                        || ch == '\x03'
+                        || ch == '\x08'
+                        || ch == '\x16'
+                    {
                         return;
                     }
 
@@ -598,6 +639,26 @@ impl TerminalWindow {
                         }
                         Some(VirtualKeyCode::Equals) => {
                             self.terminal.pty_write(b"=");
+                        }
+
+                        Some(VirtualKeyCode::V) if self.modifiers.ctrl() => {
+                            if self.modifiers.shift() {
+                                // Ctrl + Shift + V
+                                self.paste_clipboard();
+                            } else {
+                                // Ctrl + V
+                                self.terminal.pty_write(b"\x16");
+                            }
+                        }
+
+                        Some(VirtualKeyCode::C) if self.modifiers.ctrl() => {
+                            if self.modifiers.shift() {
+                                // Ctrl + Shift + C
+                                self.copy_clipboard();
+                            } else {
+                                // Ctrl + C
+                                self.terminal.pty_write(b"\x03");
+                            }
                         }
 
                         _ => {}
