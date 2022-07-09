@@ -1,7 +1,7 @@
 use glium::{glutin, index, texture, uniform, uniforms, Display};
 use glutin::{
     dpi::PhysicalSize,
-    event::{ElementState, Event, ModifiersState, VirtualKeyCode, WindowEvent},
+    event::{ElementState, Event, ModifiersState, MouseButton, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
     ContextBuilder,
@@ -11,6 +11,26 @@ use crate::cache::GlyphCache;
 use crate::clipboard::X11Clipboard;
 use crate::font::Font;
 use crate::terminal::{Color, Line, PositionedImage, Terminal, TerminalSize};
+
+fn sort_points(a: (f64, f64), b: (f64, f64), cell_sz: CellSize) -> ((f64, f64), (f64, f64)) {
+    let (ax, ay) = a;
+    let (bx, by) = b;
+
+    let a_row = ay.round() as u32 / cell_sz.h;
+    let b_row = by.round() as u32 / cell_sz.h;
+
+    if a_row < b_row {
+        (a, b)
+    } else if a_row > b_row {
+        (b, a)
+    } else {
+        if ax < bx {
+            (a, b)
+        } else {
+            (b, a)
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 struct CellSize {
@@ -60,6 +80,9 @@ pub struct TerminalWindow {
     modifiers: ModifiersState,
     mouse_wheel_delta_x: f32,
     mouse_wheel_delta_y: f32,
+    cursor_position: (f64, f64),
+    mouse_pressed_position: Option<(f64, f64)>,
+    mouse_released_position: Option<(f64, f64)>,
 
     terminal: Terminal,
     font: Font,
@@ -146,6 +169,9 @@ impl TerminalWindow {
             modifiers: ModifiersState::empty(),
             mouse_wheel_delta_x: 0.0,
             mouse_wheel_delta_y: 0.0,
+            cursor_position: (0.0, 0.0),
+            mouse_pressed_position: None,
+            mouse_released_position: None,
 
             terminal,
             font,
@@ -195,18 +221,39 @@ impl TerminalWindow {
             self.bracketed_paste_mode = buf.bracketed_paste_mode;
         }
 
+        let selected_range = self.mouse_pressed_position.map(|start| {
+            let end = self.mouse_released_position.unwrap_or(self.cursor_position);
+            let ((sx, sy), (ex, ey)) = sort_points(start, end, cell_size);
+            let s_row = sy.round() as u32 / cell_size.h;
+            let e_row = ey.round() as u32 / cell_size.h;
+            let l = (s_row as f64) * (window_width as f64) + sx;
+            let r = (e_row as f64) * (window_width as f64) + ex;
+            (l, r)
+        });
+
         let mut baseline: u32 = cell_size.max_over as u32;
+        let mut selection_offset = 0.0;
         let mut i: u32 = 0;
         for row in lines.iter() {
             let mut leftline: u32 = 0;
             let mut j: u32 = 0;
+            let mut selection_x = 0.0;
             for cell in row.iter() {
+                let cell_width_px = cell_size.w * cell.width as u32;
+
+                let is_selected = if let Some((left, right)) = selected_range {
+                    let mid_point = selection_offset + selection_x + (cell_width_px as f64) / 2.0;
+                    left <= mid_point && mid_point <= right
+                } else {
+                    false
+                };
+
                 if let Some(region) = self.cache.get(cell.ch) {
                     // Background
                     {
                         let gl_x = x_to_gl((j * cell_size.w) as i32, window_width);
                         let gl_y = y_to_gl((i * cell_size.h) as i32, window_height);
-                        let gl_w = w_to_gl(cell_size.w * cell.width as u32, window_width);
+                        let gl_w = w_to_gl(cell_width_px, window_width);
                         let gl_h = h_to_gl(cell_size.h, window_height);
 
                         let mut fg = cell.attr.fg;
@@ -217,6 +264,10 @@ impl TerminalWindow {
                         }
 
                         if i == cursor.0 as u32 && j == cursor.1 as u32 {
+                            std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        if is_selected {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
@@ -251,6 +302,10 @@ impl TerminalWindow {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
+                        if is_selected {
+                            std::mem::swap(&mut fg, &mut bg);
+                        }
+
                         if cell.attr.concealed {
                             fg = bg;
                         }
@@ -278,7 +333,7 @@ impl TerminalWindow {
                     {
                         let gl_x = x_to_gl((j * cell_size.w) as i32, window_width);
                         let gl_y = y_to_gl((i * cell_size.h) as i32, window_height);
-                        let gl_w = w_to_gl(cell_size.w * cell.width as u32, window_width);
+                        let gl_w = w_to_gl(cell_width_px, window_width);
                         let gl_h = h_to_gl(cell_size.h, window_height);
 
                         let mut fg = cell.attr.fg;
@@ -289,6 +344,10 @@ impl TerminalWindow {
                         }
 
                         if i == cursor.0 as u32 && j == cursor.1 as u32 {
+                            std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        if is_selected {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
@@ -321,6 +380,10 @@ impl TerminalWindow {
                         }
 
                         if i == cursor.0 as u32 && j == cursor.1 as u32 {
+                            std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        if is_selected {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
@@ -379,7 +442,7 @@ impl TerminalWindow {
                     {
                         let gl_x = x_to_gl((j * cell_size.w) as i32, window_width);
                         let gl_y = y_to_gl((i * cell_size.h) as i32, window_height);
-                        let gl_w = w_to_gl(cell_size.w * cell.width as u32, window_width);
+                        let gl_w = w_to_gl(cell_width_px, window_width);
                         let gl_h = h_to_gl(cell_size.h, window_height);
 
                         let mut fg = cell.attr.fg;
@@ -390,6 +453,10 @@ impl TerminalWindow {
                         }
 
                         if i == cursor.0 as u32 && j == cursor.1 as u32 {
+                            std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        if is_selected {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
@@ -415,10 +482,12 @@ impl TerminalWindow {
                         .expect("draw");
                 }
 
-                leftline += cell_size.w * (cell.width as u32);
+                selection_x += cell_width_px as f64;
+                leftline += cell_width_px;
                 j += cell.width as u32;
             }
             baseline += cell_size.h;
+            selection_offset += window_width as f64;
             i += 1;
         }
 
@@ -505,9 +574,52 @@ impl TerminalWindow {
     }
 
     fn copy_clipboard(&mut self) {
-        let text = "HELLO FROM TOYTERM"; // FIXME
+        let mut text = String::new();
+
+        {
+            let window_width = self.window_width;
+            let cell_size = self.cell_size;
+
+            let lines: Vec<Line> = {
+                let buf = self.terminal.buffer.lock().unwrap();
+                buf.lines.iter().cloned().collect()
+            };
+
+            let selected_range = self.mouse_pressed_position.map(|start| {
+                let end = self.mouse_released_position.unwrap_or(self.cursor_position);
+                let ((sx, sy), (ex, ey)) = sort_points(start, end, cell_size);
+                let s_row = sy.round() as u32 / cell_size.h;
+                let e_row = ey.round() as u32 / cell_size.h;
+                let l = (s_row as f64) * (window_width as f64) + sx;
+                let r = (e_row as f64) * (window_width as f64) + ex;
+                (l, r)
+            });
+
+            let mut offset = 0.0;
+            for row in lines.iter() {
+                let mut x = 0.0;
+                for cell in row.iter() {
+                    let cell_width_px = (cell_size.w * cell.width as u32) as f64;
+
+                    let is_selected = if let Some((left, right)) = selected_range {
+                        let mid_point = offset + x + cell_width_px / 2.0;
+                        left <= mid_point && mid_point <= right
+                    } else {
+                        false
+                    };
+
+                    if is_selected {
+                        text.push(cell.ch);
+                    }
+
+                    x += cell_width_px;
+                }
+                offset += window_width as f64;
+            }
+        }
+
         log::debug!("copy: {:?}", text);
-        let _ = self.clipboard.store(text);
+        let _ = self.clipboard.store(&text);
     }
 
     fn paste_clipboard(&mut self) {
@@ -664,6 +776,24 @@ impl TerminalWindow {
                         _ => {}
                     }
                 }
+
+                WindowEvent::CursorMoved { position, .. } => {
+                    self.cursor_position = (position.x, position.y);
+                }
+
+                WindowEvent::MouseInput {
+                    state,
+                    button: MouseButton::Left,
+                    ..
+                } => match state {
+                    ElementState::Pressed => {
+                        self.mouse_pressed_position = Some(self.cursor_position);
+                        self.mouse_released_position = None;
+                    }
+                    ElementState::Released => {
+                        self.mouse_released_position = Some(self.cursor_position);
+                    }
+                },
 
                 WindowEvent::MouseWheel { delta, .. } => match delta {
                     glutin::event::MouseScrollDelta::LineDelta(dx, dy) => {

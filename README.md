@@ -6,10 +6,9 @@ toyterm is a toy terminal emulator.
 
 - hardware accelerated graphics
 - support for SIXEL graphics
+- support for X11 clipboard (copying & pasting)
 - toyterm assumes UTF-8 encoding
 - following basic functions are TODO
-    - text selection with mouse
-    - clipboard support
     - font selection & fallback
     - configuration (shell, color scheme, keybindings, etc.)
 
@@ -19,6 +18,7 @@ toyterm is a toy terminal emulator.
 |:----------|:-------|
 |Ctrl + `-` |Decrease font size|
 |Ctrl + `=` |Increase font size|
+|Ctrl + Shift + `c` |Copy selected text|
 |Ctrl + Shift + `v` |Paste clipboard text|
 |Up key|Send `\x1b[[A`|
 |Down key|Send `\x1b[[B`|
