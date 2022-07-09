@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 echo -en '\e[30mk\e[m '
 echo -en '\e[31mr\e[m '
