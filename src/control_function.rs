@@ -171,7 +171,12 @@ enum State {
     Normal,
     EscapeSeq,
     ControlSeq,
+
+    ApplicationProgramCommand,
     DeviceControlString,
+    OperatingSystemCommand,
+    PrivacyMessage,
+    StartOfString,
 }
 
 struct Buffer {
@@ -251,11 +256,22 @@ fn parse_escape_sequence<'b>(state: &mut State, ch: char) -> Option<Function<'b>
         // Restart
         '\x1B' => None,
 
-        // CSI
-        '[' => {
-            *state = State::ControlSeq;
-            None
-        }
+        '\x40' => Some(Function::Unsupported),
+        '\x41' => Some(Function::Unsupported),
+        '\x42' => Some(Function::BPH),
+        '\x43' => Some(Function::NBH),
+        '\x44' => Some(Function::Unsupported),
+        '\x45' => Some(Function::NEL),
+        '\x46' => Some(Function::SSA),
+        '\x47' => Some(Function::ESA),
+        '\x48' => Some(Function::HTS),
+        '\x49' => Some(Function::HTJ),
+        '\x4A' => Some(Function::VTS),
+        '\x4B' => Some(Function::PLD),
+        '\x4C' => Some(Function::PLU),
+        '\x4D' => Some(Function::RI),
+        '\x4E' => Some(Function::SS2),
+        '\x4F' => Some(Function::SS3),
 
         // DCS
         '\x50' => {
@@ -263,7 +279,53 @@ fn parse_escape_sequence<'b>(state: &mut State, ch: char) -> Option<Function<'b>
             None
         }
 
-        _ => Some(Function::Unsupported),
+        '\x51' => Some(Function::PU1),
+        '\x52' => Some(Function::PU2),
+        '\x53' => Some(Function::STS),
+        '\x54' => Some(Function::CCH),
+        '\x55' => Some(Function::MW),
+        '\x56' => Some(Function::SPA),
+        '\x57' => Some(Function::EPA),
+
+        // SOS
+        '\x58' => {
+            *state = State::StartOfString;
+            None
+        }
+
+        '\x59' => Some(Function::Unsupported),
+        '\x5A' => Some(Function::SCI),
+
+        // CSI
+        '\x5B' => {
+            *state = State::ControlSeq;
+            None
+        }
+
+        '\x5C' => Some(Function::ST),
+
+        // OSC
+        '\x5D' => {
+            *state = State::OperatingSystemCommand;
+            None
+        }
+
+        // PM
+        '\x5E' => {
+            *state = State::PrivacyMessage;
+            None
+        }
+
+        // APC
+        '\x5F' => {
+            *state = State::ApplicationProgramCommand;
+            None
+        }
+
+        // Independent control functions (ECMA-48 5th-edition 5.5)
+        '\x60'..='\x7F' => Some(Function::Unsupported),
+
+        _ => Some(Function::Invalid),
     }
 }
 
@@ -457,8 +519,8 @@ fn parse_control_sequence<'b>(
     }
 }
 
-fn parse_device_control_string<'b>(
-    _: &mut State,
+fn parse_control_string<'b>(
+    state: &mut State,
     buf: &'b mut Buffer,
     sixel_parser: &mut sixel::Parser,
     ch: char,
@@ -466,22 +528,58 @@ fn parse_device_control_string<'b>(
     // ST - STRING TERMINATOR
     if let (Some('\x1B'), '\x5C') = (buf.string.last(), ch) {
         buf.string.pop();
-        log::trace!("device control string: {:?}", buf.string);
 
-        match buf.string.get(0) {
-            Some('q') => {
-                // Sixel Sequence
-                let mut chars = buf.string[1..].iter().copied();
-                let image = sixel_parser.decode(&mut chars);
-                Some(Function::SixelImage(image))
+        match state {
+            State::ApplicationProgramCommand => {
+                log::trace!("application program command: {:?}", buf.string);
+                Some(Function::Unsupported)
             }
-            _ => Some(Function::Unsupported),
+
+            State::DeviceControlString => {
+                log::trace!("device control string: {:?}", buf.string);
+                match buf.string.get(0) {
+                    Some('q') => {
+                        // Sixel Sequence
+                        let mut chars = buf.string[1..].iter().copied();
+                        let image = sixel_parser.decode(&mut chars);
+                        Some(Function::SixelImage(image))
+                    }
+                    _ => Some(Function::Unsupported),
+                }
+            }
+
+            State::OperatingSystemCommand => {
+                log::trace!("operating system command: {:?}", buf.string);
+                Some(Function::Unsupported)
+            }
+
+            State::PrivacyMessage => {
+                log::trace!("privacy message: {:?}", buf.string);
+                Some(Function::Unsupported)
+            }
+
+            _ => unreachable!(),
         }
     } else if let '\x08'..='\x0D' | '\x1B' | '\x20'..='\x7E' = ch {
         buf.string.push(ch);
         None
     } else {
-        // ignore any invalid character
+        Some(Function::Invalid)
+    }
+}
+
+fn parse_character_string<'b>(
+    _: &mut State,
+    buf: &'b mut Buffer,
+    ch: char,
+) -> Option<Function<'b>> {
+    // ST - STRING TERMINATOR
+    if let (Some('\x1B'), '\x5C') = (buf.string.last(), ch) {
+        buf.string.pop();
+        log::trace!("character string: {:?}", buf.string);
+        Some(Function::Unsupported)
+    } else {
+        buf.string.push(ch);
         None
     }
 }
@@ -501,12 +599,14 @@ impl Parser {
             }
             State::EscapeSeq => parse_escape_sequence(&mut self.state, ch),
             State::ControlSeq => parse_control_sequence(&mut self.state, &mut self.buf, ch),
-            State::DeviceControlString => parse_device_control_string(
-                &mut self.state,
-                &mut self.buf,
-                &mut self.sixel_parser,
-                ch,
-            ),
+
+            State::ApplicationProgramCommand
+            | State::DeviceControlString
+            | State::OperatingSystemCommand
+            | State::PrivacyMessage => {
+                parse_control_string(&mut self.state, &mut self.buf, &mut self.sixel_parser, ch)
+            }
+            State::StartOfString => parse_character_string(&mut self.state, &mut self.buf, ch),
         };
 
         if func.is_some() {
