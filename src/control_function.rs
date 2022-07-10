@@ -263,7 +263,7 @@ fn parse_escape_sequence<'b>(state: &mut State, ch: char) -> Option<Function<'b>
             None
         }
 
-        _ => None,
+        _ => Some(Function::Unsupported),
     }
 }
 
