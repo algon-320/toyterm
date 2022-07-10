@@ -1,6 +1,7 @@
-use crate::font;
 use glium::{texture, Display};
 use std::collections::HashMap;
+
+use crate::font::{FontSet, Style};
 
 #[derive(Debug, Clone, Copy)]
 pub struct GlyphRegion {
@@ -27,18 +28,18 @@ impl GlyphRegion {
 
 pub struct GlyphCache {
     texture: texture::Texture2d,
-    glyph_region: HashMap<char, GlyphRegion>,
+    glyph_region: HashMap<(char, Style), GlyphRegion>,
 }
 
 impl GlyphCache {
     pub fn build_ascii_visible(
         display: &Display,
-        font: &font::Font,
+        fonts: &FontSet,
         cell_w: u32,
         cell_h: u32,
     ) -> Self {
         let texture_w = 16 * cell_w;
-        let texture_h = (8 - 2) * cell_h;
+        let texture_h = (8 - 2) * cell_h * 3;
         log::debug!("cache texture: {}x{} (px)", texture_w, texture_h);
 
         let texture = texture::Texture2d::with_mipmaps(
@@ -48,7 +49,7 @@ impl GlyphCache {
         )
         .expect("Failed to create texture");
 
-        let mut glyph_region: HashMap<char, GlyphRegion> = HashMap::new();
+        let mut glyph_region: HashMap<(char, Style), GlyphRegion> = HashMap::new();
 
         let ascii_visible = ' '..='~';
         for ch in ascii_visible {
@@ -60,7 +61,7 @@ impl GlyphCache {
             let y = row as u32 * cell_h;
             let x = col as u32 * cell_w;
 
-            if let Some((glyph_image, _)) = font.render(ch) {
+            if let Some((glyph_image, _)) = fonts.render(ch, Style::Regular) {
                 let rect = glium::Rect {
                     left: x,
                     bottom: y,
@@ -77,7 +78,47 @@ impl GlyphCache {
                     tx_w: rect.width as f32 / texture_w as f32,
                     tx_h: rect.height as f32 / texture_h as f32,
                 };
-                glyph_region.insert(ch, region);
+                glyph_region.insert((ch, Style::Regular), region);
+            }
+
+            if let Some((glyph_image, _)) = fonts.render(ch, Style::Bold) {
+                let rect = glium::Rect {
+                    left: x,
+                    bottom: y + texture_h / 3,
+                    width: glyph_image.width,
+                    height: glyph_image.height,
+                };
+                texture.main_level().write(rect, glyph_image);
+
+                let region = GlyphRegion {
+                    px_w: rect.width,
+                    px_h: rect.height,
+                    tx_x: rect.left as f32 / texture_w as f32,
+                    tx_y: rect.bottom as f32 / texture_h as f32,
+                    tx_w: rect.width as f32 / texture_w as f32,
+                    tx_h: rect.height as f32 / texture_h as f32,
+                };
+                glyph_region.insert((ch, Style::Bold), region);
+            }
+
+            if let Some((glyph_image, _)) = fonts.render(ch, Style::Faint) {
+                let rect = glium::Rect {
+                    left: x,
+                    bottom: y + texture_h / 3 * 2,
+                    width: glyph_image.width,
+                    height: glyph_image.height,
+                };
+                texture.main_level().write(rect, glyph_image);
+
+                let region = GlyphRegion {
+                    px_w: rect.width,
+                    px_h: rect.height,
+                    tx_x: rect.left as f32 / texture_w as f32,
+                    tx_y: rect.bottom as f32 / texture_h as f32,
+                    tx_w: rect.width as f32 / texture_w as f32,
+                    tx_h: rect.height as f32 / texture_h as f32,
+                };
+                glyph_region.insert((ch, Style::Faint), region);
             }
         }
 
@@ -87,8 +128,8 @@ impl GlyphCache {
         }
     }
 
-    pub fn get(&self, ch: char) -> Option<GlyphRegion> {
-        self.glyph_region.get(&ch).copied()
+    pub fn get(&self, ch: char, style: Style) -> Option<GlyphRegion> {
+        self.glyph_region.get(&(ch, style)).copied()
     }
 
     pub fn texture(&self) -> &texture::Texture2d {

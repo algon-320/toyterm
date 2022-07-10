@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use freetype::{
     face::{Face, LoadFlag},
     GlyphMetrics, Library,
@@ -11,10 +13,8 @@ pub struct Font {
 }
 
 impl Font {
-    pub fn new() -> Self {
+    pub fn new(ttf_data: &[u8]) -> Self {
         let freetype = freetype::Library::init().expect("FreeType init");
-
-        let ttf_data = include_bytes!("../fonts/Mplus1Code-Regular.ttf");
         let face = freetype.new_memory_face(ttf_data.to_vec(), 0).unwrap();
         face.set_pixel_sizes(0, 32).unwrap();
 
@@ -65,5 +65,47 @@ impl Font {
     pub fn decrease_size(&mut self, dec: u32) {
         self.size -= dec;
         self.face.set_pixel_sizes(0, self.size).unwrap();
+    }
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+pub enum Style {
+    Regular,
+    Bold,
+    Faint,
+}
+
+pub struct FontSet {
+    fonts: HashMap<Style, Font>,
+}
+
+impl FontSet {
+    pub fn empty() -> Self {
+        FontSet {
+            fonts: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, style: Style, font: Font) {
+        self.fonts.insert(style, font);
+    }
+
+    pub fn metrics(&self, character: char, style: Style) -> Option<GlyphMetrics> {
+        self.fonts.get(&style).and_then(|f| f.metrics(character))
+    }
+
+    pub fn render(&self, character: char, style: Style) -> Option<(RawImage2d<u8>, GlyphMetrics)> {
+        self.fonts.get(&style).and_then(|f| f.render(character))
+    }
+
+    pub fn increase_size(&mut self, inc: u32) {
+        for f in self.fonts.values_mut() {
+            f.increase_size(inc);
+        }
+    }
+    pub fn decrease_size(&mut self, dec: u32) {
+        for f in self.fonts.values_mut() {
+            f.decrease_size(dec);
+        }
     }
 }

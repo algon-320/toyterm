@@ -9,7 +9,7 @@ use glutin::{
 
 use crate::cache::GlyphCache;
 use crate::clipboard::X11Clipboard;
-use crate::font::Font;
+use crate::font::{Font, FontSet, Style};
 use crate::terminal::{Color, Line, PositionedImage, Terminal, TerminalSize};
 
 fn sort_points(a: (f64, f64), b: (f64, f64), cell_sz: CellSize) -> ((f64, f64), (f64, f64)) {
@@ -39,7 +39,7 @@ struct CellSize {
     max_over: i32,
 }
 
-fn calculate_cell_size(font: &Font) -> CellSize {
+fn calculate_cell_size(fonts: &FontSet) -> CellSize {
     use std::cmp::max;
 
     let mut max_advance_x: i32 = 0;
@@ -48,7 +48,7 @@ fn calculate_cell_size(font: &Font) -> CellSize {
 
     let ascii_visible = ' '..='~';
     for ch in ascii_visible {
-        let metrics = font.metrics(ch).expect("undefined glyph");
+        let metrics = fonts.metrics(ch, Style::Regular).expect("undefined glyph");
 
         let advance_x = (metrics.horiAdvance >> 6) as i32;
         max_advance_x = max(max_advance_x, advance_x);
@@ -85,7 +85,7 @@ pub struct TerminalWindow {
     mouse_released_position: Option<(f64, f64)>,
 
     terminal: Terminal,
-    font: Font,
+    fonts: FontSet,
     cache: GlyphCache,
 
     window_width: u32,
@@ -101,8 +101,22 @@ impl TerminalWindow {
     pub fn new(event_loop: &EventLoop<()>, mut size: TerminalSize) -> Self {
         let terminal = Terminal::new(size);
 
-        let font = Font::new();
-        let cell_size = calculate_cell_size(&font);
+        let mut fonts = FontSet::empty();
+        {
+            let regular_ttf_data = include_bytes!("../fonts/Mplus1Code-Regular.ttf");
+            let regular_font = Font::new(regular_ttf_data);
+            fonts.add(Style::Regular, regular_font);
+
+            let bold_ttf_data = include_bytes!("../fonts/Mplus1Code-SemiBold.ttf");
+            let bold_font = Font::new(bold_ttf_data);
+            fonts.add(Style::Bold, bold_font);
+
+            let faint_ttf_data = include_bytes!("../fonts/Mplus1Code-Thin.ttf");
+            let faint_font = Font::new(faint_ttf_data);
+            fonts.add(Style::Faint, faint_font);
+        }
+
+        let cell_size = calculate_cell_size(&fonts);
 
         let width = size.cols as u32 * cell_size.w;
         let height = size.rows as u32 * cell_size.h;
@@ -155,7 +169,7 @@ impl TerminalWindow {
         };
 
         // Rasterize ASCII characters and cache them as a texture
-        let cache = GlyphCache::build_ascii_visible(&display, &font, cell_size.w, cell_size.h);
+        let cache = GlyphCache::build_ascii_visible(&display, &fonts, cell_size.w, cell_size.h);
 
         let initial_size = display.gl_window().window().inner_size();
 
@@ -174,7 +188,7 @@ impl TerminalWindow {
             mouse_released_position: None,
 
             terminal,
-            font,
+            fonts,
             cache,
 
             window_width: initial_size.width,
@@ -248,10 +262,18 @@ impl TerminalWindow {
                     false
                 };
 
+                let style = if cell.attr.bold == -1 {
+                    Style::Faint
+                } else if cell.attr.bold == 0 {
+                    Style::Regular
+                } else {
+                    Style::Bold
+                };
+
                 let is_inversed = cell.attr.inversed;
                 let on_cursor = i == cursor.0 as u32 && j == cursor.1 as u32;
 
-                if let Some(region) = self.cache.get(cell.ch) {
+                if let Some(region) = self.cache.get(cell.ch, style) {
                     // Background
                     {
                         let gl_x = x_to_gl((j * cell_size.w) as i32, window_width);
@@ -275,7 +297,7 @@ impl TerminalWindow {
                     }
 
                     if !region.is_empty() {
-                        let metrics = self.font.metrics(cell.ch).expect("ASCII character");
+                        let metrics = self.fonts.metrics(cell.ch, style).expect("ASCII character");
                         let bearing_x = (metrics.horiBearingX >> 6) as u32;
                         let bearing_y = (metrics.horiBearingY >> 6) as u32;
 
@@ -312,7 +334,7 @@ impl TerminalWindow {
                         );
                         self.vertices.extend_from_slice(&vs);
                     }
-                } else if let Some((glyph_image, metrics)) = self.font.render(cell.ch) {
+                } else if let Some((glyph_image, metrics)) = self.fonts.render(cell.ch, style) {
                     // FIXME
                     let mut vertices = Vec::with_capacity(12);
 
@@ -646,11 +668,11 @@ impl TerminalWindow {
                         Some(VirtualKeyCode::Minus) if self.modifiers.ctrl() => {
                             // font size -
 
-                            self.font.decrease_size(1);
-                            self.cell_size = calculate_cell_size(&self.font);
+                            self.fonts.decrease_size(1);
+                            self.cell_size = calculate_cell_size(&self.fonts);
                             self.cache = GlyphCache::build_ascii_visible(
                                 &self.display,
-                                &self.font,
+                                &self.fonts,
                                 self.cell_size.w,
                                 self.cell_size.h,
                             );
@@ -667,11 +689,11 @@ impl TerminalWindow {
                         Some(VirtualKeyCode::Equals) if self.modifiers.ctrl() => {
                             // font size +
 
-                            self.font.increase_size(1);
-                            self.cell_size = calculate_cell_size(&self.font);
+                            self.fonts.increase_size(1);
+                            self.cell_size = calculate_cell_size(&self.fonts);
                             self.cache = GlyphCache::build_ascii_visible(
                                 &self.display,
-                                &self.font,
+                                &self.fonts,
                                 self.cell_size.w,
                                 self.cell_size.h,
                             );

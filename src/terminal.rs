@@ -91,6 +91,7 @@ pub enum Color {
 pub struct GraphicAttribute {
     pub fg: Color,
     pub bg: Color,
+    pub bold: i8,
     pub inversed: bool,
     pub blinking: u8,
     pub concealed: bool,
@@ -101,6 +102,7 @@ impl GraphicAttribute {
         GraphicAttribute {
             fg: Color::White,
             bg: Color::Black,
+            bold: 0,
             inversed: false,
             blinking: 0,
             concealed: false,
@@ -988,6 +990,10 @@ impl Engine {
                     while let Some(&p) = ps.next() {
                         match p {
                             0 => self.attr = GraphicAttribute::default(),
+
+                            1 => self.attr.bold = 1,
+                            2 => self.attr.bold = -1,
+                            22 => self.attr.bold = 0,
 
                             5 => self.attr.blinking = 1,
                             6 => self.attr.blinking = 2,
