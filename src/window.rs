@@ -248,6 +248,9 @@ impl TerminalWindow {
                     false
                 };
 
+                let is_inversed = cell.attr.inversed;
+                let on_cursor = i == cursor.0 as u32 && j == cursor.1 as u32;
+
                 if let Some(region) = self.cache.get(cell.ch) {
                     // Background
                     {
@@ -259,15 +262,7 @@ impl TerminalWindow {
                         let mut fg = cell.attr.fg;
                         let mut bg = cell.attr.bg;
 
-                        if cell.attr.inversed {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if i == cursor.0 as u32 && j == cursor.1 as u32 {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if is_selected {
+                        if is_inversed ^ on_cursor ^ is_selected {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
@@ -294,15 +289,7 @@ impl TerminalWindow {
                         let mut fg = cell.attr.fg;
                         let mut bg = cell.attr.bg;
 
-                        if cell.attr.inversed {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if i == cursor.0 as u32 && j == cursor.1 as u32 {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if is_selected {
+                        if is_inversed ^ on_cursor ^ is_selected {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
@@ -339,15 +326,7 @@ impl TerminalWindow {
                         let mut fg = cell.attr.fg;
                         let mut bg = cell.attr.bg;
 
-                        if cell.attr.inversed {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if i == cursor.0 as u32 && j == cursor.1 as u32 {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if is_selected {
+                        if is_inversed ^ on_cursor ^ is_selected {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
@@ -375,15 +354,7 @@ impl TerminalWindow {
                         let mut fg = cell.attr.fg;
                         let mut bg = cell.attr.bg;
 
-                        if cell.attr.inversed {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if i == cursor.0 as u32 && j == cursor.1 as u32 {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if is_selected {
+                        if is_inversed ^ on_cursor ^ is_selected {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
@@ -448,15 +419,7 @@ impl TerminalWindow {
                         let mut fg = cell.attr.fg;
                         let mut bg = cell.attr.bg;
 
-                        if cell.attr.inversed {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if i == cursor.0 as u32 && j == cursor.1 as u32 {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if is_selected {
+                        if is_inversed ^ on_cursor ^ is_selected {
                             std::mem::swap(&mut fg, &mut bg);
                         }
 
