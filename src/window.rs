@@ -48,16 +48,18 @@ fn calculate_cell_size(fonts: &FontSet) -> CellSize {
 
     let ascii_visible = ' '..='~';
     for ch in ascii_visible {
-        let metrics = fonts.metrics(ch, Style::Regular).expect("undefined glyph");
+        for style in [Style::Regular, Style::Bold, Style::Faint] {
+            let metrics = fonts.metrics(ch, style).expect("undefined glyph");
 
-        let advance_x = (metrics.horiAdvance >> 6) as i32;
-        max_advance_x = max(max_advance_x, advance_x);
+            let advance_x = (metrics.horiAdvance >> 6) as i32;
+            max_advance_x = max(max_advance_x, advance_x);
 
-        let over = (metrics.horiBearingY >> 6) as i32;
-        max_over = max(max_over, over);
+            let over = (metrics.horiBearingY >> 6) as i32;
+            max_over = max(max_over, over);
 
-        let under = ((metrics.height - metrics.horiBearingY) >> 6) as i32;
-        max_under = max(max_under, under);
+            let under = ((metrics.height - metrics.horiBearingY) >> 6) as i32;
+            max_under = max(max_under, under);
+        }
     }
 
     let cell_w = max_advance_x as u32;

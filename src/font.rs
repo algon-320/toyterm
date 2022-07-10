@@ -76,7 +76,7 @@ pub enum Style {
 }
 
 pub struct FontSet {
-    fonts: HashMap<Style, Font>,
+    fonts: HashMap<Style, Vec<Font>>,
 }
 
 impl FontSet {
@@ -87,25 +87,36 @@ impl FontSet {
     }
 
     pub fn add(&mut self, style: Style, font: Font) {
-        self.fonts.insert(style, font);
+        let fallbacks = self.fonts.entry(style).or_insert_with(|| Vec::new());
+        fallbacks.push(font);
     }
 
     pub fn metrics(&self, character: char, style: Style) -> Option<GlyphMetrics> {
-        self.fonts.get(&style).and_then(|f| f.metrics(character))
+        self.fonts
+            .get(&style)?
+            .iter()
+            .find_map(|f| f.metrics(character))
     }
 
     pub fn render(&self, character: char, style: Style) -> Option<(RawImage2d<u8>, GlyphMetrics)> {
-        self.fonts.get(&style).and_then(|f| f.render(character))
+        self.fonts
+            .get(&style)?
+            .iter()
+            .find_map(|f| f.render(character))
     }
 
     pub fn increase_size(&mut self, inc: u32) {
-        for f in self.fonts.values_mut() {
-            f.increase_size(inc);
+        for fs in self.fonts.values_mut() {
+            for f in fs {
+                f.increase_size(inc);
+            }
         }
     }
     pub fn decrease_size(&mut self, dec: u32) {
-        for f in self.fonts.values_mut() {
-            f.decrease_size(dec);
+        for fs in self.fonts.values_mut() {
+            for f in fs {
+                f.decrease_size(dec);
+            }
         }
     }
 }
