@@ -58,12 +58,15 @@ impl Font {
         }
     }
 
-    pub fn increase_size(&mut self, inc: u32) {
-        self.size += inc;
-        self.face.set_pixel_sizes(0, self.size).unwrap();
-    }
-    pub fn decrease_size(&mut self, dec: u32) {
-        self.size -= dec;
+    pub fn increase_size(&mut self, inc: i32) {
+        if inc > 0 {
+            self.size += inc as u32;
+        } else if inc < 0 {
+            let dec = (-inc) as u32;
+            if self.size > dec {
+                self.size -= dec;
+            }
+        }
         self.face.set_pixel_sizes(0, self.size).unwrap();
     }
 }
@@ -105,17 +108,10 @@ impl FontSet {
             .find_map(|f| f.render(character))
     }
 
-    pub fn increase_size(&mut self, inc: u32) {
+    pub fn increase_size(&mut self, inc: i32) {
         for fs in self.fonts.values_mut() {
             for f in fs {
                 f.increase_size(inc);
-            }
-        }
-    }
-    pub fn decrease_size(&mut self, dec: u32) {
-        for fs in self.fonts.values_mut() {
-            for f in fs {
-                f.decrease_size(dec);
             }
         }
     }

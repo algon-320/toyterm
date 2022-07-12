@@ -545,11 +545,27 @@ impl TerminalWindow {
         surface.finish().expect("finish");
     }
 
-    pub fn resize(&mut self, new_width: u32, new_height: u32) {
+    fn resize_window(&mut self, new_width: u32, new_height: u32) {
         log::debug!("window resized: {}x{} (px)", new_width, new_height);
         self.window_width = new_width;
         self.window_height = new_height;
+        self.resize_buffer();
+    }
 
+    fn increase_font_size(&mut self, size_diff: i32) {
+        log::debug!("increase font size: {} (diff)", size_diff);
+        self.fonts.increase_size(size_diff);
+        self.cell_size = calculate_cell_size(&self.fonts);
+        self.cache = GlyphCache::build_ascii_visible(
+            &self.display,
+            &self.fonts,
+            self.cell_size.w,
+            self.cell_size.h,
+        );
+        self.resize_buffer();
+    }
+
+    fn resize_buffer(&mut self) {
         let rows = (self.window_height / self.cell_size.h) as usize;
         let cols = (self.window_width / self.cell_size.w) as usize;
         self.terminal.request_resize(TerminalSize {
@@ -635,7 +651,7 @@ impl TerminalWindow {
                 }
 
                 WindowEvent::Resized(new_size) => {
-                    self.resize(new_size.width, new_size.height);
+                    self.resize_window(new_size.width, new_size.height);
                 }
 
                 WindowEvent::ModifiersChanged(new_states) => {
@@ -669,45 +685,11 @@ impl TerminalWindow {
                     match input.virtual_keycode {
                         Some(VirtualKeyCode::Minus) if self.modifiers.ctrl() => {
                             // font size -
-
-                            self.fonts.decrease_size(1);
-                            self.cell_size = calculate_cell_size(&self.fonts);
-                            self.cache = GlyphCache::build_ascii_visible(
-                                &self.display,
-                                &self.fonts,
-                                self.cell_size.w,
-                                self.cell_size.h,
-                            );
-
-                            let rows = (self.window_height / self.cell_size.h) as usize;
-                            let cols = (self.window_width / self.cell_size.w) as usize;
-                            self.terminal.request_resize(TerminalSize {
-                                rows,
-                                cols,
-                                cell_hpx: self.cell_size.h,
-                                cell_wpx: self.cell_size.w,
-                            });
+                            self.increase_font_size(-1);
                         }
                         Some(VirtualKeyCode::Equals) if self.modifiers.ctrl() => {
                             // font size +
-
-                            self.fonts.increase_size(1);
-                            self.cell_size = calculate_cell_size(&self.fonts);
-                            self.cache = GlyphCache::build_ascii_visible(
-                                &self.display,
-                                &self.fonts,
-                                self.cell_size.w,
-                                self.cell_size.h,
-                            );
-
-                            let rows = (self.window_height / self.cell_size.h) as usize;
-                            let cols = (self.window_width / self.cell_size.w) as usize;
-                            self.terminal.request_resize(TerminalSize {
-                                rows,
-                                cols,
-                                cell_hpx: self.cell_size.h,
-                                cell_wpx: self.cell_size.w,
-                            });
+                            self.increase_font_size(1);
                         }
 
                         // Backspace
