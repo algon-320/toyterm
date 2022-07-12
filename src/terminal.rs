@@ -266,11 +266,8 @@ impl Line {
     }
 
     /// Returns a iterator that yeilds cells on the line (skip zero-width cells)
-    pub fn iter(&self) -> CellIter {
-        CellIter {
-            slice: self.0.as_slice(),
-            next: 0,
-        }
+    pub fn iter(&self) -> impl Iterator<Item = Cell> + '_ {
+        self.0.iter().filter(|c| c.width > 0).copied()
     }
 }
 
@@ -286,35 +283,6 @@ impl std::fmt::Debug for Line {
         }
         write!(f, "]\n")?;
         Ok(())
-    }
-}
-
-pub struct CellIter<'b> {
-    slice: &'b [Cell],
-    next: usize,
-}
-
-impl<'b> Iterator for CellIter<'b> {
-    type Item = Cell;
-    fn next(&mut self) -> Option<Cell> {
-        if self.next == self.slice.len() {
-            None
-        } else {
-            let cell = self.slice[self.next];
-
-            #[cfg(debug_assertions)]
-            {
-                let w = cell.width as usize;
-                debug_assert!(w > 0);
-                for i in 1..w {
-                    debug_assert_eq!(self.slice[self.next + i].width, 0);
-                    debug_assert_eq!(self.slice[self.next + i].backlink as usize, i);
-                }
-            }
-
-            self.next += cell.width as usize;
-            Some(cell)
-        }
     }
 }
 
