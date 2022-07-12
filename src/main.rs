@@ -1,10 +1,10 @@
 mod cache;
+mod clipboard;
 mod control_function;
 mod font;
 mod pipe_channel;
 mod sixel;
 mod terminal;
-mod clipboard;
 mod utils;
 mod window;
 
