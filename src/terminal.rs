@@ -31,8 +31,12 @@ fn overwrap(outer: &PositionedImage, inner: &PositionedImage) -> bool {
 pub struct TerminalSize {
     pub rows: usize,
     pub cols: usize,
-    pub cell_hpx: u32,
-    pub cell_wpx: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CellSize {
+    pub w: u32,
+    pub h: u32,
 }
 
 fn set_term_window_size(pty_master: &OwnedFd, size: TerminalSize) -> Result<()> {
@@ -385,7 +389,10 @@ impl Buffer {
 
 #[derive(Debug)]
 enum Command {
-    Resize(TerminalSize),
+    Resize {
+        buff_sz: TerminalSize,
+        cell_sz: CellSize,
+    },
 }
 
 #[derive(Debug)]
@@ -397,7 +404,7 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    pub fn new(size: TerminalSize) -> Self {
+    pub fn new(size: TerminalSize, cell_size: CellSize) -> Self {
         let (pty, _child_pid) = init_pty().unwrap();
 
         let (control_req_tx, control_req_rx) = pipe_channel::channel();
@@ -408,6 +415,7 @@ impl Terminal {
             control_req_rx,
             control_res_tx,
             size,
+            cell_size,
         );
         let buffer = engine.buffer();
         std::thread::spawn(move || engine.start());
@@ -427,9 +435,9 @@ impl Terminal {
         self.pty.write_all(data).unwrap();
     }
 
-    pub fn request_resize(&mut self, size: TerminalSize) {
-        log::debug!("request_resize: {}x{} (cell)", size.rows, size.cols);
-        self.control_req.send(Command::Resize(size));
+    pub fn request_resize(&mut self, buff_sz: TerminalSize, cell_sz: CellSize) {
+        log::debug!("request_resize: {}x{} (cell)", buff_sz.rows, buff_sz.cols);
+        self.control_req.send(Command::Resize { buff_sz, cell_sz });
         self.control_res.recv();
     }
 }
@@ -509,6 +517,7 @@ struct Engine {
     control_req: pipe_channel::Receiver<Command>,
     control_res: pipe_channel::Sender<i32>,
     sz: TerminalSize,
+    cell_sz: CellSize,
     buffer: Arc<Mutex<Buffer>>,
     cursor: Cursor,
     parser: control_function::Parser,
@@ -524,6 +533,7 @@ impl Engine {
         control_req: pipe_channel::Receiver<Command>,
         control_res: pipe_channel::Sender<i32>,
         sz: TerminalSize,
+        cell_sz: CellSize,
     ) -> Self {
         set_term_window_size(&pty, sz).unwrap();
 
@@ -549,6 +559,7 @@ impl Engine {
             control_req,
             control_res,
             sz,
+            cell_sz,
             buffer,
             cursor,
             parser: control_function::Parser::default(),
@@ -563,12 +574,13 @@ impl Engine {
         self.buffer.clone()
     }
 
-    fn resize(&mut self, sz: TerminalSize) {
+    fn resize(&mut self, sz: TerminalSize, cell_sz: CellSize) {
         log::debug!("resize to {}x{} (cell)", sz.rows, sz.cols);
 
         set_term_window_size(&self.pty, sz).unwrap();
 
         self.sz = sz;
+        self.cell_sz = cell_sz;
 
         // Update tabulation stops
         self.tabstops.clear();
@@ -617,8 +629,8 @@ impl Engine {
             if let Some(flags) = ctl_revents {
                 if flags.contains(PollFlags::POLLIN) {
                     match self.control_req.recv() {
-                        Command::Resize(new_size) => {
-                            self.resize(new_size);
+                        Command::Resize { buff_sz, cell_sz } => {
+                            self.resize(buff_sz, cell_sz);
                             self.control_res.send(0);
                         }
                     }
@@ -693,7 +705,7 @@ impl Engine {
                 }
 
                 LF | VT | FF => {
-                    buffer_scroll_up_if_needed(&mut buf, self.cursor);
+                    buffer_scroll_up_if_needed(&mut buf, self.cursor, self.cell_sz);
                     self.cursor = self.cursor.next_row();
                 }
 
@@ -842,7 +854,7 @@ impl Engine {
                         }
 
                         // Remove sixel graphics
-                        let cell_hpx = self.sz.cell_hpx;
+                        let cell_hpx = self.cell_sz.h;
                         buf.images.retain(|img| {
                             let v_cells = ((img.height as u32 + cell_hpx - 1) / cell_hpx) as isize;
                             let bottom_row = img.row + v_cells;
@@ -1056,7 +1068,7 @@ impl Engine {
                             let (row, col) = self.cursor.pos();
                             buf.lines[row].erase(col..);
 
-                            buffer_scroll_up_if_needed(&mut buf, self.cursor);
+                            buffer_scroll_up_if_needed(&mut buf, self.cursor, self.cell_sz);
                             self.cursor = self.cursor.next_row().first_col();
                         }
 
@@ -1079,8 +1091,8 @@ impl Engine {
                     log::debug!("image: {}x{}", image.width, image.height);
                     let (cursor_row, cursor_col) = self.cursor.pos();
 
-                    let cell_wpx = self.sz.cell_wpx as u64;
-                    let cell_hpx = self.sz.cell_hpx as u64;
+                    let cell_w = self.cell_sz.w as u64;
+                    let cell_h = self.cell_sz.h as u64;
 
                     let (row, col) = if self.sixel_scrolling_mode {
                         (cursor_row as isize, cursor_col as isize)
@@ -1102,14 +1114,14 @@ impl Engine {
                     log::debug!("total {} images", buf.images.len());
 
                     if self.sixel_scrolling_mode {
-                        let advance_h = (image.width + cell_wpx - 1) / cell_wpx;
-                        let advance_v = (image.height + cell_hpx - 1) / cell_hpx - 1;
+                        let advance_h = (image.width + cell_w - 1) / cell_w;
+                        let advance_v = (image.height + cell_h - 1) / cell_h - 1;
 
                         for _ in 0..advance_h {
                             self.cursor = self.cursor.next_col();
                         }
                         for _ in 0..advance_v {
-                            buffer_scroll_up_if_needed(&mut buf, self.cursor);
+                            buffer_scroll_up_if_needed(&mut buf, self.cursor, self.cell_sz);
                             self.cursor = self.cursor.next_row();
                         }
                     }
@@ -1286,17 +1298,16 @@ impl Engine {
     }
 }
 
-fn buffer_scroll_up_if_needed(buf: &mut Buffer, cursor: Cursor) {
+fn buffer_scroll_up_if_needed(buf: &mut Buffer, cursor: Cursor, cell_sz: CellSize) {
     if cursor.row + 1 == cursor.sz.rows {
         buf.rotate_line();
 
         if !buf.images.is_empty() {
-            let sz = buf.sz;
             for img in buf.images.iter_mut() {
                 img.row -= 1;
             }
             buf.images.retain(|img| {
-                let v_cells = ((img.height as u32 + sz.cell_hpx - 1) / sz.cell_hpx) as isize;
+                let v_cells = ((img.height as u32 + cell_sz.h - 1) / cell_sz.h) as isize;
                 (-v_cells) < img.row
             });
             log::debug!("{} images retained", buf.images.len());

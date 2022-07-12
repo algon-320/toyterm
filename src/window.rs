@@ -10,7 +10,7 @@ use glutin::{
 use crate::cache::GlyphCache;
 use crate::clipboard::X11Clipboard;
 use crate::font::{Font, FontSet, Style};
-use crate::terminal::{Color, Line, PositionedImage, Terminal, TerminalSize};
+use crate::terminal::{CellSize, Color, Line, PositionedImage, Terminal, TerminalSize};
 
 fn sort_points(a: (f64, f64), b: (f64, f64), cell_sz: CellSize) -> ((f64, f64), (f64, f64)) {
     let (ax, ay) = a;
@@ -32,14 +32,7 @@ fn sort_points(a: (f64, f64), b: (f64, f64), cell_sz: CellSize) -> ((f64, f64), 
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct CellSize {
-    w: u32,
-    h: u32,
-    max_over: i32,
-}
-
-fn calculate_cell_size(fonts: &FontSet) -> CellSize {
+fn calculate_cell_size(fonts: &FontSet) -> (CellSize, i32) {
     use std::cmp::max;
 
     let mut max_advance_x: i32 = 0;
@@ -67,11 +60,13 @@ fn calculate_cell_size(fonts: &FontSet) -> CellSize {
 
     log::debug!("cell size: {}x{} (px)", cell_w, cell_h);
 
-    CellSize {
-        w: cell_w,
-        h: cell_h,
+    (
+        CellSize {
+            w: cell_w,
+            h: cell_h,
+        },
         max_over,
-    }
+    )
 }
 
 pub struct TerminalWindow {
@@ -93,6 +88,7 @@ pub struct TerminalWindow {
     window_width: u32,
     window_height: u32,
     cell_size: CellSize,
+    cell_max_over: i32,
     started_time: std::time::Instant,
 
     clipboard: X11Clipboard,
@@ -100,9 +96,7 @@ pub struct TerminalWindow {
 }
 
 impl TerminalWindow {
-    pub fn new(event_loop: &EventLoop<()>, mut size: TerminalSize) -> Self {
-        let terminal = Terminal::new(size);
-
+    pub fn new(event_loop: &EventLoop<()>, size: TerminalSize) -> Self {
         let mut fonts = FontSet::empty();
         {
             let regular_ttf_data = include_bytes!("../fonts/Mplus1Code-Regular.ttf");
@@ -118,13 +112,12 @@ impl TerminalWindow {
             fonts.add(Style::Faint, faint_font);
         }
 
-        let cell_size = calculate_cell_size(&fonts);
+        let (cell_size, cell_max_over) = calculate_cell_size(&fonts);
+
+        let terminal = Terminal::new(size, cell_size);
 
         let width = size.cols as u32 * cell_size.w;
         let height = size.rows as u32 * cell_size.h;
-
-        size.cell_wpx = cell_size.w;
-        size.cell_hpx = cell_size.h;
 
         let win_builder = WindowBuilder::new()
             .with_title("toyterm")
@@ -171,7 +164,7 @@ impl TerminalWindow {
         };
 
         // Rasterize ASCII characters and cache them as a texture
-        let cache = GlyphCache::build_ascii_visible(&display, &fonts, cell_size.w, cell_size.h);
+        let cache = GlyphCache::build_ascii_visible(&display, &fonts, cell_size);
 
         let initial_size = display.gl_window().window().inner_size();
 
@@ -196,6 +189,7 @@ impl TerminalWindow {
             window_width: initial_size.width,
             window_height: initial_size.height,
             cell_size,
+            cell_max_over,
             started_time: std::time::Instant::now(),
 
             clipboard,
@@ -247,7 +241,7 @@ impl TerminalWindow {
             (l, r)
         });
 
-        let mut baseline: u32 = cell_size.max_over as u32;
+        let mut baseline: u32 = self.cell_max_over as u32;
         let mut selection_offset = 0.0;
         let mut i: u32 = 0;
         for row in lines.iter() {
@@ -555,25 +549,21 @@ impl TerminalWindow {
     fn increase_font_size(&mut self, size_diff: i32) {
         log::debug!("increase font size: {} (diff)", size_diff);
         self.fonts.increase_size(size_diff);
-        self.cell_size = calculate_cell_size(&self.fonts);
-        self.cache = GlyphCache::build_ascii_visible(
-            &self.display,
-            &self.fonts,
-            self.cell_size.w,
-            self.cell_size.h,
-        );
+
+        let (new_cell_size, new_cell_max_over) = calculate_cell_size(&self.fonts);
+        self.cell_size = new_cell_size;
+        self.cell_max_over = new_cell_max_over;
+
+        self.cache = GlyphCache::build_ascii_visible(&self.display, &self.fonts, self.cell_size);
+
         self.resize_buffer();
     }
 
     fn resize_buffer(&mut self) {
         let rows = (self.window_height / self.cell_size.h) as usize;
         let cols = (self.window_width / self.cell_size.w) as usize;
-        self.terminal.request_resize(TerminalSize {
-            rows,
-            cols,
-            cell_hpx: self.cell_size.h,
-            cell_wpx: self.cell_size.w,
-        });
+        let buff_size = TerminalSize { rows, cols };
+        self.terminal.request_resize(buff_size, self.cell_size);
     }
 
     fn copy_clipboard(&mut self) {

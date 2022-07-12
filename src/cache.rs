@@ -2,6 +2,7 @@ use glium::{texture, Display};
 use std::collections::HashMap;
 
 use crate::font::{FontSet, Style};
+use crate::terminal::CellSize;
 
 #[derive(Debug, Clone, Copy)]
 pub struct GlyphRegion {
@@ -32,14 +33,9 @@ pub struct GlyphCache {
 }
 
 impl GlyphCache {
-    pub fn build_ascii_visible(
-        display: &Display,
-        fonts: &FontSet,
-        cell_w: u32,
-        cell_h: u32,
-    ) -> Self {
-        let texture_w = 16 * cell_w;
-        let texture_h = (8 - 2) * cell_h * 3;
+    pub fn build_ascii_visible(display: &Display, fonts: &FontSet, cell_sz: CellSize) -> Self {
+        let texture_w = 16 * cell_sz.w;
+        let texture_h = (8 - 2) * cell_sz.h * 3;
         log::debug!("cache texture: {}x{} (px)", texture_w, texture_h);
 
         let texture = texture::Texture2d::with_mipmaps(
@@ -58,8 +54,8 @@ impl GlyphCache {
             let row = ((code & 0x70) >> 4) - 2;
             let col = code & 0xF;
 
-            let y = row as u32 * cell_h;
-            let x = col as u32 * cell_w;
+            let y = row as u32 * cell_sz.h;
+            let x = col as u32 * cell_sz.w;
 
             if let Some((glyph_image, _)) = fonts.render(ch, Style::Regular) {
                 let rect = glium::Rect {
