@@ -560,6 +560,9 @@ impl TerminalWindow {
     }
 
     fn resize_buffer(&mut self) {
+        self.mouse_pressed_position = None;
+        self.mouse_released_position = None;
+
         let rows = (self.window_height / self.cell_size.h) as usize;
         let cols = (self.window_width / self.cell_size.w) as usize;
         let buff_size = TerminalSize { rows, cols };
