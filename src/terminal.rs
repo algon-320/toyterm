@@ -338,14 +338,13 @@ impl Buffer {
 
     /// Scroll up the buffer by 1 line
     fn scroll_up(&mut self) {
-        self.history.rotate_left(1);
-        let last = self.history.back_mut().unwrap();
-        last.copy_from(self.lines.front().unwrap());
+        let line = self.lines.pop_front().unwrap();
+        self.history.push_back(line);
         self.history_size = std::cmp::min(self.history_size + 1, Self::HISTORY_CAPACITY);
 
-        self.lines.rotate_left(1);
-        let last = self.lines.back_mut().unwrap();
-        last.erase_all();
+        let mut line = self.history.pop_front().unwrap();
+        line.erase_all();
+        self.lines.push_back(line);
     }
 
     /// Copy lines[src.0..=src.1] to lines[dst..]
