@@ -28,6 +28,7 @@ toyterm is a toy terminal emulator.
 |Delete key|Send `\x1b[3~`|
 |Backspace key|Send `\x7f`|
 |Mouse Wheel|Same effect as arrow keys (Up/Down/Right/Left)|
+|Shift + Mouse Wheel|Scroll history|
 
 ## Control Functions
 

@@ -289,6 +289,8 @@ impl std::fmt::Debug for Line {
 #[derive(Debug, Clone)]
 pub struct Buffer {
     pub lines: VecDeque<Line>,
+    pub history: VecDeque<Line>,
+    pub history_size: usize,
     pub images: Vec<PositionedImage>,
     pub cursor: (usize, usize),
     pub bracketed_paste_mode: bool,
@@ -296,6 +298,8 @@ pub struct Buffer {
 }
 
 impl Buffer {
+    const HISTORY_CAPACITY: usize = 10000;
+
     pub fn new(sz: TerminalSize) -> Self {
         assert!(sz.rows > 0 && sz.cols > 0);
 
@@ -303,8 +307,14 @@ impl Buffer {
             .take(sz.rows)
             .collect();
 
+        let history: VecDeque<_> = std::iter::repeat_with(|| Line::new(sz.cols))
+            .take(Self::HISTORY_CAPACITY)
+            .collect();
+
         Self {
             lines,
+            history,
+            history_size: 0,
             images: Vec::new(),
             cursor: (0, 0),
             bracketed_paste_mode: false,
@@ -320,10 +330,19 @@ impl Buffer {
         for line in self.lines.iter_mut() {
             line.resize(sz.cols);
         }
+
+        for line in self.history.iter_mut() {
+            line.resize(sz.cols);
+        }
     }
 
     /// Scroll up the buffer by 1 line
-    fn rotate_line(&mut self) {
+    fn scroll_up(&mut self) {
+        self.history.rotate_left(1);
+        let last = self.history.back_mut().unwrap();
+        last.copy_from(self.lines.front().unwrap());
+        self.history_size = std::cmp::min(self.history_size + 1, Self::HISTORY_CAPACITY);
+
         self.lines.rotate_left(1);
         let last = self.lines.back_mut().unwrap();
         last.erase_all();
@@ -1268,7 +1287,7 @@ impl Engine {
 
 fn buffer_scroll_up_if_needed(buf: &mut Buffer, cursor: Cursor, cell_sz: CellSize) {
     if cursor.row + 1 == cursor.sz.rows {
-        buf.rotate_line();
+        buf.scroll_up();
 
         if !buf.images.is_empty() {
             for img in buf.images.iter_mut() {

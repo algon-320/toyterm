@@ -75,24 +75,23 @@ pub struct TerminalWindow {
     image_program: glium::Program,
     vertices: Vec<Vertex>,
     modifiers: ModifiersState,
-    mouse_wheel_delta_x: f32,
-    mouse_wheel_delta_y: f32,
-    cursor_position: (f64, f64),
-    mouse_pressed_position: Option<(f64, f64)>,
-    mouse_released_position: Option<(f64, f64)>,
-
-    terminal: Terminal,
     fonts: FontSet,
     cache: GlyphCache,
-
     window_width: u32,
     window_height: u32,
     cell_size: CellSize,
     cell_max_over: i32,
     started_time: std::time::Instant,
-
     clipboard: X11Clipboard,
+
+    terminal: Terminal,
     bracketed_paste_mode: bool,
+    mouse_wheel_delta_x: f32,
+    mouse_wheel_delta_y: f32,
+    cursor_position: (f64, f64),
+    mouse_pressed_position: Option<(f64, f64)>,
+    mouse_released_position: Option<(f64, f64)>,
+    history_head: isize,
 }
 
 impl TerminalWindow {
@@ -176,24 +175,23 @@ impl TerminalWindow {
             image_program,
             vertices: Vec::new(),
             modifiers: ModifiersState::empty(),
-            mouse_wheel_delta_x: 0.0,
-            mouse_wheel_delta_y: 0.0,
-            cursor_position: (0.0, 0.0),
-            mouse_pressed_position: None,
-            mouse_released_position: None,
-
-            terminal,
             fonts,
             cache,
-
             window_width: initial_size.width,
             window_height: initial_size.height,
             cell_size,
             cell_max_over,
             started_time: std::time::Instant::now(),
-
             clipboard,
+
+            terminal,
             bracketed_paste_mode: false,
+            mouse_wheel_delta_x: 0.0,
+            mouse_wheel_delta_y: 0.0,
+            cursor_position: (0.0, 0.0),
+            mouse_pressed_position: None,
+            mouse_released_position: None,
+            history_head: 0,
         }
     }
 
@@ -224,7 +222,35 @@ impl TerminalWindow {
             // hold the lock during copying states
             let buf = self.terminal.buffer.lock().unwrap();
 
-            lines = buf.lines.iter().cloned().collect();
+            let buff_len = buf.lines.len() as isize;
+            let hist_len = buf.history.len() as isize;
+
+            if self.history_head < -(buf.history_size as isize) {
+                self.history_head = -(buf.history_size as isize);
+            }
+
+            let top = self.history_head;
+            let bot = top + buff_len;
+
+            use std::cmp::{max, min};
+            if top >= 0 {
+                let top = top as usize;
+                let bot = min(bot, buff_len) as usize;
+                lines = buf.lines.range(top..bot).cloned().collect()
+            } else if bot < 0 {
+                let top = max(hist_len + top, 0) as usize;
+                let bot = (hist_len + bot) as usize;
+                lines = buf.history.range(top..bot).cloned().collect()
+            } else {
+                let top = max(hist_len + top, 0) as usize;
+                let bot = min(bot, buff_len) as usize;
+
+                let mut tmp = Vec::new();
+                tmp.extend(buf.history.range(top..).cloned());
+                tmp.extend(buf.lines.range(..bot).cloned());
+                lines = tmp
+            }
+
             cursor = buf.cursor;
             images = buf.images.clone();
 
@@ -240,6 +266,8 @@ impl TerminalWindow {
             let r = (e_row as f64) * (window_width as f64) + ex;
             (l, r)
         });
+
+        let cursor_visible = self.history_head >= 0;
 
         let mut baseline: u32 = self.cell_max_over as u32;
         let mut selection_offset = 0.0;
@@ -267,7 +295,7 @@ impl TerminalWindow {
                 };
 
                 let is_inversed = cell.attr.inversed;
-                let on_cursor = i == cursor.0 as u32 && j == cursor.1 as u32;
+                let on_cursor = cursor_visible && i == cursor.0 as u32 && j == cursor.1 as u32;
 
                 if let Some(region) = self.cache.get(cell.ch, style) {
                     // Background
@@ -659,6 +687,7 @@ impl TerminalWindow {
                         || ch == '\x03'
                         || ch == '\x08'
                         || ch == '\x16'
+                        || ch == '\x1B'
                     {
                         return;
                     }
@@ -676,6 +705,14 @@ impl TerminalWindow {
                     if input.state == ElementState::Pressed =>
                 {
                     match input.virtual_keycode {
+                        Some(VirtualKeyCode::Escape) => {
+                            if self.history_head < 0 {
+                                self.history_head = 0;
+                            } else {
+                                self.terminal.pty_write(b"\x1B");
+                            }
+                        }
+
                         Some(VirtualKeyCode::Minus) if self.modifiers.ctrl() => {
                             // font size -
                             self.increase_font_size(-1);
@@ -770,13 +807,19 @@ impl TerminalWindow {
                     let vertical = self.mouse_wheel_delta_y.trunc() as isize;
                     self.mouse_wheel_delta_y = self.mouse_wheel_delta_y % 1.0;
 
-                    if vertical > 0 {
-                        for _ in 0..vertical.abs() {
-                            self.terminal.pty_write(b"\x1b[\x41"); // Up
-                        }
+                    if self.modifiers.shift() {
+                        // Scroll up history
+                        self.history_head = std::cmp::min(self.history_head - vertical, 0);
                     } else {
-                        for _ in 0..vertical.abs() {
-                            self.terminal.pty_write(b"\x1b[\x42"); // Down
+                        // Send Up/Down key
+                        if vertical > 0 {
+                            for _ in 0..vertical.abs() {
+                                self.terminal.pty_write(b"\x1b[\x41"); // Up
+                            }
+                        } else {
+                            for _ in 0..vertical.abs() {
+                                self.terminal.pty_write(b"\x1b[\x42"); // Down
+                            }
                         }
                     }
 
