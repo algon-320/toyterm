@@ -757,40 +757,39 @@ impl TerminalWindow {
                     }
                 },
 
-                WindowEvent::MouseWheel { delta, .. } => match delta {
-                    glutin::event::MouseScrollDelta::LineDelta(dx, dy) => {
-                        self.mouse_wheel_delta_x += dx;
-                        self.mouse_wheel_delta_y += dy;
+                WindowEvent::MouseWheel {
+                    delta: glutin::event::MouseScrollDelta::LineDelta(dx, dy),
+                    ..
+                } => {
+                    self.mouse_wheel_delta_x += dx;
+                    self.mouse_wheel_delta_y += dy;
 
-                        let horizontal = self.mouse_wheel_delta_x.trunc() as isize;
-                        self.mouse_wheel_delta_x = self.mouse_wheel_delta_x % 1.0;
+                    let horizontal = self.mouse_wheel_delta_x.trunc() as isize;
+                    self.mouse_wheel_delta_x = self.mouse_wheel_delta_x % 1.0;
 
-                        let vertical = self.mouse_wheel_delta_y.trunc() as isize;
-                        self.mouse_wheel_delta_y = self.mouse_wheel_delta_y % 1.0;
+                    let vertical = self.mouse_wheel_delta_y.trunc() as isize;
+                    self.mouse_wheel_delta_y = self.mouse_wheel_delta_y % 1.0;
 
-                        if vertical > 0 {
-                            for _ in 0..vertical.abs() {
-                                self.terminal.pty_write(b"\x1b[\x41"); // Up
-                            }
-                        } else {
-                            for _ in 0..vertical.abs() {
-                                self.terminal.pty_write(b"\x1b[\x42"); // Down
-                            }
+                    if vertical > 0 {
+                        for _ in 0..vertical.abs() {
+                            self.terminal.pty_write(b"\x1b[\x41"); // Up
                         }
-
-                        if horizontal > 0 {
-                            for _ in 0..horizontal.abs() {
-                                self.terminal.pty_write(b"\x1b[\x43"); // Right
-                            }
-                        } else {
-                            for _ in 0..horizontal.abs() {
-                                self.terminal.pty_write(b"\x1b[\x44"); // Left
-                            }
+                    } else {
+                        for _ in 0..vertical.abs() {
+                            self.terminal.pty_write(b"\x1b[\x42"); // Down
                         }
                     }
-                    _ => {}
-                },
 
+                    if horizontal > 0 {
+                        for _ in 0..horizontal.abs() {
+                            self.terminal.pty_write(b"\x1b[\x43"); // Right
+                        }
+                    } else {
+                        for _ in 0..horizontal.abs() {
+                            self.terminal.pty_write(b"\x1b[\x44"); // Left
+                        }
+                    }
+                }
                 _ => {}
             },
 
