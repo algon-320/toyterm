@@ -745,6 +745,13 @@ impl TerminalWindow {
                             self.terminal.pty_write(b"\x1b[\x44");
                         }
 
+                        Some(VirtualKeyCode::PageUp) => {
+                            self.terminal.pty_write(b"\x1b[5~");
+                        }
+                        Some(VirtualKeyCode::PageDown) => {
+                            self.terminal.pty_write(b"\x1b[6~");
+                        }
+
                         Some(VirtualKeyCode::Minus) => {
                             self.terminal.pty_write(b"-");
                         }
