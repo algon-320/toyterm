@@ -93,7 +93,7 @@ toyterm-256color|toyterm (a toy terminal emulator),
 ## turn on blank mode
     invis=\E[8m,
 ## backspace key
-    kbs=^H,
+    kbs=^?,
 ## left-arrow key
     kcub1=\E[D,
 ## down-arrow key
@@ -102,6 +102,12 @@ toyterm-256color|toyterm (a toy terminal emulator),
     kcuf1=\E[C,
 ## up-arrow key
     kcuu1=\E[A,
+## delete-character key
+    kdch1=\E[3~,
+## next-page key
+    knp=\E[6~,
+## previous-page key
+    kpp=\E[5~,
 ## newline
     nel=\r\n,
 ## set default pair to its original value
