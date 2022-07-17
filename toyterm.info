@@ -98,8 +98,6 @@ toyterm-256color|toyterm (a toy terminal emulator),
     kcuf1=\E[C,
 ## up-arrow key
     kcuu1=\E[A,
-## enter/send key
-    kent=\r,
 ## newline
     nel=\r\n,
 ## set default pair to its original value
