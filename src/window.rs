@@ -695,6 +695,7 @@ impl TerminalWindow {
                         || ch == '\x7F'
                         || ch == '\x03'
                         || ch == '\x08'
+                        || ch == '\x0C'
                         || ch == '\x16'
                         || ch == '\x1B'
                     {
@@ -766,6 +767,12 @@ impl TerminalWindow {
                         }
                         Some(VirtualKeyCode::Equals) => {
                             self.terminal.pty_write(b"=");
+                        }
+
+                        Some(VirtualKeyCode::L) if self.modifiers.ctrl() => {
+                            self.history_head = 0;
+                            let mut buf = self.terminal.buffer.lock().unwrap();
+                            buf.clear_history();
                         }
 
                         Some(VirtualKeyCode::V) if self.modifiers.ctrl() => {

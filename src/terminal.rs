@@ -322,6 +322,13 @@ impl Buffer {
         }
     }
 
+    pub fn clear_history(&mut self) {
+        self.history_size = 0;
+        for line in self.history.iter_mut() {
+            line.erase_all();
+        }
+    }
+
     fn resize(&mut self, sz: TerminalSize) {
         self.sz = sz;
 
