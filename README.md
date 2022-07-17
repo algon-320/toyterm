@@ -2,6 +2,23 @@
 
 toyterm is a toy terminal emulator.
 
+## Usage
+
+Install:
+
+```sh
+$ git clone https://github.com/algon-320/toyterm
+$ cd toyterm
+$ tic -o ${HOME}/.terminfo/ toyterm.info
+$ cargo install --path .
+```
+
+Uninstall:
+```sh
+$ rm ${HOME}/.terminfo/t/toyterm-256color
+$ cargo uninstall toyterm
+```
+
 ## Features/Limitations
 
 - hardware accelerated graphics

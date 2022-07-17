@@ -1,0 +1,126 @@
+toyterm-256color|toyterm (a toy terminal emulator),
+#
+#----------------------
+# Boolean capabilities 
+#----------------------
+#
+## line wrapping
+    am,
+## safe to move while in insert mode
+    mir,
+## safe to move while in standout mode
+    msgr,
+## ignore a line-feed immediately after an am wrap
+    xenl,
+#
+#----------------------
+# Numeric capabilities 
+#----------------------
+#
+## maximum number of colors on screen
+    colors#0x1000000,
+## number of columns in a line
+    cols#80,
+## tabs initially every # spaces
+    it#8,
+## number of lines on screen
+    lines#24,
+#
+#---------------------
+# String capabilities
+#---------------------
+#
+## graphics charset pairs
+    acsc=``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~,
+## turn on blinking
+    blink=\E[5m,
+## turn on bold
+    bold=\E[1m,
+## clear screen and home cursor
+    clear=\E[H\E[J,
+## carriage return
+    cr=\r,
+## move #1 characters to the left
+    cub=\E[%p1%dD,
+## move left one space
+    cub1=\E[D,
+## down #1 lines
+    cud=\E[%p1%dB,
+## down one line
+    cud1=\E[B,
+## move #1 characters to the right
+    cuf=\E[%p1%dC,
+## move right one space
+    cuf1=\E[C,
+## move to row #1 column #2
+    cup=\E[%i%p1%d;%p2%dH,
+## up #1 lines 
+    cuu=\E[%p1%dA,
+## up one line
+    cuu1=\E[A,
+## delete #1 characters
+    dch=\E[%p1%dP,
+## delete character
+    dch1=\E[P,
+## delete #1 lines
+    dl=\E[%p1%dM,
+## delete line
+    dl1=\E[M,
+## erase #1 characters
+    ech=\E[%p1%dX,
+## clear to end of screen
+    ed=\E[J,
+## clear to end of line
+    el=\E[K,
+## clear to beginning of line
+    el1=\E[1K,
+## home cursor
+    home=\E[H,
+## horizontal position #1, absolute
+    hpa=\E[%i%p1%dG,
+## tab to next 8-space hardware tab stop
+    ht=^I,
+## insert #1 characters
+    ich=\E[%p1%d@,
+## insert #1 lines
+    il=\E[%p1%dL,
+## insert line
+    il1=\E[L,
+## scroll text up
+    ind=\n,
+## turn on blank mode
+    invis=\E[8m,
+## backspace key
+    kbs=^H,
+## left-arrow key
+    kcub1=\E[D,
+## down-arrow key
+    kcud1=\E[B,
+## right-arrow key
+    kcuf1=\E[C,
+## up-arrow key
+    kcuu1=\E[A,
+## enter/send key
+    kent=\r,
+## newline
+    nel=\r\n,
+## set default pair to its original value
+    op=\E[39;49m,
+## turn on reverse video mode
+    rev=\E[7m,
+## string to end programs using cup
+    rmcup=\E[?1049l,
+## exit standout mode
+    rmso=\E[27m,
+## set background color to #1
+    setab=\E[%?%p1%{8}%<%t4%p1%d%e48;2;%p1%{65536}%/%d;%p1%{256}%/%{255}%&%d;%p1%{255}%&%d%;m,
+## set foreground color to #1
+    setaf=\E[%?%p1%{8}%<%t3%p1%d%e38;2;%p1%{65536}%/%d;%p1%{256} %/%{255}%&%d;%p1%{255}%&%d%;m,
+## turn off all attributes
+    sgr0=\E[m,
+## string to start programs using cup
+    smcup=\E[?1049h,
+## begin standout mode
+    smso=\E[7m,
+## vertical position #1 absolute
+    vpa=\E[%i%p1%dd,

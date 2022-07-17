@@ -1389,8 +1389,7 @@ fn exec_shell() -> Result<()> {
 
     let mut vars: std::collections::HashMap<String, String> = std::env::vars().collect();
 
-    // FIXME
-    vars.insert("TERM".to_owned(), "ansi".to_owned());
+    vars.insert("TERM".to_owned(), "toyterm-256color".to_owned());
 
     let envs: Vec<CString> = vars
         .into_iter()
