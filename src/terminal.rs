@@ -294,6 +294,7 @@ pub struct Buffer {
     pub images: Vec<PositionedImage>,
     pub cursor: (usize, usize),
     pub bracketed_paste_mode: bool,
+    alt_lines: VecDeque<Line>,
     sz: TerminalSize,
 }
 
@@ -307,6 +308,8 @@ impl Buffer {
             .take(sz.rows)
             .collect();
 
+        let alt_lines = lines.clone();
+
         let history: VecDeque<_> = std::iter::repeat_with(|| Line::new(sz.cols))
             .take(Self::HISTORY_CAPACITY)
             .collect();
@@ -318,6 +321,7 @@ impl Buffer {
             images: Vec::new(),
             cursor: (0, 0),
             bracketed_paste_mode: false,
+            alt_lines,
             sz,
         }
     }
@@ -333,12 +337,16 @@ impl Buffer {
         self.sz = sz;
 
         self.lines.resize_with(sz.rows, || Line::new(sz.cols));
-
         for line in self.lines.iter_mut() {
             line.resize(sz.cols);
         }
 
         for line in self.history.iter_mut() {
+            line.resize(sz.cols);
+        }
+
+        self.alt_lines.resize_with(sz.rows, || Line::new(sz.cols));
+        for line in self.alt_lines.iter_mut() {
             line.resize(sz.cols);
         }
     }
@@ -377,6 +385,10 @@ impl Buffer {
             let (src, dst) = self.lines.get_mut_pair(src_first + i, dst_first + i);
             dst.copy_from(src);
         }
+    }
+
+    fn swap_screen_buffers(&mut self) {
+        std::mem::swap(&mut self.lines, &mut self.alt_lines);
     }
 }
 
@@ -516,6 +528,8 @@ struct Engine {
     parser: control_function::Parser,
     tabstops: Vec<usize>,
     attr: GraphicAttribute,
+    saved_cursor: Cursor,
+    saved_attr: GraphicAttribute,
 
     sixel_scrolling_mode: bool,
 }
@@ -558,6 +572,8 @@ impl Engine {
             parser: control_function::Parser::default(),
             tabstops,
             attr: GraphicAttribute::default(),
+            saved_cursor: cursor,
+            saved_attr: GraphicAttribute::default(),
 
             sixel_scrolling_mode: true,
         }
@@ -587,12 +603,17 @@ impl Engine {
         self.cursor.sz = sz;
         self.cursor = self.cursor.exact(row, col);
 
+        let (row, col) = self.saved_cursor.pos();
+        self.saved_cursor.sz = sz;
+        self.saved_cursor = self.saved_cursor.exact(row, col);
+
         let mut buf = self.buffer.lock().unwrap();
         buf.resize(sz);
         buf.cursor = self.cursor.pos();
 
         debug_assert_eq!(self.sz, buf.sz);
         debug_assert_eq!(self.sz, self.cursor.sz);
+        debug_assert_eq!(self.sz, self.saved_cursor.sz);
     }
 
     fn start(mut self) {
@@ -1126,6 +1147,18 @@ impl Engine {
                         log::debug!("Sixel Scrolling Mode Enabled");
                     }
 
+                    1049 => {
+                        // save current cursor
+                        self.saved_cursor = self.cursor;
+                        self.saved_attr = self.attr;
+
+                        // swtich to the alternate screen buffer
+                        for line in buf.alt_lines.iter_mut() {
+                            line.erase_all();
+                        }
+                        buf.swap_screen_buffers();
+                    }
+
                     2004 => {
                         buf.bracketed_paste_mode = true;
                         log::debug!("Bracketed Paste Mode Enabled");
@@ -1141,6 +1174,13 @@ impl Engine {
                     80 => {
                         self.sixel_scrolling_mode = false;
                         log::debug!("Sixel Scrolling Mode Disabled");
+                    }
+
+                    1049 => {
+                        // restore cursor and switch back to the primary screen buffer
+                        self.cursor = self.saved_cursor;
+                        self.attr = self.saved_attr;
+                        buf.swap_screen_buffers();
                     }
 
                     2004 => {
