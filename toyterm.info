@@ -34,8 +34,12 @@ toyterm-256color|toyterm (a toy terminal emulator),
     blink=\E[5m,
 ## turn on bold
     bold=\E[1m,
+## make cursor invisible
+    civis=\E[?25l,
 ## clear screen and home cursor
     clear=\E[H\E[J,
+## undo civis
+    cnorm=\E[?25h,
 ## carriage return
     cr=\r,
 ## move #1 characters to the left

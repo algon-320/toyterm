@@ -217,6 +217,7 @@ impl TerminalWindow {
 
         let lines: Vec<Line>;
         let cursor: (usize, usize);
+        let cursor_visible_mode: bool;
         let images: Vec<PositionedImage>;
         {
             // hold the lock during copying states
@@ -252,6 +253,7 @@ impl TerminalWindow {
             }
 
             cursor = buf.cursor;
+            cursor_visible_mode = buf.cursor_visible_mode;
 
             images = buf
                 .images
@@ -276,7 +278,7 @@ impl TerminalWindow {
             (l, r)
         });
 
-        let cursor_visible = self.history_head >= 0;
+        let cursor_visible = cursor_visible_mode && self.history_head >= 0;
 
         let mut baseline: u32 = self.cell_max_over as u32;
         let mut selection_offset = 0.0;

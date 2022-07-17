@@ -100,6 +100,9 @@ Currently toyterm supports the following functions.
 
 toyterm supports the following modes.
 
+- Cursor Visible Mode (`?25`)
+    - Set: cursor is visible.
+    - Reset: cursor is invisible.
 - Sixel Scrolling Mode (`?80`)
     - Set: a sixel image is displayed at the current cursor position.
     - Reset: a sixel image is displayed at the upper left corner of the screen.

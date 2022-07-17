@@ -293,6 +293,7 @@ pub struct Buffer {
     pub history_size: usize,
     pub images: Vec<PositionedImage>,
     pub cursor: (usize, usize),
+    pub cursor_visible_mode: bool,
     pub bracketed_paste_mode: bool,
     alt_lines: VecDeque<Line>,
     sz: TerminalSize,
@@ -320,6 +321,7 @@ impl Buffer {
             history_size: 0,
             images: Vec::new(),
             cursor: (0, 0),
+            cursor_visible_mode: true,
             bracketed_paste_mode: false,
             alt_lines,
             sz,
@@ -1142,6 +1144,10 @@ impl Engine {
                 }
 
                 SM(b'?', ps) => match ps {
+                    25 => {
+                        buf.cursor_visible_mode = true;
+                    }
+
                     80 => {
                         self.sixel_scrolling_mode = true;
                         log::debug!("Sixel Scrolling Mode Enabled");
@@ -1171,6 +1177,10 @@ impl Engine {
                 SM(..) => ignore!(),
 
                 RM(b'?', ps) => match ps {
+                    25 => {
+                        buf.cursor_visible_mode = false;
+                    }
+
                     80 => {
                         self.sixel_scrolling_mode = false;
                         log::debug!("Sixel Scrolling Mode Disabled");
