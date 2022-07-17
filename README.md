@@ -69,13 +69,29 @@ Currently toyterm supports the following functions.
 - EL
 - ICH
 - IL
+- RM
 - SGR
+- SM
 - VPA
 
 ## Device Control Function
 
 - DCS `q` (sixel string...) ST
     - see <https://www.vt100.net/docs/vt3xx-gp/chapter14.html> for the representation
+
+## Modes
+
+toyterm supports the following modes.
+
+- Sixel Scrolling Mode (`?80`)
+    - Set: a sixel image is displayed at the current cursor position.
+    - Reset: a sixel image is displayed at the upper left corner of the screen.
+- Alternate Screen Buffer Mode (`?1049`)
+    - Set: clear the screen, save the cursor position, and switch to the alternate screen.
+    - Reset: restore the saved cursor position, and switch back to the primary screen.
+- Bracketed Paste Mode (`?2004`)
+    - Set: insert `\x1b[200~` at the beginning and `\x1b[201~` at the end of a pasted text.
+    - Reset: a pasted text is send to the terminal as if it was typed by user.
 
 ## License
 
