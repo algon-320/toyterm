@@ -30,8 +30,6 @@ toyterm-256color|toyterm (a toy terminal emulator),
 # String capabilities
 #---------------------
 #
-## graphics charset pairs
-    acsc=``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~,
 ## turn on blinking
     blink=\E[5m,
 ## turn on bold
