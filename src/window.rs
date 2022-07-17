@@ -252,7 +252,16 @@ impl TerminalWindow {
             }
 
             cursor = buf.cursor;
-            images = buf.images.clone();
+
+            images = buf
+                .images
+                .iter()
+                .cloned()
+                .map(|mut img| {
+                    img.row -= self.history_head;
+                    img
+                })
+                .collect();
 
             self.bracketed_paste_mode = buf.bracketed_paste_mode;
         }
