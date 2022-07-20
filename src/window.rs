@@ -295,7 +295,7 @@ impl TerminalWindow {
                 let is_inversed = cell.attr.inversed;
                 let on_cursor = cursor_visible && i == cursor.0 as u32 && j == cursor.1 as u32;
 
-                if let Some(region) = self.cache.get(cell.ch, style) {
+                if let Some((region, metrics)) = self.cache.get(cell.ch, style) {
                     // Background
                     {
                         let gl_x = x_to_gl((j * cell_size.w) as i32, window_width);
@@ -319,7 +319,6 @@ impl TerminalWindow {
                     }
 
                     if !region.is_empty() {
-                        let metrics = self.fonts.metrics(cell.ch, style).expect("ASCII character");
                         let bearing_x = (metrics.horiBearingX >> 6) as u32;
                         let bearing_y = (metrics.horiBearingY >> 6) as u32;
 
