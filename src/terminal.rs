@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::io::Result;
@@ -142,8 +142,13 @@ impl Line {
         Line(vec![Cell::SPACE; len])
     }
 
-    fn copy_from(&mut self, src: &Self) {
-        self.0.copy_from_slice(&src.0);
+    pub fn copy_from(&mut self, src: &Self) {
+        if self.0.len() == src.0.len() {
+            self.0.copy_from_slice(&src.0);
+        } else {
+            self.0.clear();
+            self.0.extend_from_slice(&src.0);
+        }
     }
 
     // [ret.0, ret.1)
@@ -332,6 +337,25 @@ impl Buffer {
         self.history_size = 0;
         for line in self.history.iter_mut() {
             line.erase_all();
+        }
+    }
+
+    pub fn range(&self, top: isize, bot: isize) -> impl Iterator<Item = &Line> + '_ {
+        let buff_len = self.lines.len() as isize;
+        let hist_len = self.history.len() as isize;
+
+        if top >= 0 {
+            let top = top as usize;
+            let bot = min(bot, buff_len) as usize;
+            self.history.range(0..0).chain(self.lines.range(top..bot))
+        } else if bot < 0 {
+            let top = max(hist_len + top, 0) as usize;
+            let bot = (hist_len + bot) as usize;
+            self.history.range(top..bot).chain(self.lines.range(0..0))
+        } else {
+            let top = max(hist_len + top, 0) as usize;
+            let bot = min(bot, buff_len) as usize;
+            self.history.range(top..).chain(self.lines.range(..bot))
         }
     }
 

@@ -83,6 +83,8 @@ pub struct TerminalWindow {
     cell_max_over: i32,
     started_time: std::time::Instant,
     clipboard: X11Clipboard,
+    buf_lines: Vec<Line>,
+    buf_img: Vec<PositionedImage>,
 
     terminal: Terminal,
     bracketed_paste_mode: bool,
@@ -183,6 +185,8 @@ impl TerminalWindow {
             cell_max_over,
             started_time: std::time::Instant::now(),
             clipboard,
+            buf_lines: Vec::new(),
+            buf_img: Vec::new(),
 
             terminal,
             bracketed_paste_mode: false,
@@ -215,55 +219,38 @@ impl TerminalWindow {
             surface.clear_color_srgb(r, g, b, 1.0);
         }
 
-        let lines: Vec<Line>;
         let cursor: (usize, usize);
         let cursor_visible_mode: bool;
-        let images: Vec<PositionedImage>;
         {
             // hold the lock during copying states
             let buf = self.terminal.buffer.lock().unwrap();
-
-            let buff_len = buf.lines.len() as isize;
-            let hist_len = buf.history.len() as isize;
 
             if self.history_head < -(buf.history_size as isize) {
                 self.history_head = -(buf.history_size as isize);
             }
 
             let top = self.history_head;
-            let bot = top + buff_len;
+            let bot = top + buf.lines.len() as isize;
 
-            use std::cmp::{max, min};
-            if top >= 0 {
-                let top = top as usize;
-                let bot = min(bot, buff_len) as usize;
-                lines = buf.lines.range(top..bot).cloned().collect()
-            } else if bot < 0 {
-                let top = max(hist_len + top, 0) as usize;
-                let bot = (hist_len + bot) as usize;
-                lines = buf.history.range(top..bot).cloned().collect()
+            if self.buf_lines.len() != buf.lines.len() {
+                self.buf_lines.clear();
+                self.buf_lines.extend(buf.range(top, bot).cloned());
             } else {
-                let top = max(hist_len + top, 0) as usize;
-                let bot = min(bot, buff_len) as usize;
-
-                let mut tmp = Vec::new();
-                tmp.extend(buf.history.range(top..).cloned());
-                tmp.extend(buf.lines.range(..bot).cloned());
-                lines = tmp
+                for (src, dst) in buf.range(top, bot).zip(self.buf_lines.iter_mut()) {
+                    dst.copy_from(src);
+                }
             }
+
+            let iter_img = buf.images.iter().cloned().map(|mut img| {
+                img.row -= self.history_head;
+                img
+            });
+
+            self.buf_img.clear();
+            self.buf_img.extend(iter_img);
 
             cursor = buf.cursor;
             cursor_visible_mode = buf.cursor_visible_mode;
-
-            images = buf
-                .images
-                .iter()
-                .cloned()
-                .map(|mut img| {
-                    img.row -= self.history_head;
-                    img
-                })
-                .collect();
 
             self.bracketed_paste_mode = buf.bracketed_paste_mode;
         }
@@ -283,7 +270,7 @@ impl TerminalWindow {
         let mut baseline: u32 = self.cell_max_over as u32;
         let mut selection_offset = 0.0;
         let mut i: u32 = 0;
-        for row in lines.iter() {
+        for row in self.buf_lines.iter() {
             let mut leftline: u32 = 0;
             let mut j: u32 = 0;
             let mut selection_x = 0.0;
@@ -536,7 +523,7 @@ impl TerminalWindow {
             .expect("draw");
 
         // Draw Sixel graphics
-        for img in images {
+        for img in self.buf_img.drain(..) {
             let gl_x = x_to_gl(img.col as i32 * cell_size.w as i32, window_width);
             let gl_y = y_to_gl(img.row as i32 * cell_size.h as i32, window_height);
             let gl_w = w_to_gl(img.width as u32, window_width);
