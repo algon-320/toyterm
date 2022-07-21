@@ -894,13 +894,7 @@ fn color_to_rgba(color: Color) -> u32 {
         Color::Cyan => 0x8ec07cff,
         Color::White => 0xd5c4a1ff,
 
-        Color::Rgb { r, g, b } => {
-            let r = (r as u32) << 24;
-            let g = (g as u32) << 16;
-            let b = (b as u32) << 8;
-            let a = 0xFF;
-            r | g | b | a
-        }
+        Color::Rgb { rgba } => rgba,
         Color::Special => 0xFFFFFF00,
     }
 }

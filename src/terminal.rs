@@ -87,7 +87,7 @@ pub enum Color {
     Magenta,
     Cyan,
     White,
-    Rgb { r: u8, g: u8, b: u8 },
+    Rgb { rgba: u32 },
     Special,
 }
 
@@ -1069,8 +1069,10 @@ impl Engine {
                                 let s = ps.next();
                                 let (r, g, b) = (ps.next(), ps.next(), ps.next());
                                 if let (Some(2), Some(&r), Some(&g), Some(&b)) = (s, r, g, b) {
-                                    let (r, g, b) = (r as u8, g as u8, b as u8);
-                                    self.attr.fg = Color::Rgb { r, g, b };
+                                    let (r, g, b) = (r as u32, g as u32, b as u32);
+                                    self.attr.fg = Color::Rgb {
+                                        rgba: (r << 24) | (g << 16) | (b << 8) | 0xFF,
+                                    };
                                 }
                             }
                             70 => self.attr.fg = Color::Special,
@@ -1088,8 +1090,10 @@ impl Engine {
                                 let s = ps.next();
                                 let (r, g, b) = (ps.next(), ps.next(), ps.next());
                                 if let (Some(2), Some(&r), Some(&g), Some(&b)) = (s, r, g, b) {
-                                    let (r, g, b) = (r as u8, g as u8, b as u8);
-                                    self.attr.bg = Color::Rgb { r, g, b };
+                                    let (r, g, b) = (r as u32, g as u32, b as u32);
+                                    self.attr.bg = Color::Rgb {
+                                        rgba: (r << 24) | (g << 16) | (b << 8) | 0xFF,
+                                    };
                                 }
                             }
                             80 => self.attr.bg = Color::Special,
