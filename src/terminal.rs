@@ -28,6 +28,12 @@ fn overwrap(outer: &PositionedImage, inner: &PositionedImage) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorStyle {
+    Block,
+    Bar,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalSize {
     pub rows: usize,
     pub cols: usize,
@@ -299,6 +305,7 @@ pub struct Buffer {
     pub images: Vec<PositionedImage>,
     pub cursor: (usize, usize),
     pub cursor_visible_mode: bool,
+    pub cursor_style: CursorStyle,
     pub bracketed_paste_mode: bool,
     alt_lines: VecDeque<Line>,
     sz: TerminalSize,
@@ -327,6 +334,7 @@ impl Buffer {
             images: Vec::new(),
             cursor: (0, 0),
             cursor_visible_mode: true,
+            cursor_style: CursorStyle::Block,
             bracketed_paste_mode: false,
             alt_lines,
             sz,
@@ -1170,6 +1178,14 @@ impl Engine {
                         }
                     }
                 }
+
+                SelectCursorStyle(ps) => match ps {
+                    2 => buf.cursor_style = CursorStyle::Block,
+                    6 => buf.cursor_style = CursorStyle::Bar,
+                    _ => {
+                        log::warn!("unknown cursor shape: {}", ps);
+                    }
+                },
 
                 SM(b'?', ps) => match ps {
                     25 => {

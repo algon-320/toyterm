@@ -10,7 +10,9 @@ use glutin::{
 use crate::cache::GlyphCache;
 use crate::clipboard::X11Clipboard;
 use crate::font::{Font, FontSet, Style};
-use crate::terminal::{CellSize, Color, Line, PositionedImage, Terminal, TerminalSize};
+use crate::terminal::{
+    CellSize, Color, CursorStyle, Line, PositionedImage, Terminal, TerminalSize,
+};
 
 fn sort_points(a: (f64, f64), b: (f64, f64), cell_sz: CellSize) -> ((f64, f64), (f64, f64)) {
     let (ax, ay) = a;
@@ -221,6 +223,7 @@ impl TerminalWindow {
 
         let cursor: (usize, usize);
         let cursor_visible_mode: bool;
+        let cursor_style: CursorStyle;
         {
             // hold the lock during copying states
             let buf = self.terminal.buffer.lock().unwrap();
@@ -251,6 +254,7 @@ impl TerminalWindow {
 
             cursor = buf.cursor;
             cursor_visible_mode = buf.cursor_visible_mode;
+            cursor_style = buf.cursor_style;
 
             self.bracketed_paste_mode = buf.bracketed_paste_mode;
         }
@@ -293,7 +297,10 @@ impl TerminalWindow {
                 };
 
                 let is_inversed = cell.attr.inversed;
-                let on_cursor = cursor_visible && i == cursor.0 as u32 && j == cursor.1 as u32;
+                let on_cursor = cursor_style == CursorStyle::Block
+                    && cursor_visible
+                    && i == cursor.0 as u32
+                    && j == cursor.1 as u32;
 
                 if let Some((region, metrics)) = self.cache.get(cell.ch, style) {
                     // Background
@@ -495,6 +502,22 @@ impl TerminalWindow {
             baseline += cell_size.h;
             selection_offset += window_width as f64;
             i += 1;
+        }
+
+        if cursor_style == CursorStyle::Bar {
+            let cursor_col = cursor.1 as u32;
+            let cursor_row = cursor.0 as u32;
+
+            let gl_x = x_to_gl((cursor_col * cell_size.w) as i32, window_width);
+            let gl_y = y_to_gl((cursor_row * cell_size.h) as i32, window_height);
+            let gl_w = w_to_gl(4, window_width);
+            let gl_h = h_to_gl(cell_size.h, window_height);
+
+            let fg = Color::Black;
+            let bg = Color::White;
+
+            let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
+            self.vertices.extend_from_slice(&vs);
         }
 
         let vertex_buffer = glium::VertexBuffer::new(&self.display, &self.vertices).unwrap();

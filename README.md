@@ -91,6 +91,10 @@ Currently toyterm supports the following functions.
 - SM
 - VPA
 
+- SelectCursorStyle:
+    - Block: `\e[2 q`
+    - Bar: `\e[6 q`
+
 ## Device Control Function
 
 - DCS `q` (sixel string...) ST

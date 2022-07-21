@@ -165,6 +165,7 @@ pub enum Function<'p> {
 
     // private
     SixelImage(sixel::Image),
+    SelectCursorStyle(u16),
 }
 
 enum State {
@@ -489,6 +490,9 @@ fn parse_control_sequence<'b>(
                 (b'\x20', '\x6D', _) => Some(Unsupported),
                 (b'\x20', '\x6E', _) => Some(Unsupported),
                 (b'\x20', '\x6F', _) => Some(Unsupported),
+
+                // private sequences
+                (b'\x20', '\x71', &[ps]) => Some(SelectCursorStyle(ps)),
                 (b'\x20', '\x70'..='\x7E', params) => {
                     log::trace!(
                         "undefined private sequence: i=0x20, final=0x{:X}, params={:?}",
