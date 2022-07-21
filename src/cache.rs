@@ -1,6 +1,5 @@
 use freetype::GlyphMetrics;
 use glium::{texture, Display};
-use std::collections::HashMap;
 
 use crate::font::{FontSet, Style};
 use crate::terminal::CellSize;
@@ -30,7 +29,12 @@ impl GlyphRegion {
 
 pub struct GlyphCache {
     texture: texture::Texture2d,
-    glyph_region: HashMap<(char, Style), (GlyphRegion, GlyphMetrics)>,
+    ascii_glyph_region: Vec<Option<(GlyphRegion, GlyphMetrics)>>,
+}
+
+fn get_ascii_index(ch: char, style: Style) -> usize {
+    debug_assert!(ch.is_ascii());
+    ((ch as u8 as usize) << 2) | (style as u8 as usize)
 }
 
 impl GlyphCache {
@@ -46,7 +50,9 @@ impl GlyphCache {
         )
         .expect("Failed to create texture");
 
-        let mut glyph_region: HashMap<(char, Style), (GlyphRegion, GlyphMetrics)> = HashMap::new();
+        // FIXME: the size is dependent on the fact that font::Style has only 3 variants.
+        let mut ascii_glyph_region: Vec<Option<(GlyphRegion, GlyphMetrics)>> =
+            vec![None; 0x80 << 2];
 
         let ascii_visible = ' '..='~';
         for ch in ascii_visible {
@@ -65,6 +71,7 @@ impl GlyphCache {
                     width: glyph_image.width,
                     height: glyph_image.height,
                 };
+
                 texture.main_level().write(rect, glyph_image);
 
                 let region = GlyphRegion {
@@ -75,7 +82,9 @@ impl GlyphCache {
                     tx_w: rect.width as f32 / texture_w as f32,
                     tx_h: rect.height as f32 / texture_h as f32,
                 };
-                glyph_region.insert((ch, Style::Regular), (region, metrics));
+
+                let idx = get_ascii_index(ch, Style::Regular);
+                ascii_glyph_region[idx] = Some((region, metrics));
             }
 
             if let Some((glyph_image, metrics)) = fonts.render(ch, Style::Bold) {
@@ -95,7 +104,9 @@ impl GlyphCache {
                     tx_w: rect.width as f32 / texture_w as f32,
                     tx_h: rect.height as f32 / texture_h as f32,
                 };
-                glyph_region.insert((ch, Style::Bold), (region, metrics));
+
+                let idx = get_ascii_index(ch, Style::Bold);
+                ascii_glyph_region[idx] = Some((region, metrics));
             }
 
             if let Some((glyph_image, metrics)) = fonts.render(ch, Style::Faint) {
@@ -115,18 +126,25 @@ impl GlyphCache {
                     tx_w: rect.width as f32 / texture_w as f32,
                     tx_h: rect.height as f32 / texture_h as f32,
                 };
-                glyph_region.insert((ch, Style::Faint), (region, metrics));
+
+                let idx = get_ascii_index(ch, Style::Faint);
+                ascii_glyph_region[idx] = Some((region, metrics));
             }
         }
 
         Self {
             texture,
-            glyph_region,
+            ascii_glyph_region,
         }
     }
 
     pub fn get(&self, ch: char, style: Style) -> Option<(GlyphRegion, GlyphMetrics)> {
-        self.glyph_region.get(&(ch, style)).copied()
+        if ch.is_ascii() {
+            let idx = get_ascii_index(ch, style);
+            self.ascii_glyph_region[idx]
+        } else {
+            None
+        }
     }
 
     pub fn texture(&self) -> &texture::Texture2d {

@@ -72,6 +72,7 @@ impl Font {
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Style {
     Regular,
     Bold,
