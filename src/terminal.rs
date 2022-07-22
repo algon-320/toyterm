@@ -308,6 +308,7 @@ pub struct Buffer {
     pub bracketed_paste_mode: bool,
     alt_lines: VecDeque<Line>,
     sz: TerminalSize,
+    pub updated: bool,
 }
 
 impl Buffer {
@@ -337,6 +338,7 @@ impl Buffer {
             bracketed_paste_mode: false,
             alt_lines,
             sz,
+            updated: true,
         }
     }
 
@@ -728,6 +730,8 @@ impl Engine {
     fn process(&mut self, input: &str) {
         log::trace!("process: {:?}", input);
         let mut buf = self.buffer.lock().unwrap();
+
+        buf.updated = true;
 
         for ch in input.chars() {
             let func = match self.parser.feed(ch) {

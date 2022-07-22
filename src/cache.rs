@@ -1,5 +1,6 @@
 use freetype::GlyphMetrics;
 use glium::{texture, Display};
+use std::rc::Rc;
 
 use crate::font::{FontSet, Style};
 use crate::terminal::CellSize;
@@ -28,7 +29,7 @@ impl GlyphRegion {
 }
 
 pub struct GlyphCache {
-    texture: texture::Texture2d,
+    texture: Rc<texture::Texture2d>,
     ascii_glyph_region: Vec<Option<(GlyphRegion, GlyphMetrics)>>,
 }
 
@@ -133,7 +134,7 @@ impl GlyphCache {
         }
 
         Self {
-            texture,
+            texture: Rc::new(texture),
             ascii_glyph_region,
         }
     }
@@ -147,7 +148,7 @@ impl GlyphCache {
         }
     }
 
-    pub fn texture(&self) -> &texture::Texture2d {
-        &self.texture
+    pub fn texture(&self) -> Rc<texture::Texture2d> {
+        self.texture.clone()
     }
 }

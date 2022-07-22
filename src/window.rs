@@ -6,13 +6,12 @@ use glutin::{
     window::WindowBuilder,
     ContextBuilder,
 };
+use std::rc::Rc;
 
 use crate::cache::GlyphCache;
 use crate::clipboard::X11Clipboard;
 use crate::font::{Font, FontSet, Style};
-use crate::terminal::{
-    CellSize, Color, CursorStyle, Line, PositionedImage, Terminal, TerminalSize,
-};
+use crate::terminal::{CellSize, Color, CursorStyle, Line, Terminal, TerminalSize};
 
 fn sort_points(a: (f64, f64), b: (f64, f64), cell_sz: CellSize) -> ((f64, f64), (f64, f64)) {
     let (ax, ay) = a;
@@ -71,11 +70,17 @@ fn calculate_cell_size(fonts: &FontSet) -> (CellSize, i32) {
     )
 }
 
+struct DrawQuery<V: glium::vertex::Vertex> {
+    vertices: glium::VertexBuffer<V>,
+    texture: Rc<texture::Texture2d>,
+}
+
 pub struct TerminalWindow {
     display: Display,
-    program: glium::Program,
-    image_program: glium::Program,
-    vertices: Vec<Vertex>,
+    program_cell: glium::Program,
+    program_img: glium::Program,
+    vertices_fg: Vec<Vertex>,
+    vertices_bg: Vec<Vertex>,
     modifiers: ModifiersState,
     fonts: FontSet,
     cache: GlyphCache,
@@ -86,7 +91,6 @@ pub struct TerminalWindow {
     started_time: std::time::Instant,
     clipboard: X11Clipboard,
     buf_lines: Vec<Line>,
-    buf_img: Vec<PositionedImage>,
 
     terminal: Terminal,
     bracketed_paste_mode: bool,
@@ -95,7 +99,11 @@ pub struct TerminalWindow {
     cursor_position: (f64, f64),
     mouse_pressed_position: Option<(f64, f64)>,
     mouse_released_position: Option<(f64, f64)>,
+    last_selected_range: Option<(f64, f64)>,
     history_head: isize,
+    draw_queries_fg: Vec<DrawQuery<Vertex>>,
+    draw_queries_bg: Vec<DrawQuery<Vertex>>,
+    draw_queries_img: Vec<DrawQuery<SimpleVertex>>,
 }
 
 impl TerminalWindow {
@@ -136,7 +144,7 @@ impl TerminalWindow {
             .set_cursor_icon(glutin::window::CursorIcon::Text);
 
         // Initialize shaders
-        let program = {
+        let program_cell = {
             use glium::program::{Program, ProgramCreationInput};
             let input = ProgramCreationInput::SourceCode {
                 vertex_shader: include_str!("cell.vert"),
@@ -151,7 +159,7 @@ impl TerminalWindow {
             Program::new(&display, input).unwrap()
         };
 
-        let image_program = {
+        let program_img = {
             use glium::program::{Program, ProgramCreationInput};
             let input = ProgramCreationInput::SourceCode {
                 vertex_shader: include_str!("image.vert"),
@@ -175,9 +183,10 @@ impl TerminalWindow {
 
         TerminalWindow {
             display,
-            program,
-            image_program,
-            vertices: Vec::new(),
+            program_cell,
+            program_img,
+            vertices_fg: Vec::new(),
+            vertices_bg: Vec::new(),
             modifiers: ModifiersState::empty(),
             fonts,
             cache,
@@ -188,7 +197,6 @@ impl TerminalWindow {
             started_time: std::time::Instant::now(),
             clipboard,
             buf_lines: Vec::new(),
-            buf_img: Vec::new(),
 
             terminal,
             bracketed_paste_mode: false,
@@ -197,7 +205,11 @@ impl TerminalWindow {
             cursor_position: (0.0, 0.0),
             mouse_pressed_position: None,
             mouse_released_position: None,
+            last_selected_range: None,
             history_head: 0,
+            draw_queries_fg: Vec::new(),
+            draw_queries_bg: Vec::new(),
+            draw_queries_img: Vec::new(),
         }
     }
 
@@ -207,7 +219,259 @@ impl TerminalWindow {
         let window_height = self.window_height;
         let cell_size = self.cell_size;
 
-        self.vertices.clear();
+        let cursor: (usize, usize);
+        let cursor_visible_mode: bool;
+        let cursor_style: CursorStyle;
+        let buf_updated: bool;
+        {
+            // hold the lock during copying states
+            let mut buf = self.terminal.buffer.lock().unwrap();
+
+            buf_updated = buf.updated;
+            buf.updated = false;
+
+            if self.history_head < -(buf.history_size as isize) {
+                self.history_head = -(buf.history_size as isize);
+            }
+
+            if buf_updated {
+                let top = self.history_head;
+                let bot = top + buf.lines.len() as isize;
+
+                if self.buf_lines.len() != buf.lines.len() {
+                    self.buf_lines.clear();
+                    self.buf_lines.extend(buf.range(top, bot).cloned());
+                } else {
+                    for (src, dst) in buf.range(top, bot).zip(self.buf_lines.iter_mut()) {
+                        dst.copy_from(src);
+                    }
+                }
+
+                self.draw_queries_img.clear();
+
+                for img in buf.images.iter() {
+                    let col = img.col;
+                    let row = img.row - self.history_head;
+
+                    let gl_x = x_to_gl(col as i32 * cell_size.w as i32, window_width);
+                    let gl_y = y_to_gl(row as i32 * cell_size.h as i32, window_height);
+                    let gl_w = w_to_gl(img.width as u32, window_width);
+                    let gl_h = h_to_gl(img.height as u32, window_height);
+                    let vs = image_vertices(gl_x, gl_y, gl_w, gl_h);
+
+                    let vertices = glium::VertexBuffer::new(&self.display, &vs).unwrap();
+
+                    let texture = texture::Texture2d::with_mipmaps(
+                        &self.display,
+                        glium::texture::RawImage2d {
+                            data: img.data.clone().into(),
+                            width: img.width as u32,
+                            height: img.height as u32,
+                            format: glium::texture::ClientFormat::U8U8U8,
+                        },
+                        texture::MipmapsOption::NoMipmap,
+                    )
+                    .expect("Failed to create texture");
+
+                    self.draw_queries_img.push(DrawQuery {
+                        vertices,
+                        texture: Rc::new(texture),
+                    });
+                }
+
+                self.bracketed_paste_mode = buf.bracketed_paste_mode;
+            }
+
+            cursor = buf.cursor;
+            cursor_visible_mode = buf.cursor_visible_mode;
+            cursor_style = buf.cursor_style;
+        }
+
+        let selected_range = self.mouse_pressed_position.map(|start| {
+            let end = self.mouse_released_position.unwrap_or(self.cursor_position);
+            let ((sx, sy), (ex, ey)) = sort_points(start, end, cell_size);
+            let s_row = sy.round() as u32 / cell_size.h;
+            let e_row = ey.round() as u32 / cell_size.h;
+            let l = (s_row as f64) * (window_width as f64) + sx;
+            let r = (e_row as f64) * (window_width as f64) + ex;
+            (l, r)
+        });
+
+        if buf_updated || self.last_selected_range != selected_range {
+            self.last_selected_range = selected_range;
+
+            self.vertices_fg.clear();
+            self.vertices_bg.clear();
+            self.draw_queries_fg.clear();
+            self.draw_queries_bg.clear();
+
+            let cursor_visible = cursor_visible_mode && self.history_head >= 0;
+
+            let mut baseline: u32 = self.cell_max_over as u32;
+            for (i, row) in self.buf_lines.iter().enumerate() {
+                let mut leftline: u32 = 0;
+                for (j, cell) in row.iter().enumerate() {
+                    if cell.width == 0 {
+                        continue;
+                    }
+
+                    let cell_width_px = cell_size.w * cell.width as u32;
+
+                    let style = if cell.attr.bold == -1 {
+                        Style::Faint
+                    } else if cell.attr.bold == 0 {
+                        Style::Regular
+                    } else {
+                        Style::Bold
+                    };
+
+                    let (fg, bg) = {
+                        let is_inversed = cell.attr.inversed;
+
+                        let on_cursor = cursor_visible
+                            && cursor_style == CursorStyle::Block
+                            && i == cursor.0
+                            && j == cursor.1;
+
+                        let is_selected = match selected_range {
+                            Some((left, right)) => {
+                                let offset = (i as u32 * window_width + leftline) as f64;
+                                let mid_point = offset + (cell_width_px as f64) / 2.0;
+                                left <= mid_point && mid_point <= right
+                            }
+                            None => false,
+                        };
+
+                        let mut fg = cell.attr.fg;
+                        let mut bg = cell.attr.bg;
+
+                        if is_inversed ^ on_cursor ^ is_selected {
+                            std::mem::swap(&mut fg, &mut bg);
+                        }
+
+                        if cell.attr.concealed {
+                            fg = bg;
+                        }
+
+                        (fg, bg)
+                    };
+
+                    // Background
+                    {
+                        let gl_x = x_to_gl((j as u32 * cell_size.w) as i32, window_width);
+                        let gl_y = y_to_gl((i as u32 * cell_size.h) as i32, window_height);
+                        let gl_w = w_to_gl(cell_width_px, window_width);
+                        let gl_h = h_to_gl(cell_size.h, window_height);
+                        let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
+                        self.vertices_bg.extend_from_slice(&vs);
+                    }
+
+                    if let Some((region, metrics)) = self.cache.get(cell.ch, style) {
+                        if !region.is_empty() {
+                            let bearing_x = (metrics.horiBearingX >> 6) as u32;
+                            let bearing_y = (metrics.horiBearingY >> 6) as u32;
+
+                            let x = leftline as i32 + bearing_x as i32;
+                            let y = baseline as i32 - bearing_y as i32;
+                            let gl_x = x_to_gl(x, window_width);
+                            let gl_y = y_to_gl(y, window_height);
+                            let gl_w = w_to_gl(region.px_w, window_width);
+                            let gl_h = h_to_gl(region.px_h, window_height);
+
+                            let vs = glyph_vertices(
+                                gl_x,
+                                gl_y,
+                                gl_w,
+                                gl_h,
+                                region.tx_x,
+                                region.tx_y,
+                                region.tx_w,
+                                region.tx_h,
+                                fg,
+                                bg,
+                                cell.attr.blinking,
+                            );
+                            self.vertices_fg.extend_from_slice(&vs);
+                        }
+                    } else if let Some((glyph_image, metrics)) = self.fonts.render(cell.ch, style) {
+                        // for non-ASCII characters
+                        if !glyph_image.data.is_empty() {
+                            let bearing_x = (metrics.horiBearingX >> 6) as u32;
+                            let bearing_y = (metrics.horiBearingY >> 6) as u32;
+
+                            let glyph_width = glyph_image.width;
+                            let glyph_height = glyph_image.height;
+
+                            let gl_x = x_to_gl(leftline as i32 + bearing_x as i32, window_width);
+                            let gl_y = y_to_gl(baseline as i32 - bearing_y as i32, window_height);
+                            let gl_w = w_to_gl(glyph_width, window_width);
+                            let gl_h = h_to_gl(glyph_height, window_height);
+
+                            let vs = glyph_vertices(
+                                gl_x,
+                                gl_y,
+                                gl_w,
+                                gl_h,
+                                0.0,
+                                0.0,
+                                1.0,
+                                1.0,
+                                fg,
+                                bg,
+                                cell.attr.blinking,
+                            );
+
+                            let vertex_buffer =
+                                glium::VertexBuffer::new(&self.display, &vs).unwrap();
+
+                            let single_glyph_texture = texture::Texture2d::with_mipmaps(
+                                &self.display,
+                                glyph_image,
+                                texture::MipmapsOption::NoMipmap,
+                            )
+                            .expect("Failed to create texture");
+
+                            self.draw_queries_fg.push(DrawQuery {
+                                vertices: vertex_buffer,
+                                texture: Rc::new(single_glyph_texture),
+                            });
+                        }
+                    } else {
+                        log::trace!("undefined glyph: {:?}", cell.ch);
+                    }
+
+                    leftline += cell_width_px;
+                }
+                baseline += cell_size.h;
+            }
+
+            if cursor_style == CursorStyle::Bar {
+                let cursor_col = cursor.1 as u32;
+                let cursor_row = cursor.0 as u32;
+
+                let fg = Color::Black;
+                let bg = Color::White;
+
+                let gl_x = x_to_gl((cursor_col * cell_size.w) as i32, window_width);
+                let gl_y = y_to_gl((cursor_row * cell_size.h) as i32, window_height);
+                let gl_w = w_to_gl(4, window_width);
+                let gl_h = h_to_gl(cell_size.h, window_height);
+                let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
+                self.vertices_fg.extend_from_slice(&vs);
+            }
+
+            let vb_fg = glium::VertexBuffer::new(&self.display, &self.vertices_fg).unwrap();
+            self.draw_queries_fg.push(DrawQuery {
+                vertices: vb_fg,
+                texture: self.cache.texture(),
+            });
+
+            let vb_bg = glium::VertexBuffer::new(&self.display, &self.vertices_bg).unwrap();
+            self.draw_queries_bg.push(DrawQuery {
+                vertices: vb_bg,
+                texture: self.cache.texture(),
+            });
+        }
 
         use glium::Surface as _;
         let mut surface = self.display.draw();
@@ -221,296 +485,32 @@ impl TerminalWindow {
             surface.clear_color_srgb(r, g, b, 1.0);
         }
 
-        let cursor: (usize, usize);
-        let cursor_visible_mode: bool;
-        let cursor_style: CursorStyle;
-        {
-            // hold the lock during copying states
-            let buf = self.terminal.buffer.lock().unwrap();
-
-            if self.history_head < -(buf.history_size as isize) {
-                self.history_head = -(buf.history_size as isize);
-            }
-
-            let top = self.history_head;
-            let bot = top + buf.lines.len() as isize;
-
-            if self.buf_lines.len() != buf.lines.len() {
-                self.buf_lines.clear();
-                self.buf_lines.extend(buf.range(top, bot).cloned());
-            } else {
-                for (src, dst) in buf.range(top, bot).zip(self.buf_lines.iter_mut()) {
-                    dst.copy_from(src);
-                }
-            }
-
-            let iter_img = buf.images.iter().cloned().map(|mut img| {
-                img.row -= self.history_head;
-                img
-            });
-
-            self.buf_img.clear();
-            self.buf_img.extend(iter_img);
-
-            cursor = buf.cursor;
-            cursor_visible_mode = buf.cursor_visible_mode;
-            cursor_style = buf.cursor_style;
-
-            self.bracketed_paste_mode = buf.bracketed_paste_mode;
-        }
-
-        let selected_range = self.mouse_pressed_position.map(|start| {
-            let end = self.mouse_released_position.unwrap_or(self.cursor_position);
-            let ((sx, sy), (ex, ey)) = sort_points(start, end, cell_size);
-            let s_row = sy.round() as u32 / cell_size.h;
-            let e_row = ey.round() as u32 / cell_size.h;
-            let l = (s_row as f64) * (window_width as f64) + sx;
-            let r = (e_row as f64) * (window_width as f64) + ex;
-            (l, r)
-        });
-
-        let cursor_visible = cursor_visible_mode && self.history_head >= 0;
-
-        let mut baseline: u32 = self.cell_max_over as u32;
-        for (i, row) in self.buf_lines.iter().enumerate() {
-            let mut leftline: u32 = 0;
-            for (j, cell) in row.iter().enumerate() {
-                if cell.width == 0 {
-                    continue;
-                }
-
-                let cell_width_px = cell_size.w * cell.width as u32;
-
-                let style = if cell.attr.bold == -1 {
-                    Style::Faint
-                } else if cell.attr.bold == 0 {
-                    Style::Regular
-                } else {
-                    Style::Bold
-                };
-
-                let (fg, bg) = {
-                    let is_inversed = cell.attr.inversed;
-
-                    let on_cursor = cursor_visible
-                        && cursor_style == CursorStyle::Block
-                        && i == cursor.0
-                        && j == cursor.1;
-
-                    let is_selected = match selected_range {
-                        Some((left, right)) => {
-                            let offset = (i as u32 * window_width + leftline) as f64;
-                            let mid_point = offset + (cell_width_px as f64) / 2.0;
-                            left <= mid_point && mid_point <= right
-                        }
-                        None => false,
-                    };
-
-                    let mut fg = cell.attr.fg;
-                    let mut bg = cell.attr.bg;
-
-                    if is_inversed ^ on_cursor ^ is_selected {
-                        std::mem::swap(&mut fg, &mut bg);
-                    }
-
-                    if cell.attr.concealed {
-                        fg = bg;
-                    }
-
-                    (fg, bg)
-                };
-
-                if let Some((region, metrics)) = self.cache.get(cell.ch, style) {
-                    // Background
-                    {
-                        let gl_x = x_to_gl((j as u32 * cell_size.w) as i32, window_width);
-                        let gl_y = y_to_gl((i as u32 * cell_size.h) as i32, window_height);
-                        let gl_w = w_to_gl(cell_width_px, window_width);
-                        let gl_h = h_to_gl(cell_size.h, window_height);
-
-                        let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
-                        self.vertices.extend_from_slice(&vs);
-                    }
-
-                    if !region.is_empty() {
-                        let bearing_x = (metrics.horiBearingX >> 6) as u32;
-                        let bearing_y = (metrics.horiBearingY >> 6) as u32;
-
-                        let x = leftline as i32 + bearing_x as i32;
-                        let y = baseline as i32 - bearing_y as i32;
-                        let gl_x = x_to_gl(x, window_width);
-                        let gl_y = y_to_gl(y, window_height);
-                        let gl_w = w_to_gl(region.px_w, window_width);
-                        let gl_h = h_to_gl(region.px_h, window_height);
-
-                        let vs = glyph_vertices(
-                            gl_x,
-                            gl_y,
-                            gl_w,
-                            gl_h,
-                            region.tx_x,
-                            region.tx_y,
-                            region.tx_w,
-                            region.tx_h,
-                            fg,
-                            bg,
-                            cell.attr.blinking,
-                        );
-                        self.vertices.extend_from_slice(&vs);
-                    }
-                } else if let Some((glyph_image, metrics)) = self.fonts.render(cell.ch, style) {
-                    // FIXME
-                    let mut vertices = Vec::with_capacity(12);
-
-                    // Background
-                    {
-                        let gl_x = x_to_gl((j as u32 * cell_size.w) as i32, window_width);
-                        let gl_y = y_to_gl((i as u32 * cell_size.h) as i32, window_height);
-                        let gl_w = w_to_gl(cell_width_px, window_width);
-                        let gl_h = h_to_gl(cell_size.h, window_height);
-
-                        let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
-                        vertices.extend_from_slice(&vs);
-                    }
-
-                    // for non-ASCII characters
-                    if !glyph_image.data.is_empty() {
-                        let bearing_x = (metrics.horiBearingX >> 6) as u32;
-                        let bearing_y = (metrics.horiBearingY >> 6) as u32;
-
-                        let glyph_width = glyph_image.width;
-                        let glyph_height = glyph_image.height;
-
-                        let gl_x = x_to_gl(leftline as i32 + bearing_x as i32, window_width);
-                        let gl_y = y_to_gl(baseline as i32 - bearing_y as i32, window_height);
-                        let gl_w = w_to_gl(glyph_width, window_width);
-                        let gl_h = h_to_gl(glyph_height, window_height);
-
-                        let vs = glyph_vertices(
-                            gl_x,
-                            gl_y,
-                            gl_w,
-                            gl_h,
-                            0.0,
-                            0.0,
-                            1.0,
-                            1.0,
-                            fg,
-                            bg,
-                            cell.attr.blinking,
-                        );
-                        vertices.extend_from_slice(&vs);
-                    }
-
-                    let vertex_buffer = glium::VertexBuffer::new(&self.display, &vertices).unwrap();
-                    let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
-
-                    let single_glyph_texture = texture::Texture2d::with_mipmaps(
-                        &self.display,
-                        glyph_image,
-                        texture::MipmapsOption::NoMipmap,
-                    )
-                    .expect("Failed to create texture");
-
-                    let sampler = single_glyph_texture
-                        .sampled()
-                        .magnify_filter(uniforms::MagnifySamplerFilter::Linear)
-                        .minify_filter(uniforms::MinifySamplerFilter::Linear);
-                    let uniforms = uniform! { tex: sampler, timestamp: elapsed };
-
-                    surface
-                        .draw(
-                            &vertex_buffer,
-                            indices,
-                            &self.program,
-                            &uniforms,
-                            &glium::DrawParameters::default(),
-                        )
-                        .expect("draw");
-                } else {
-                    log::trace!("undefined glyph: {:?}", cell.ch);
-
-                    // Background
-                    {
-                        let gl_x = x_to_gl((j as u32 * cell_size.w) as i32, window_width);
-                        let gl_y = y_to_gl((i as u32 * cell_size.h) as i32, window_height);
-                        let gl_w = w_to_gl(cell_width_px, window_width);
-                        let gl_h = h_to_gl(cell_size.h, window_height);
-
-                        let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
-                        self.vertices.extend_from_slice(&vs);
-                    }
-                }
-
-                leftline += cell_width_px;
-            }
-            baseline += cell_size.h;
-        }
-
-        if cursor_style == CursorStyle::Bar {
-            let cursor_col = cursor.1 as u32;
-            let cursor_row = cursor.0 as u32;
-
-            let gl_x = x_to_gl((cursor_col * cell_size.w) as i32, window_width);
-            let gl_y = y_to_gl((cursor_row * cell_size.h) as i32, window_height);
-            let gl_w = w_to_gl(4, window_width);
-            let gl_h = h_to_gl(cell_size.h, window_height);
-
-            let fg = Color::Black;
-            let bg = Color::White;
-
-            let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
-            self.vertices.extend_from_slice(&vs);
-        }
-
-        let vertex_buffer = glium::VertexBuffer::new(&self.display, &self.vertices).unwrap();
-        // Vertices ordering: 3 vertices for single triangle polygon
         let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
 
-        // Generate a sampler from the texture
-        let sampler = self
-            .cache
-            .texture()
-            .sampled()
-            .magnify_filter(uniforms::MagnifySamplerFilter::Linear)
-            .minify_filter(uniforms::MinifySamplerFilter::Linear);
-        let uniforms = uniform! { tex: sampler, timestamp: elapsed };
+        let iter_fg = self.draw_queries_fg.iter();
+        let iter_bg = self.draw_queries_bg.iter();
+        for query in iter_bg.chain(iter_fg) {
+            let sampler = query
+                .texture
+                .sampled()
+                .magnify_filter(uniforms::MagnifySamplerFilter::Linear)
+                .minify_filter(uniforms::MinifySamplerFilter::Linear);
+            let uniforms = uniform! { tex: sampler, timestamp: elapsed };
 
-        // Perform drawing
-        surface
-            .draw(
-                &vertex_buffer,
-                indices,
-                &self.program,
-                &uniforms,
-                &glium::DrawParameters::default(),
-            )
-            .expect("draw");
+            surface
+                .draw(
+                    &query.vertices,
+                    indices,
+                    &self.program_cell,
+                    &uniforms,
+                    &glium::DrawParameters::default(),
+                )
+                .expect("draw cells");
+        }
 
-        // Draw Sixel graphics
-        for img in self.buf_img.drain(..) {
-            let gl_x = x_to_gl(img.col as i32 * cell_size.w as i32, window_width);
-            let gl_y = y_to_gl(img.row as i32 * cell_size.h as i32, window_height);
-            let gl_w = w_to_gl(img.width as u32, window_width);
-            let gl_h = h_to_gl(img.height as u32, window_height);
-            let vs = image_vertices(gl_x, gl_y, gl_w, gl_h);
-
-            let vertex_buffer = glium::VertexBuffer::new(&self.display, &vs).unwrap();
-            let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
-
-            let single_glyph_texture = texture::Texture2d::with_mipmaps(
-                &self.display,
-                glium::texture::RawImage2d {
-                    data: img.data.into(),
-                    width: img.width as u32,
-                    height: img.height as u32,
-                    format: glium::texture::ClientFormat::U8U8U8,
-                },
-                texture::MipmapsOption::NoMipmap,
-            )
-            .expect("Failed to create texture");
-
-            let sampler = single_glyph_texture
+        for query in self.draw_queries_img.iter() {
+            let sampler = query
+                .texture
                 .sampled()
                 .magnify_filter(uniforms::MagnifySamplerFilter::Linear)
                 .minify_filter(uniforms::MinifySamplerFilter::Linear);
@@ -518,13 +518,13 @@ impl TerminalWindow {
 
             surface
                 .draw(
-                    &vertex_buffer,
+                    &query.vertices,
                     indices,
-                    &self.image_program,
+                    &self.program_img,
                     &uniforms,
                     &glium::DrawParameters::default(),
                 )
-                .expect("draw");
+                .expect("draw image");
         }
 
         surface.finish().expect("finish");
