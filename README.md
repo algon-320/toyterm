@@ -9,7 +9,7 @@ Install:
 ```sh
 $ git clone https://github.com/algon-320/toyterm
 $ cd toyterm
-$ tic -o ${HOME}/.terminfo/ toyterm.info
+$ tic -x -o ${HOME}/.terminfo/ toyterm.info
 $ cargo install --path .
 ```
 
@@ -88,6 +88,33 @@ Currently toyterm supports the following functions.
 - IL
 - RM
 - SGR
+    - Default: `\e[0m`, `\e[m`
+    - Bold: `\e[1m`
+    - Faint: `\e[2m`
+    - Blinking (slow): `\e[5m`
+    - Blinking (rapid): `\e[6m`
+    - Negative: `\e[7m`
+    - Consealed: `\e[8m`
+    - Foreground Black: `\e[30m`
+    - Foreground Red: `\e[31m`
+    - Foreground Green: `\e[32m`
+    - Foreground Yellow: `\e[33m`
+    - Foreground Blue: `\e[34m`
+    - Foreground Magenta: `\e[35m`
+    - Foreground Cyan: `\e[36m`
+    - Foreground White: `\e[37m`
+    - Foreground Default: `\e[39m`
+    - Background Black: `\e[40m`
+    - Background Red: `\e[41m`
+    - Background Green: `\e[42m`
+    - Background Yellow: `\e[43m`
+    - Background Blue: `\e[44m`
+    - Background Magenta: `\e[45m`
+    - Background Cyan: `\e[46m`
+    - Background White: `\e[47m`
+    - Background Default: `\e[49m`
+    - Foreground Gaming: `\e[70m`
+    - Background Gaming: `\e[80m`
 - SM
 - VPA
 
