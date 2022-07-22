@@ -12,6 +12,8 @@ toyterm-256color|toyterm (a toy terminal emulator),
     msgr,
 ## ignore a line-feed immediately after an am wrap
     xenl,
+## support direct RGB color sequence
+    Tc,
 #
 #----------------------
 # Numeric capabilities 
@@ -130,3 +132,7 @@ toyterm-256color|toyterm (a toy terminal emulator),
     smso=\E[7m,
 ## vertical position #1 absolute
     vpa=\E[%i%p1%dd,
+## select cursor style
+    Ss=\E[%p1%d q,
+## reset cursor style
+    Se=\E[2 q,
