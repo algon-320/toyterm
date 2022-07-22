@@ -52,7 +52,8 @@ $ cargo uninstall toyterm
 
 ## Control Functions
 
-toyterm aims to support the standard control functions described in ECMA-48.
+toyterm aims to support the standard control functions described in
+[ECMA-48](https://www.ecma-international.org/publications-and-standards/standards/ecma-48/).
 Some private functions, widely used by modern terminals, may be supported as well.
 Currently toyterm supports the following functions.
 
