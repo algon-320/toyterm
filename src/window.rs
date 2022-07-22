@@ -272,21 +272,14 @@ impl TerminalWindow {
         let cursor_visible = cursor_visible_mode && self.history_head >= 0;
 
         let mut baseline: u32 = self.cell_max_over as u32;
-        let mut selection_offset = 0.0;
-        let mut i: u32 = 0;
-        for row in self.buf_lines.iter() {
+        for (i, row) in self.buf_lines.iter().enumerate() {
             let mut leftline: u32 = 0;
-            let mut j: u32 = 0;
-            let mut selection_x = 0.0;
-            for cell in row.iter() {
-                let cell_width_px = cell_size.w * cell.width as u32;
+            for (j, cell) in row.iter().enumerate() {
+                if cell.width == 0 {
+                    continue;
+                }
 
-                let is_selected = if let Some((left, right)) = selected_range {
-                    let mid_point = selection_offset + selection_x + (cell_width_px as f64) / 2.0;
-                    left <= mid_point && mid_point <= right
-                } else {
-                    false
-                };
+                let cell_width_px = cell_size.w * cell.width as u32;
 
                 let style = if cell.attr.bold == -1 {
                     Style::Faint
@@ -296,30 +289,44 @@ impl TerminalWindow {
                     Style::Bold
                 };
 
-                let is_inversed = cell.attr.inversed;
-                let on_cursor = cursor_style == CursorStyle::Block
-                    && cursor_visible
-                    && i == cursor.0 as u32
-                    && j == cursor.1 as u32;
+                let (fg, bg) = {
+                    let is_inversed = cell.attr.inversed;
+
+                    let on_cursor = cursor_visible
+                        && cursor_style == CursorStyle::Block
+                        && i == cursor.0
+                        && j == cursor.1;
+
+                    let is_selected = match selected_range {
+                        Some((left, right)) => {
+                            let offset = (i as u32 * window_width + leftline) as f64;
+                            let mid_point = offset + (cell_width_px as f64) / 2.0;
+                            left <= mid_point && mid_point <= right
+                        }
+                        None => false,
+                    };
+
+                    let mut fg = cell.attr.fg;
+                    let mut bg = cell.attr.bg;
+
+                    if is_inversed ^ on_cursor ^ is_selected {
+                        std::mem::swap(&mut fg, &mut bg);
+                    }
+
+                    if cell.attr.concealed {
+                        fg = bg;
+                    }
+
+                    (fg, bg)
+                };
 
                 if let Some((region, metrics)) = self.cache.get(cell.ch, style) {
                     // Background
                     {
-                        let gl_x = x_to_gl((j * cell_size.w) as i32, window_width);
-                        let gl_y = y_to_gl((i * cell_size.h) as i32, window_height);
+                        let gl_x = x_to_gl((j as u32 * cell_size.w) as i32, window_width);
+                        let gl_y = y_to_gl((i as u32 * cell_size.h) as i32, window_height);
                         let gl_w = w_to_gl(cell_width_px, window_width);
                         let gl_h = h_to_gl(cell_size.h, window_height);
-
-                        let mut fg = cell.attr.fg;
-                        let mut bg = cell.attr.bg;
-
-                        if is_inversed ^ on_cursor ^ is_selected {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if cell.attr.concealed {
-                            fg = bg;
-                        }
 
                         let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
                         self.vertices.extend_from_slice(&vs);
@@ -335,17 +342,6 @@ impl TerminalWindow {
                         let gl_y = y_to_gl(y, window_height);
                         let gl_w = w_to_gl(region.px_w, window_width);
                         let gl_h = h_to_gl(region.px_h, window_height);
-
-                        let mut fg = cell.attr.fg;
-                        let mut bg = cell.attr.bg;
-
-                        if is_inversed ^ on_cursor ^ is_selected {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if cell.attr.concealed {
-                            fg = bg;
-                        }
 
                         let vs = glyph_vertices(
                             gl_x,
@@ -368,21 +364,10 @@ impl TerminalWindow {
 
                     // Background
                     {
-                        let gl_x = x_to_gl((j * cell_size.w) as i32, window_width);
-                        let gl_y = y_to_gl((i * cell_size.h) as i32, window_height);
+                        let gl_x = x_to_gl((j as u32 * cell_size.w) as i32, window_width);
+                        let gl_y = y_to_gl((i as u32 * cell_size.h) as i32, window_height);
                         let gl_w = w_to_gl(cell_width_px, window_width);
                         let gl_h = h_to_gl(cell_size.h, window_height);
-
-                        let mut fg = cell.attr.fg;
-                        let mut bg = cell.attr.bg;
-
-                        if is_inversed ^ on_cursor ^ is_selected {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if cell.attr.concealed {
-                            fg = bg;
-                        }
 
                         let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
                         vertices.extend_from_slice(&vs);
@@ -400,17 +385,6 @@ impl TerminalWindow {
                         let gl_y = y_to_gl(baseline as i32 - bearing_y as i32, window_height);
                         let gl_w = w_to_gl(glyph_width, window_width);
                         let gl_h = h_to_gl(glyph_height, window_height);
-
-                        let mut fg = cell.attr.fg;
-                        let mut bg = cell.attr.bg;
-
-                        if is_inversed ^ on_cursor ^ is_selected {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if cell.attr.concealed {
-                            fg = bg;
-                        }
 
                         let vs = glyph_vertices(
                             gl_x,
@@ -456,52 +430,21 @@ impl TerminalWindow {
                 } else {
                     log::trace!("undefined glyph: {:?}", cell.ch);
 
-                    // FIXME
-                    let mut vertices = Vec::with_capacity(6);
-
                     // Background
                     {
-                        let gl_x = x_to_gl((j * cell_size.w) as i32, window_width);
-                        let gl_y = y_to_gl((i * cell_size.h) as i32, window_height);
+                        let gl_x = x_to_gl((j as u32 * cell_size.w) as i32, window_width);
+                        let gl_y = y_to_gl((i as u32 * cell_size.h) as i32, window_height);
                         let gl_w = w_to_gl(cell_width_px, window_width);
                         let gl_h = h_to_gl(cell_size.h, window_height);
 
-                        let mut fg = cell.attr.fg;
-                        let mut bg = cell.attr.bg;
-
-                        if is_inversed ^ on_cursor ^ is_selected {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-
-                        if cell.attr.concealed {
-                            fg = bg;
-                        }
-
                         let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
-                        vertices.extend_from_slice(&vs);
+                        self.vertices.extend_from_slice(&vs);
                     }
-
-                    let vertex_buffer = glium::VertexBuffer::new(&self.display, &vertices).unwrap();
-                    let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
-                    let uniforms = uniform! { timestamp: elapsed };
-                    surface
-                        .draw(
-                            &vertex_buffer,
-                            indices,
-                            &self.program,
-                            &uniforms,
-                            &glium::DrawParameters::default(),
-                        )
-                        .expect("draw");
                 }
 
-                selection_x += cell_width_px as f64;
                 leftline += cell_width_px;
-                j += cell.width as u32;
             }
             baseline += cell_size.h;
-            selection_offset += window_width as f64;
-            i += 1;
         }
 
         if cursor_style == CursorStyle::Bar {
@@ -639,17 +582,18 @@ impl TerminalWindow {
                 (l, r)
             });
 
-            let mut offset = 0.0;
-            for row in lines.iter() {
-                let mut x = 0.0;
+            for (i, row) in lines.iter().enumerate() {
+                let mut x = 0;
                 for cell in row.iter() {
-                    let cell_width_px = (cell_size.w * cell.width as u32) as f64;
+                    let cell_width_px = cell_size.w * cell.width as u32;
 
-                    let is_selected = if let Some((left, right)) = selected_range {
-                        let mid_point = offset + x + cell_width_px / 2.0;
-                        left <= mid_point && mid_point <= right
-                    } else {
-                        false
+                    let is_selected = match selected_range {
+                        Some((left, right)) => {
+                            let offset = (i as u32 * window_width + x) as f64;
+                            let mid_point = offset + (cell_width_px as f64) / 2.0;
+                            left <= mid_point && mid_point <= right
+                        }
+                        None => false,
                     };
 
                     if is_selected {
@@ -658,7 +602,6 @@ impl TerminalWindow {
 
                     x += cell_width_px;
                 }
-                offset += window_width as f64;
             }
         }
 

@@ -276,9 +276,8 @@ impl Line {
         }
     }
 
-    /// Returns a iterator that yeilds cells on the line (skip zero-width cells)
     pub fn iter(&self) -> impl Iterator<Item = Cell> + '_ {
-        self.0.iter().filter(|c| c.width > 0).copied()
+        self.0.iter().copied()
     }
 }
 
