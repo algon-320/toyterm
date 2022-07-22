@@ -2,6 +2,8 @@
 
 toyterm is a toy terminal emulator.
 
+![screenshot01.png](docs/screenshot01.png)
+
 ## Usage
 
 Install:
