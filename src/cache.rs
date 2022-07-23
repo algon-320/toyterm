@@ -39,7 +39,11 @@ fn get_ascii_index(ch: char, style: Style) -> usize {
 }
 
 impl GlyphCache {
-    pub fn build_ascii_visible(display: &Display, fonts: &FontSet, cell_sz: CellSize) -> Self {
+    pub fn build_ascii_visible(display: &Display, fonts: &FontSet, mut cell_sz: CellSize) -> Self {
+        // NOTE: add padding to avoid conflict with adjacent glyphs
+        cell_sz.w += 1;
+        cell_sz.h += 1;
+
         let texture_w = 16 * cell_sz.w;
         let texture_h = (8 - 2) * cell_sz.h * 3;
         log::debug!("cache texture: {}x{} (px)", texture_w, texture_h);
