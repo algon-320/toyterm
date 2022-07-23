@@ -503,7 +503,10 @@ impl TerminalWindow {
                     indices,
                     &self.program_cell,
                     &uniforms,
-                    &glium::DrawParameters::default(),
+                    &glium::DrawParameters {
+                        blend: glium::Blend::alpha_blending(),
+                        ..glium::DrawParameters::default()
+                    },
                 )
                 .expect("draw cells");
         }

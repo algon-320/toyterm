@@ -37,13 +37,6 @@ void main() {
         gl_FragColor = vec4(back, 1.0);
     } else {
         float a = texture(tex, v_tex_coords).r;
-
-        float gamma = 1.8;
-        vec3 fore_lin = pow(fore, vec3(gamma));
-        vec3 back_lin = pow(back, vec3(gamma));
-        vec3 rgb_lin = vec3(a) * fore_lin + vec3(1 - a) * back_lin;
-        vec3 rgb = pow(rgb_lin, vec3(1.0 / gamma));
-
-        gl_FragColor = vec4(rgb, 1.0);
+        gl_FragColor = vec4(fore, a);
     }
 }
