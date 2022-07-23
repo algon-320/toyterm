@@ -2,6 +2,7 @@ mod cache;
 mod clipboard;
 mod control_function;
 mod font;
+mod multiplexer;
 mod pipe_channel;
 mod sixel;
 mod terminal;
@@ -16,15 +17,41 @@ fn main() {
         .format_timestamp(None)
         .init();
 
-    use glium::glutin::event_loop::{ControlFlow, EventLoop};
+    use glium::{glutin, Display};
+    use glutin::{
+        dpi::PhysicalSize,
+        event_loop::{ControlFlow, EventLoop},
+        window::WindowBuilder,
+        ContextBuilder,
+    };
+
     let event_loop = EventLoop::new();
 
-    // Create a terminal window
-    let size = terminal::TerminalSize { rows: 24, cols: 80 };
-    let mut term = window::TerminalWindow::new(&event_loop, size);
+    let width = 1000;
+    let height = 500;
+    let win_builder = WindowBuilder::new()
+        .with_title("toyterm")
+        .with_inner_size(PhysicalSize::new(width, height))
+        .with_resizable(true);
+    let ctx_builder = ContextBuilder::new().with_vsync(true).with_srgb(true);
+    let display = Display::new(win_builder, ctx_builder, &event_loop).expect("display new");
 
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Poll;
-        term.on_event(event, control_flow);
-    });
+    if cfg!(feature = "multiplex") {
+        let mut mux = multiplexer::Multiplexer::new(display.clone());
+
+        let term = window::TerminalWindow::new(display.clone(), width, height);
+        mux.add(term);
+
+        event_loop.run(move |event, _, control_flow| {
+            *control_flow = ControlFlow::Poll;
+            mux.on_event(&event, control_flow);
+        });
+    } else {
+        let mut term = window::TerminalWindow::new(display.clone(), width, height);
+
+        event_loop.run(move |event, _, control_flow| {
+            *control_flow = ControlFlow::Poll;
+            term.on_event(&event, control_flow);
+        });
+    }
 }

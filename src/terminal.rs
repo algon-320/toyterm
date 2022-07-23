@@ -309,6 +309,7 @@ pub struct Buffer {
     alt_lines: VecDeque<Line>,
     sz: TerminalSize,
     pub updated: bool,
+    pub closed: bool,
 }
 
 impl Buffer {
@@ -339,6 +340,7 @@ impl Buffer {
             alt_lines,
             sz,
             updated: true,
+            closed: false,
         }
     }
 
@@ -723,8 +725,8 @@ impl Engine {
             }
         }
 
-        // FIXME: graceful shutdown
-        std::process::exit(0);
+        let mut buf = self.buffer.lock().unwrap();
+        buf.closed = true;
     }
 
     fn process(&mut self, input: &str) {

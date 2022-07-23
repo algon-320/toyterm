@@ -14,3 +14,7 @@ unicode-width = "0.1.9"
 glium = "0.31.0"
 freetype-rs = "0.30.1"
 x11-clipboard = "0.6.1"
+
+[features]
+default = []
+multiplex = []

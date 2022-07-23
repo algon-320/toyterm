@@ -1,10 +1,7 @@
 use glium::{glutin, index, texture, uniform, uniforms, Display};
 use glutin::{
-    dpi::PhysicalSize,
     event::{ElementState, Event, ModifiersState, MouseButton, VirtualKeyCode, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
-    ContextBuilder,
+    event_loop::ControlFlow,
 };
 use std::rc::Rc;
 
@@ -107,7 +104,7 @@ pub struct TerminalWindow {
 }
 
 impl TerminalWindow {
-    pub fn new(event_loop: &EventLoop<()>, size: TerminalSize) -> Self {
+    pub fn new(display: Display, width: u32, height: u32) -> Self {
         let mut fonts = FontSet::empty();
         {
             let regular_ttf_data = include_bytes!("../fonts/Mplus1Code-Regular.ttf");
@@ -125,17 +122,11 @@ impl TerminalWindow {
 
         let (cell_size, cell_max_over) = calculate_cell_size(&fonts);
 
+        let size = TerminalSize {
+            rows: (height / cell_size.h) as usize,
+            cols: (width / cell_size.w) as usize,
+        };
         let terminal = Terminal::new(size, cell_size);
-
-        let width = size.cols as u32 * cell_size.w;
-        let height = size.rows as u32 * cell_size.h;
-
-        let win_builder = WindowBuilder::new()
-            .with_title("toyterm")
-            .with_inner_size(PhysicalSize::new(width, height))
-            .with_resizable(true);
-        let ctx_builder = ContextBuilder::new().with_vsync(true).with_srgb(true);
-        let display = Display::new(win_builder, ctx_builder, event_loop).expect("display new");
 
         // Use I-beam mouse cursor
         display
@@ -213,7 +204,7 @@ impl TerminalWindow {
         }
     }
 
-    pub fn draw(&mut self) {
+    pub fn draw(&mut self) -> bool {
         let elapsed = self.started_time.elapsed().as_millis() as f32;
         let window_width = self.window_width;
         let window_height = self.window_height;
@@ -285,6 +276,10 @@ impl TerminalWindow {
             cursor = buf.cursor;
             cursor_visible_mode = buf.cursor_visible_mode;
             cursor_style = buf.cursor_style;
+
+            if buf.closed {
+                return false;
+            }
         }
 
         let selected_range = self.mouse_pressed_position.map(|start| {
@@ -531,6 +526,7 @@ impl TerminalWindow {
         }
 
         surface.finish().expect("finish");
+        true
     }
 
     fn resize_window(&mut self, new_width: u32, new_height: u32) {
@@ -630,9 +626,9 @@ impl TerminalWindow {
         }
     }
 
-    pub fn on_event(&mut self, event: Event<()>, control_flow: &mut ControlFlow) {
+    pub fn on_event(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
         match event {
-            Event::WindowEvent { event, .. } => match event {
+            Event::WindowEvent { event, .. } => match *event {
                 WindowEvent::CloseRequested => {
                     *control_flow = ControlFlow::Exit;
                 }
@@ -817,7 +813,11 @@ impl TerminalWindow {
             },
 
             Event::MainEventsCleared => {
-                self.draw();
+                let cont = self.draw();
+
+                if !cont {
+                    *control_flow = ControlFlow::Exit;
+                }
             }
 
             _ => {}

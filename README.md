@@ -4,33 +4,34 @@ toyterm is a toy terminal emulator.
 
 ![screenshot01.png](docs/screenshot01.png)
 
+## Features/Limitations
+
+- hardware accelerated graphics
+- support for SIXEL graphics
+- support for X11 clipboard (copying & pasting)
+- (optional) support for multiplexing
+- manual font fallback: you can specify the order of fonts for each style
+- toyterm assumes UTF-8 encoding
+- following basic functions are TODO
+    - automatic font selection by integrating with fontconfig
+    - configuration (shell, color scheme, keybindings, etc.)
+
 ## Usage
 
 Install:
-
 ```sh
 $ git clone https://github.com/algon-320/toyterm
 $ cd toyterm
 $ tic -x -o ${HOME}/.terminfo/ toyterm.info
 $ cargo install --path .
 ```
+To enable multiplexing feature, please add "--features multiplex" to the last line.
 
 Uninstall:
 ```sh
 $ rm ${HOME}/.terminfo/t/toyterm-256color
 $ cargo uninstall toyterm
 ```
-
-## Features/Limitations
-
-- hardware accelerated graphics
-- support for SIXEL graphics
-- support for X11 clipboard (copying & pasting)
-- manual font fallback: you can specify the order of fonts for each style
-- toyterm assumes UTF-8 encoding
-- following basic functions are TODO
-    - automatic font selection by integrating with fontconfig
-    - configuration (shell, color scheme, keybindings, etc.)
 
 ## Keybinding
 
@@ -51,6 +52,14 @@ $ cargo uninstall toyterm
 |Backspace key|Send `\x7f`|
 |Mouse Wheel|Same effect as arrow keys (Up/Down/Right/Left)|
 |Shift + Mouse Wheel|Scroll history|
+
+If feature `multiplex` is enalbed:
+|Key|Function|
+|:---------------|:-------|
+|Ctrl + `a`, `c` |Create a new window|
+|Ctrl + `a`, `n` |Switch to next window|
+|Ctrl + `a`, `p` |Switch to prev window|
+|Ctrl + `a`, Ctrl + `a` |Send `\x01` (Ctrl + `a`)|
 
 ## Control Functions
 
