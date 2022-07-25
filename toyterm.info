@@ -20,7 +20,9 @@ toyterm-256color|toyterm (a toy terminal emulator),
 #----------------------
 #
 ## maximum number of colors on screen
-    colors#0x1000000,
+    colors#256,
+## maximum number of color-pairs on the screen
+    pairs#65536,
 ## number of columns in a line
     cols#80,
 ## tabs initially every # spaces
