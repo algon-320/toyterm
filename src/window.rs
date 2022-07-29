@@ -21,12 +21,10 @@ fn sort_points(a: (f64, f64), b: (f64, f64), cell_sz: CellSize) -> ((f64, f64), 
         (a, b)
     } else if a_row > b_row {
         (b, a)
+    } else if ax < bx {
+        (a, b)
     } else {
-        if ax < bx {
-            (a, b)
-        } else {
-            (b, a)
-        }
+        (b, a)
     }
 }
 
@@ -778,10 +776,10 @@ impl TerminalWindow {
                     self.mouse_wheel_delta_y += dy;
 
                     let horizontal = self.mouse_wheel_delta_x.trunc() as isize;
-                    self.mouse_wheel_delta_x = self.mouse_wheel_delta_x % 1.0;
+                    self.mouse_wheel_delta_x %= 1.0;
 
                     let vertical = self.mouse_wheel_delta_y.trunc() as isize;
-                    self.mouse_wheel_delta_y = self.mouse_wheel_delta_y % 1.0;
+                    self.mouse_wheel_delta_y %= 1.0;
 
                     if self.modifiers.shift() {
                         // Scroll up history

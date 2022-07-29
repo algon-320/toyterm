@@ -91,7 +91,7 @@ impl FontSet {
     }
 
     pub fn add(&mut self, style: Style, font: Font) {
-        let fallbacks = self.fonts.entry(style).or_insert_with(|| Vec::new());
+        let fallbacks = self.fonts.entry(style).or_insert_with(Vec::new);
         fallbacks.push(font);
     }
 

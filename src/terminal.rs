@@ -283,15 +283,15 @@ impl Line {
 
 impl std::fmt::Debug for Line {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "[\n")?;
+        writeln!(f, "[")?;
         for c in self.0.iter() {
-            write!(
+            writeln!(
                 f,
-                "\tch: {}, width: {}, backlink: {}\n",
+                "\tch: {}, width: {}, backlink: {}",
                 c.ch, c.width, c.backlink
             )?;
         }
-        write!(f, "]\n")?;
+        writeln!(f, "]")?;
         Ok(())
     }
 }
@@ -1165,7 +1165,7 @@ impl Engine {
                         data: image.data,
                     };
 
-                    buf.images.retain(|img| !overwrap(&new_image, &img));
+                    buf.images.retain(|img| !overwrap(&new_image, img));
                     buf.images.push(new_image);
 
                     log::debug!("total {} images", buf.images.len());

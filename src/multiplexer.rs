@@ -18,7 +18,7 @@ pub struct Multiplexer {
 impl Multiplexer {
     pub fn new(display: Display) -> Self {
         Multiplexer {
-            display: display,
+            display,
             select: 0,
             wins: Vec::new(),
             consume: false,
