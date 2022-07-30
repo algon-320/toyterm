@@ -96,6 +96,7 @@ pub struct TerminalWindow {
     mouse_released_position: Option<(f64, f64)>,
     last_selected_range: Option<(f64, f64)>,
     history_head: isize,
+    last_history_head: isize,
     draw_queries_fg: Vec<DrawQuery<Vertex>>,
     draw_queries_bg: Vec<DrawQuery<Vertex>>,
     draw_queries_img: Vec<DrawQuery<SimpleVertex>>,
@@ -246,6 +247,7 @@ impl TerminalWindow {
             mouse_released_position: None,
             last_selected_range: None,
             history_head: 0,
+            last_history_head: 0,
             draw_queries_fg: Vec::new(),
             draw_queries_bg: Vec::new(),
             draw_queries_img: Vec::new(),
@@ -258,6 +260,22 @@ impl TerminalWindow {
         let window_width = self.window_width;
         let window_height = self.window_height;
         let cell_size = self.cell_size;
+
+        let selected_range = self.mouse_pressed_position.map(|start| {
+            let end = self.mouse_released_position.unwrap_or(self.cursor_position);
+            let ((sx, sy), (ex, ey)) = sort_points(start, end, cell_size);
+            let s_row = sy.round() as u32 / cell_size.h;
+            let e_row = ey.round() as u32 / cell_size.h;
+            let l = (s_row as f64) * (window_width as f64) + sx;
+            let r = (e_row as f64) * (window_width as f64) + ex;
+            (l, r)
+        });
+
+        let selection_changed = self.last_selected_range != selected_range;
+        self.last_selected_range = selected_range;
+
+        let history_head_changed = self.last_history_head != self.history_head;
+        self.last_history_head = self.history_head;
 
         let cursor: (usize, usize);
         let cursor_visible_mode: bool;
@@ -274,7 +292,7 @@ impl TerminalWindow {
                 self.history_head = -(buf.history_size as isize);
             }
 
-            if buf_updated {
+            if buf_updated || history_head_changed {
                 let top = self.history_head;
                 let bot = top + buf.lines.len() as isize;
 
@@ -331,19 +349,7 @@ impl TerminalWindow {
             }
         }
 
-        let selected_range = self.mouse_pressed_position.map(|start| {
-            let end = self.mouse_released_position.unwrap_or(self.cursor_position);
-            let ((sx, sy), (ex, ey)) = sort_points(start, end, cell_size);
-            let s_row = sy.round() as u32 / cell_size.h;
-            let e_row = ey.round() as u32 / cell_size.h;
-            let l = (s_row as f64) * (window_width as f64) + sx;
-            let r = (e_row as f64) * (window_width as f64) + ex;
-            (l, r)
-        });
-
-        if buf_updated || self.last_selected_range != selected_range {
-            self.last_selected_range = selected_range;
-
+        if buf_updated || selection_changed || history_head_changed {
             self.vertices_fg.clear();
             self.vertices_bg.clear();
             self.draw_queries_fg.clear();
