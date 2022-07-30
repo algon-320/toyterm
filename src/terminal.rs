@@ -847,7 +847,7 @@ impl Engine {
                     }
                 }
 
-                CUP(pn1, pn2) => {
+                HVP(pn1, pn2) | CUP(pn1, pn2) => {
                     let mut pn1 = pn1 as usize;
                     if pn1 > 0 {
                         pn1 -= 1;
@@ -1328,7 +1328,6 @@ impl Engine {
                 REP => ignore!(),
                 DA => ignore!(),
                 VPR => ignore!(),
-                HVP => ignore!(),
                 TBC => ignore!(),
                 MC => ignore!(),
                 HPB => ignore!(),

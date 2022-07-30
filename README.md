@@ -103,6 +103,7 @@ Currently toyterm supports the following functions.
 - ECH
 - ED
 - EL
+- HVP
 - ICH
 - IL
 - RM

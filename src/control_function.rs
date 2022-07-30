@@ -109,7 +109,7 @@ pub enum Function<'p> {
     DA,
     VPA(u16),
     VPR,
-    HVP,
+    HVP(u16, u16),
     TBC,
     SM(u8, u16),
     MC,
@@ -416,7 +416,7 @@ fn parse_control_sequence<'b>(
                 (0, '\x63', _) => Some(DA),
                 (0, '\x64', &[pn]) => Some(VPA(pn)),
                 (0, '\x65', _) => Some(VPR),
-                (0, '\x66', _) => Some(HVP),
+                (0, '\x66', &[pn1, pn2]) => Some(HVP(pn1, pn2)),
                 (0, '\x67', _) => Some(TBC),
                 (0, '\x68', &[ps]) => {
                     let private = buf.private.unwrap_or(0);
