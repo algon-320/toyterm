@@ -88,8 +88,8 @@ impl Cell {
 pub enum Color {
     Black,
     Red,
-    Yellow,
     Green,
+    Yellow,
     Blue,
     Magenta,
     Cyan,
@@ -1067,8 +1067,8 @@ impl Engine {
 
                             30 => self.attr.fg = Color::Black,
                             31 => self.attr.fg = Color::Red,
-                            32 => self.attr.fg = Color::Yellow,
-                            33 => self.attr.fg = Color::Green,
+                            32 => self.attr.fg = Color::Green,
+                            33 => self.attr.fg = Color::Yellow,
                             34 => self.attr.fg = Color::Blue,
                             35 => self.attr.fg = Color::Magenta,
                             36 => self.attr.fg = Color::Cyan,
@@ -1088,8 +1088,8 @@ impl Engine {
 
                             40 => self.attr.bg = Color::Black,
                             41 => self.attr.bg = Color::Red,
-                            42 => self.attr.bg = Color::Yellow,
-                            43 => self.attr.bg = Color::Green,
+                            42 => self.attr.bg = Color::Green,
+                            43 => self.attr.bg = Color::Yellow,
                             44 => self.attr.bg = Color::Blue,
                             45 => self.attr.bg = Color::Magenta,
                             46 => self.attr.bg = Color::Cyan,
