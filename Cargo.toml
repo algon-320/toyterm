@@ -12,7 +12,7 @@ env_logger = "0.9.0"
 nix = "0.24.1"
 unicode-width = "0.1.9"
 glium = "0.31.0"
-freetype-rs = "0.30.1"
+freetype-rs = "0.26.0"
 x11-clipboard = "0.6.1"
 serde = { version = "1", features = ["derive"] }
 config = { version = "0.13.1", default-features = false, features = ["toml"] }
@@ -21,3 +21,6 @@ lazy_static = "1.4.0"
 [features]
 default = []
 multiplex = []
+
+[patch.crates-io]
+glutin = { git = "https://github.com/rust-windowing/glutin.git", rev = "2bffbf52d6b4f4c32adc463818e10ac8082948e4" }

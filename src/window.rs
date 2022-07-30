@@ -1,6 +1,6 @@
 use glium::{glutin, index, texture, uniform, uniforms, Display};
 use glutin::{
-    event::{ElementState, Event, ModifiersState, MouseButton, VirtualKeyCode, WindowEvent},
+    event::{ElementState, Event, Ime, ModifiersState, MouseButton, VirtualKeyCode, WindowEvent},
     event_loop::ControlFlow,
 };
 use std::rc::Rc;
@@ -145,6 +145,7 @@ pub struct TerminalWindow {
     vertices_fg: Vec<Vertex>,
     vertices_bg: Vec<Vertex>,
     modifiers: ModifiersState,
+    ime_buf: Vec<char>,
     fonts: FontSet,
     cache: GlyphCache,
     window_width: u32,
@@ -187,6 +188,9 @@ impl TerminalWindow {
             .gl_window()
             .window()
             .set_cursor_icon(glutin::window::CursorIcon::Text);
+
+        // Receive IME events
+        display.gl_window().window().set_ime_allowed(true);
 
         // Initialize shaders
         let program_cell = {
@@ -233,6 +237,7 @@ impl TerminalWindow {
             vertices_fg: Vec::new(),
             vertices_bg: Vec::new(),
             modifiers: ModifiersState::empty(),
+            ime_buf: Vec::new(),
             fonts,
             cache,
             window_width: initial_size.width,
@@ -685,22 +690,69 @@ impl TerminalWindow {
         }
     }
 
+    fn pty_write_char_utf8(&mut self, ch: char) {
+        let mut buf = [0_u8; 4];
+        let utf8 = ch.encode_utf8(&mut buf).as_bytes();
+        self.terminal.pty_write(utf8);
+    }
+
+    fn process_ime_event(&mut self, event: &Ime) {
+        match event {
+            Ime::Enabled => {
+                self.ime_buf.clear();
+            }
+
+            Ime::Disabled => {
+                for _ in self.ime_buf.drain(..) {
+                    self.terminal.pty_write(b"\x7F");
+                }
+            }
+
+            Ime::Preedit(text, _) | Ime::Commit(text) => {
+                let prev: &Vec<char> = &self.ime_buf;
+                let next: Vec<char> = text.chars().collect();
+
+                // preserve common prefix
+                let mut i = 0;
+                while i < prev.len() && i < next.len() && prev[i] == next[i] {
+                    i += 1;
+                }
+                let delete_count = prev.len() - i;
+                self.terminal.pty_write(&vec![b'\x7F'; delete_count]);
+
+                // write changed part
+                for &ch in &next[i..] {
+                    self.pty_write_char_utf8(ch);
+                }
+
+                // update
+                if let Ime::Preedit(..) = event {
+                    self.ime_buf = next;
+                } else {
+                    self.ime_buf.clear();
+                }
+            }
+        }
+    }
+
     pub fn on_event(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
         match event {
-            Event::WindowEvent { event, .. } => match *event {
+            Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => {
                     *control_flow = ControlFlow::Exit;
                 }
 
-                WindowEvent::Resized(new_size) => {
+                &WindowEvent::Resized(new_size) => {
                     self.resize_window(new_size.width, new_size.height);
                 }
 
-                WindowEvent::ModifiersChanged(new_states) => {
+                &WindowEvent::ModifiersChanged(new_states) => {
                     self.modifiers = new_states;
                 }
 
-                WindowEvent::ReceivedCharacter(ch) => {
+                WindowEvent::Ime(ime) => self.process_ime_event(ime),
+
+                &WindowEvent::ReceivedCharacter(ch) => {
                     // Handle these characters on WindowEvent::KeyboardInput event
                     if ch == '-'
                         || ch == '='
@@ -718,9 +770,7 @@ impl TerminalWindow {
                         log::debug!("input: {:?}", ch);
                     }
 
-                    let mut buf = [0_u8; 4];
-                    let utf8 = ch.encode_utf8(&mut buf).as_bytes();
-                    self.terminal.pty_write(utf8);
+                    self.pty_write_char_utf8(ch);
                 }
 
                 WindowEvent::KeyboardInput { input, .. }
