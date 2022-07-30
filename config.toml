@@ -1,5 +1,9 @@
 # shell = ["/bin/sh", "-i"]
 
+# Width of EAW ambiguous character
+# east_asian_width_ambiguous = 1  # halfwidth
+# east_asian_width_ambiguous = 2  # fullwidth
+
 # Paths to font files which FreeType supports (TTF, OTF, etc.)
 # If multiple fonts are specified, toyterm tries to find a glyph in the given order.
 #

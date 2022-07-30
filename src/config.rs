@@ -18,6 +18,8 @@ pub struct Config {
     pub color_magenta: u32,
     pub color_cyan: u32,
     pub color_white: u32,
+
+    pub east_asian_width_ambiguous: u8,
 }
 
 impl Default for Config {
@@ -26,6 +28,8 @@ impl Default for Config {
 
         Config {
             shell,
+
+            east_asian_width_ambiguous: 1,
 
             // FIXME: due to a bug on "config-rs", empty Vecs cannot be serialized properly.
             // https://github.com/mehcode/config-rs/issues/114

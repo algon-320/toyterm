@@ -1114,7 +1114,13 @@ impl Engine {
 
                 GraphicChar(ch) => {
                     use unicode_width::UnicodeWidthChar as _;
-                    if let Some(width @ 1..) = ch.width() {
+                    let ch_width = if crate::TOYTERM_CONFIG.east_asian_width_ambiguous == 1 {
+                        ch.width()
+                    } else {
+                        ch.width_cjk()
+                    };
+
+                    if let Some(width @ 1..) = ch_width {
                         // If there is no space for new character, move cursor to the next line.
                         if self.cursor.right_space() < width {
                             let (row, col) = self.cursor.pos();
