@@ -40,8 +40,11 @@ impl Font {
         if idx == 0 {
             None
         } else {
-            self.face.load_glyph(idx, LoadFlag::RENDER).expect("render");
+            self.face
+                .load_glyph(idx, LoadFlag::RENDER | LoadFlag::TARGET_LIGHT)
+                .expect("load");
             let glyph = self.face.glyph();
+
             let bitmap = glyph.bitmap();
             let metrics = glyph.metrics();
 
