@@ -1045,10 +1045,10 @@ impl Engine {
                     }
                 }
 
-                SGR(ps) => {
-                    let mut ps = ps.iter().peekable();
-                    while let Some(&p) = ps.next() {
-                        match p {
+                SGR(pss) => {
+                    let mut iter = pss.iter().copied().peekable();
+                    while let Some(ps) = iter.next() {
+                        match ps {
                             0 => self.attr = GraphicAttribute::default(),
 
                             1 => self.attr.bold = 1,
@@ -1065,43 +1065,17 @@ impl Engine {
                             8 => self.attr.concealed = true,
                             28 => self.attr.concealed = false,
 
-                            30 => self.attr.fg = Color::Black,
-                            31 => self.attr.fg = Color::Red,
-                            32 => self.attr.fg = Color::Green,
-                            33 => self.attr.fg = Color::Yellow,
-                            34 => self.attr.fg = Color::Blue,
-                            35 => self.attr.fg = Color::Magenta,
-                            36 => self.attr.fg = Color::Cyan,
-                            37 => self.attr.fg = Color::White,
-                            38 => {
-                                let s = ps.next();
-                                let (r, g, b) = (ps.next(), ps.next(), ps.next());
-                                if let (Some(2), Some(&r), Some(&g), Some(&b)) = (s, r, g, b) {
-                                    let (r, g, b) = (r as u32, g as u32, b as u32);
-                                    self.attr.fg = Color::Rgb {
-                                        rgba: (r << 24) | (g << 16) | (b << 8) | 0xFF,
-                                    };
+                            30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 => {
+                                if let Some(color) = find_color(ps - 30, &mut iter) {
+                                    self.attr.fg = color;
                                 }
                             }
                             70 => self.attr.fg = Color::Special,
                             39 => self.attr.fg = GraphicAttribute::default().fg,
 
-                            40 => self.attr.bg = Color::Black,
-                            41 => self.attr.bg = Color::Red,
-                            42 => self.attr.bg = Color::Green,
-                            43 => self.attr.bg = Color::Yellow,
-                            44 => self.attr.bg = Color::Blue,
-                            45 => self.attr.bg = Color::Magenta,
-                            46 => self.attr.bg = Color::Cyan,
-                            47 => self.attr.bg = Color::White,
-                            48 => {
-                                let s = ps.next();
-                                let (r, g, b) = (ps.next(), ps.next(), ps.next());
-                                if let (Some(2), Some(&r), Some(&g), Some(&b)) = (s, r, g, b) {
-                                    let (r, g, b) = (r as u32, g as u32, b as u32);
-                                    self.attr.bg = Color::Rgb {
-                                        rgba: (r << 24) | (g << 16) | (b << 8) | 0xFF,
-                                    };
+                            40 | 41 | 42 | 43 | 44 | 45 | 46 | 47 | 48 => {
+                                if let Some(color) = find_color(ps - 40, &mut iter) {
+                                    self.attr.bg = color;
                                 }
                             }
                             80 => self.attr.bg = Color::Special,
@@ -1387,6 +1361,94 @@ impl Engine {
         let (row, col) = self.cursor.pos();
         let col = buf.lines[row].get_head_pos(col);
         buf.cursor = (row, col);
+    }
+}
+
+fn find_color(prefix: u16, ps: &mut impl Iterator<Item = u16>) -> Option<Color> {
+    match prefix {
+        0 => Some(Color::Black),
+        1 => Some(Color::Red),
+        2 => Some(Color::Green),
+        3 => Some(Color::Yellow),
+        4 => Some(Color::Blue),
+        5 => Some(Color::Magenta),
+        6 => Some(Color::Cyan),
+        7 => Some(Color::White),
+
+        8 => {
+            match ps.next() {
+                // direct color
+                Some(2) => {
+                    if let (Some(r), Some(g), Some(b)) = (ps.next(), ps.next(), ps.next()) {
+                        let (r, g, b) = (r as u32, g as u32, b as u32);
+                        Some(Color::Rgb {
+                            rgba: (r << 24) | (g << 16) | (b << 8) | 0xFF,
+                        })
+                    } else {
+                        None
+                    }
+                }
+
+                // indexed color
+                Some(5) => {
+                    if let Some(idx @ 0..=255) = ps.next() {
+                        match idx {
+                            0 => Some(Color::Black),
+                            1 => Some(Color::Red),
+                            2 => Some(Color::Green),
+                            3 => Some(Color::Yellow),
+                            4 => Some(Color::Blue),
+                            5 => Some(Color::Magenta),
+                            6 => Some(Color::Cyan),
+                            7 => Some(Color::White),
+
+                            // TODO: use ligher color
+                            8 => Some(Color::Black),
+                            9 => Some(Color::Red),
+                            10 => Some(Color::Green),
+                            11 => Some(Color::Yellow),
+                            12 => Some(Color::Blue),
+                            13 => Some(Color::Magenta),
+                            14 => Some(Color::Cyan),
+                            15 => Some(Color::White),
+
+                            // 6x6x6 colors
+                            16..=231 => {
+                                let mut x = (idx - 16) as u32;
+
+                                let b = (x % 6) * 51;
+                                x /= 6;
+                                let g = (x % 6) * 51;
+                                x /= 6;
+                                let r = (x % 6) * 51;
+
+                                Some(Color::Rgb {
+                                    rgba: (r << 24) | (g << 16) | (b << 8) | 0xFF,
+                                })
+                            }
+
+                            // grayscale colors
+                            232..=255 => {
+                                let x = (idx - 232) as u32;
+                                let v = x * 11;
+                                Some(Color::Rgb {
+                                    rgba: (v << 24) | (v << 16) | (v << 8) | 0xFF,
+                                })
+                            }
+
+                            _ => unreachable!(),
+                        }
+                    } else {
+                        None
+                    }
+                }
+
+                // unknown color format
+                _ => None,
+            }
+        }
+
+        _ => unimplemented!(),
     }
 }
 
