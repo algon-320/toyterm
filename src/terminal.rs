@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 use std::collections::VecDeque;
-use std::ffi::{CStr, CString};
 use std::io::Result;
+use std::ops::{Range, RangeBounds};
 use std::sync::{Arc, Mutex};
 
 use crate::control_function;
@@ -75,6 +75,7 @@ impl Cell {
         backlink: u16::MAX,
         attr: GraphicAttribute::default(),
     };
+
     const SPACE: Self = Cell {
         ch: ' ',
         width: 1,
@@ -120,8 +121,6 @@ impl GraphicAttribute {
     }
 }
 
-use std::ops::RangeBounds;
-
 /// A single line of terminal buffer
 ///
 /// A `Line` consists of multiple `Cell`s, which may have different width.
@@ -157,8 +156,7 @@ impl Line {
         }
     }
 
-    // [ret.0, ret.1)
-    fn range<R: RangeBounds<usize>>(&self, range: R) -> (usize, usize) {
+    fn saturating_range<R: RangeBounds<usize>>(&self, range: R) -> Range<usize> {
         let len = self.0.len();
 
         use std::ops::Bound;
@@ -177,17 +175,17 @@ impl Line {
         let end = min(end, len);
         debug_assert!(start <= len && end <= len && start <= end);
 
-        (start, end)
+        Range { start, end }
     }
 
     fn copy_within<R: RangeBounds<usize> + Clone>(&mut self, src: R, dst: usize) {
-        let (src_start, src_end) = self.range(src);
-        let count = min(src_end - src_start, self.0.len() - dst);
+        let src = self.saturating_range(src);
+        let count = min(src.len(), self.0.len() - dst);
         if count == 0 {
             return;
         }
 
-        self.0.copy_within(src_start..src_start + count, dst);
+        self.0.copy_within(src.start..src.start + count, dst);
 
         let (dst_start, dst_end) = (dst, dst + count);
 
@@ -224,8 +222,7 @@ impl Line {
     }
 
     fn erase<R: RangeBounds<usize>>(&mut self, range: R) {
-        let (start, end) = self.range(range);
-        for i in start..end {
+        for i in self.saturating_range(range) {
             self.erase_at(i);
         }
     }
@@ -392,7 +389,7 @@ impl Buffer {
     fn scroll_up(&mut self) {
         let line = self.lines.pop_front().unwrap();
         self.history.push_back(line);
-        self.history_size = std::cmp::min(self.history_size + 1, Self::HISTORY_CAPACITY);
+        self.history_size = min(self.history_size + 1, Self::HISTORY_CAPACITY);
 
         let mut line = self.history.pop_front().unwrap();
         line.erase_all();
@@ -401,8 +398,6 @@ impl Buffer {
 
     /// Copy lines[src.0..=src.1] to lines[dst..]
     fn copy_lines(&mut self, src: (usize, usize), dst_first: usize) {
-        // FIXME: avoid unnecessary heap allocations
-
         let (src_first, src_last) = src;
         let src_count = src_last - src_first + 1;
         let room = self.sz.rows - dst_first;
@@ -1433,6 +1428,8 @@ fn init_pty() -> Result<(OwnedFd, nix::unistd::Pid)> {
 
 /// Setup process states and execute shell
 fn exec_shell() -> Result<()> {
+    use std::ffi::{CStr, CString};
+
     // Restore the default handler for SIGPIPE (terminate)
     use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
     let sigdfl = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());

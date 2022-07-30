@@ -202,6 +202,7 @@ impl TerminalWindow {
         }
     }
 
+    // Returns true if the PTY is closed, false otherwise
     pub fn draw(&mut self) -> bool {
         let elapsed = self.started_time.elapsed().as_millis() as f32;
         let window_width = self.window_width;
@@ -276,7 +277,7 @@ impl TerminalWindow {
             cursor_style = buf.cursor_style;
 
             if buf.closed {
-                return false;
+                return true;
             }
         }
 
@@ -524,7 +525,7 @@ impl TerminalWindow {
         }
 
         surface.finish().expect("finish");
-        true
+        false
     }
 
     fn resize_window(&mut self, new_width: u32, new_height: u32) {
@@ -811,9 +812,9 @@ impl TerminalWindow {
             },
 
             Event::MainEventsCleared => {
-                let cont = self.draw();
+                let exit = self.draw();
 
-                if !cont {
+                if exit {
                     *control_flow = ControlFlow::Exit;
                 }
             }
