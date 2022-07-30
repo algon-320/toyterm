@@ -1,0 +1,29 @@
+# shell = ["/bin/sh", "-i"]
+
+# Paths to font files which FreeType supports (TTF, OTF, etc.)
+# If multiple fonts are specified, toyterm tries to find a glyph in the given order.
+#
+# fonts_regular = [
+#     "/path/to/your/favorite/regular_font.ttf",
+#     "/path/to/your/favorite/regular_font_fallback.ttf",
+# ]
+# fonts_bold = [
+#     "/path/to/your/favorite/bold_font.ttf",
+#     "/path/to/your/favorite/bold_font_fallback.ttf",
+# ]
+# fonts_faint = [
+#     "/path/to/your/favorite/thin_font.ttf",
+#     "/path/to/your/favorite/thin_font_fallback.ttf",
+# ]
+
+# Colors in RRGGBBAA format
+# (Note that colors with AA = 00 are reserved for internal usage.)
+#
+# color_black   = 0x1D2021FF
+# color_red     = 0xFB4934FF
+# color_green   = 0xB8BB26FF
+# color_yellow  = 0xFABD2FFF
+# color_blue    = 0x83A598FF
+# color_magenta = 0xD3869BFF
+# color_cyan    = 0x8EC07CFF
+# color_white   = 0xD5C4A1FF
