@@ -28,6 +28,74 @@ fn sort_points(a: (f64, f64), b: (f64, f64), cell_sz: CellSize) -> ((f64, f64), 
     }
 }
 
+fn build_font_set() -> FontSet {
+    let config = &crate::TOYTERM_CONFIG;
+
+    let mut fonts = FontSet::empty();
+
+    for p in config.fonts_regular.iter() {
+        // FIXME
+        if p.as_os_str().is_empty() {
+            continue;
+        }
+
+        if !p.exists() {
+            log::warn!("font file {:?} doesn't exist, ignored", p.display());
+            continue;
+        }
+
+        log::debug!("add regular font: {:?}", p.display());
+        let data = std::fs::read(p).expect("cannot open font");
+        let font = Font::new(&data);
+        fonts.add(Style::Regular, font);
+    }
+
+    for p in config.fonts_bold.iter() {
+        // FIXME
+        if p.as_os_str().is_empty() {
+            continue;
+        }
+
+        if !p.exists() {
+            log::warn!("font file {:?} doesn't exist, ignored", p.display());
+            continue;
+        }
+
+        log::debug!("add bold font: {:?}", p.display());
+        let data = std::fs::read(p).expect("cannot open font");
+        let font = Font::new(&data);
+        fonts.add(Style::Bold, font);
+    }
+
+    for p in config.fonts_faint.iter() {
+        // FIXME
+        if p.as_os_str().is_empty() {
+            continue;
+        }
+
+        if !p.exists() {
+            log::warn!("font file {:?} doesn't exist, ignored", p.display());
+            continue;
+        }
+
+        log::debug!("add faint font: {:?}", p.display());
+        let data = std::fs::read(p).expect("cannot open font");
+        let font = Font::new(&data);
+        fonts.add(Style::Faint, font);
+    }
+
+    let regular_font = Font::new(include_bytes!("../fonts/Mplus1Code-Regular.ttf"));
+    fonts.add(Style::Regular, regular_font);
+
+    let bold_font = Font::new(include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"));
+    fonts.add(Style::Bold, bold_font);
+
+    let faint_font = Font::new(include_bytes!("../fonts/Mplus1Code-Thin.ttf"));
+    fonts.add(Style::Faint, faint_font);
+
+    fonts
+}
+
 fn calculate_cell_size(fonts: &FontSet) -> (CellSize, i32) {
     use std::cmp::max;
 
@@ -104,70 +172,7 @@ pub struct TerminalWindow {
 
 impl TerminalWindow {
     pub fn new(display: Display, width: u32, height: u32) -> Self {
-        let mut fonts = FontSet::empty();
-        {
-            let config = &crate::TOYTERM_CONFIG;
-
-            for p in config.fonts_regular.iter() {
-                // FIXME
-                if p.as_os_str().is_empty() {
-                    continue;
-                }
-
-                if !p.exists() {
-                    log::warn!("font file {:?} doesn't exist, ignored", p.display());
-                    continue;
-                }
-
-                log::debug!("add regular font: {:?}", p.display());
-                let data = std::fs::read(p).expect("cannot open font");
-                let font = Font::new(&data);
-                fonts.add(Style::Regular, font);
-            }
-
-            for p in config.fonts_bold.iter() {
-                // FIXME
-                if p.as_os_str().is_empty() {
-                    continue;
-                }
-
-                if !p.exists() {
-                    log::warn!("font file {:?} doesn't exist, ignored", p.display());
-                    continue;
-                }
-
-                log::debug!("add bold font: {:?}", p.display());
-                let data = std::fs::read(p).expect("cannot open font");
-                let font = Font::new(&data);
-                fonts.add(Style::Bold, font);
-            }
-
-            for p in config.fonts_faint.iter() {
-                // FIXME
-                if p.as_os_str().is_empty() {
-                    continue;
-                }
-
-                if !p.exists() {
-                    log::warn!("font file {:?} doesn't exist, ignored", p.display());
-                    continue;
-                }
-
-                log::debug!("add faint font: {:?}", p.display());
-                let data = std::fs::read(p).expect("cannot open font");
-                let font = Font::new(&data);
-                fonts.add(Style::Faint, font);
-            }
-
-            let regular_font = Font::new(include_bytes!("../fonts/Mplus1Code-Regular.ttf"));
-            fonts.add(Style::Regular, regular_font);
-
-            let bold_font = Font::new(include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"));
-            fonts.add(Style::Bold, bold_font);
-
-            let faint_font = Font::new(include_bytes!("../fonts/Mplus1Code-Thin.ttf"));
-            fonts.add(Style::Faint, faint_font);
-        }
+        let fonts = build_font_set();
 
         let (cell_size, cell_max_over) = calculate_cell_size(&fonts);
 
