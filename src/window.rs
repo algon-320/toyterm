@@ -782,9 +782,15 @@ impl TerminalWindow {
                         }
 
                         Some(VirtualKeyCode::L) if self.modifiers.ctrl() => {
-                            self.history_head = 0;
-                            let mut buf = self.terminal.buffer.lock().unwrap();
-                            buf.clear_history();
+                            if self.modifiers.shift() {
+                                // Ctrl + Shift + L
+                                self.history_head = 0;
+                                let mut buf = self.terminal.buffer.lock().unwrap();
+                                buf.clear_history();
+                            } else {
+                                // Ctrl + L
+                                self.terminal.pty_write(b"\x0c");
+                            }
                         }
 
                         Some(VirtualKeyCode::V) if self.modifiers.ctrl() => {
