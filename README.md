@@ -135,6 +135,10 @@ Currently toyterm supports the following functions.
     - Background Default: `\e[49m`
     - Foreground Gaming: `\e[70m`
     - Background Gaming: `\e[80m`
+    - Background RGB: `\e[48;2;{R};{G};{B}m`
+    - Foreground RGB: `\e[38;2;{R};{G};{B}m`
+    - Foreground indexed color: `\e[38;5;{idx}m`
+    - Background indexed color: `\e[48;5;{idx}m`
 - SM
 - VPA
 
