@@ -1436,9 +1436,9 @@ fn exec_shell() -> Result<()> {
     unsafe { sigaction(Signal::SIGPIPE, &sigdfl).expect("sigaction") };
 
     let shell = {
-        let mut bytes = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
-        bytes.push('\0');
-        CString::from_vec_with_nul(bytes.into_bytes()).unwrap()
+        let mut shell_string = crate::TOYTERM_CONFIG.shell[0].clone();
+        shell_string.push('\0');
+        CString::from_vec_with_nul(shell_string.into_bytes()).unwrap()
     };
 
     let args: [&CStr; 1] = [&shell];

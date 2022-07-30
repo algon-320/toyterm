@@ -105,16 +105,66 @@ impl TerminalWindow {
     pub fn new(display: Display, width: u32, height: u32) -> Self {
         let mut fonts = FontSet::empty();
         {
-            let regular_ttf_data = include_bytes!("../fonts/Mplus1Code-Regular.ttf");
-            let regular_font = Font::new(regular_ttf_data);
+            let config = &crate::TOYTERM_CONFIG;
+
+            for p in config.fonts_regular.iter() {
+                // FIXME
+                if p.as_os_str().is_empty() {
+                    continue;
+                }
+
+                if !p.exists() {
+                    log::warn!("font file {:?} doesn't exist, ignored", p.display());
+                    continue;
+                }
+
+                log::debug!("add regular font: {:?}", p.display());
+                let data = std::fs::read(p).expect("cannot open font");
+                let font = Font::new(&data);
+                fonts.add(Style::Regular, font);
+            }
+
+            for p in config.fonts_bold.iter() {
+                // FIXME
+                if p.as_os_str().is_empty() {
+                    continue;
+                }
+
+                if !p.exists() {
+                    log::warn!("font file {:?} doesn't exist, ignored", p.display());
+                    continue;
+                }
+
+                log::debug!("add bold font: {:?}", p.display());
+                let data = std::fs::read(p).expect("cannot open font");
+                let font = Font::new(&data);
+                fonts.add(Style::Bold, font);
+            }
+
+            for p in config.fonts_faint.iter() {
+                // FIXME
+                if p.as_os_str().is_empty() {
+                    continue;
+                }
+
+                if !p.exists() {
+                    log::warn!("font file {:?} doesn't exist, ignored", p.display());
+                    continue;
+                }
+
+                log::debug!("add faint font: {:?}", p.display());
+                let data = std::fs::read(p).expect("cannot open font");
+                let font = Font::new(&data);
+                fonts.add(Style::Faint, font);
+            }
+
+            let regular_font = Font::new(include_bytes!("../fonts/Mplus1Code-Regular.ttf"));
             fonts.add(Style::Regular, regular_font);
 
-            let bold_ttf_data = include_bytes!("../fonts/Mplus1Code-SemiBold.ttf");
-            let bold_font = Font::new(bold_ttf_data);
+            let bold_font = Font::new(include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"));
             fonts.add(Style::Bold, bold_font);
 
-            let faint_ttf_data = include_bytes!("../fonts/Mplus1Code-Thin.ttf");
-            let faint_font = Font::new(faint_ttf_data);
+            let faint_font = Font::new(include_bytes!("../fonts/Mplus1Code-Thin.ttf"));
             fonts.add(Style::Faint, faint_font);
         }
 
@@ -470,13 +520,12 @@ impl TerminalWindow {
         use glium::Surface as _;
         let mut surface = self.display.draw();
 
-        // TODO: config
         {
-            // Base16 Gruvbox dark hard
-            let r = 29.0 / 255.0;
-            let g = 32.0 / 255.0;
-            let b = 33.0 / 255.0;
-            surface.clear_color_srgb(r, g, b, 1.0);
+            let config = &crate::TOYTERM_CONFIG;
+            let r = (config.color_black & 0xFF000000) >> 24;
+            let g = (config.color_black & 0x00FF0000) >> 16;
+            let b = (config.color_black & 0x0000FF00) >> 8;
+            surface.clear_color_srgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0);
         }
 
         let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
@@ -849,18 +898,17 @@ fn h_to_gl(h: u32, window_height: u32) -> f32 {
 }
 
 fn color_to_rgba(color: Color) -> u32 {
-    // TODO: config
+    let config = &crate::TOYTERM_CONFIG;
+
     match color {
-        // Base16 Gruvbox dark hard
-        // Dawid Kurek (dawikur@gmail.com), morhetz (https://github.com/morhetz/gruvbox)
-        Color::Black => 0x1d2021ff,
-        Color::Red => 0xfb4934ff,
-        Color::Yellow => 0xb8bb26ff,
-        Color::Green => 0xfabd2fff,
-        Color::Blue => 0x83a598ff,
-        Color::Magenta => 0xd3869bff,
-        Color::Cyan => 0x8ec07cff,
-        Color::White => 0xd5c4a1ff,
+        Color::Black => config.color_black,
+        Color::Red => config.color_red,
+        Color::Green => config.color_green,
+        Color::Yellow => config.color_yellow,
+        Color::Blue => config.color_blue,
+        Color::Magenta => config.color_magenta,
+        Color::Cyan => config.color_cyan,
+        Color::White => config.color_white,
 
         Color::Rgb { rgba } => rgba,
         Color::Special => 0xFFFFFF00,

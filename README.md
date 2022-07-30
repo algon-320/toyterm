@@ -14,23 +14,30 @@ toyterm is a toy terminal emulator.
 - toyterm assumes UTF-8 encoding
 - following basic functions are TODO
     - automatic font selection by integrating with fontconfig
-    - configuration (shell, color scheme, keybindings, etc.)
 
 ## Usage
 
-Install:
+To install:
 ```sh
 $ git clone https://github.com/algon-320/toyterm
 $ cd toyterm
-$ tic -x -o ${HOME}/.terminfo/ toyterm.info
+$ tic -x -o "$HOME/.terminfo/" toyterm.info
 $ cargo install --path .
 ```
 To enable multiplexing feature, please add "--features multiplex" to the last line.
 
-Uninstall:
+To configure:
 ```sh
-$ rm ${HOME}/.terminfo/t/toyterm-256color
+$ mkdir -p "$HOME/.config/toyterm"
+$ cp ./config.toml "$HOME/.config/toyterm"
+$ $EDITOR "$HOME/.config/toyterm/config.toml"
+```
+
+To uninstall:
+```sh
+$ rm "$HOME/.terminfo/t/toyterm-256color"
 $ cargo uninstall toyterm
+$ rm -r "$HOME/.config/toyterm"
 ```
 
 ## Keybinding

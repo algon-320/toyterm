@@ -1,5 +1,6 @@
 mod cache;
 mod clipboard;
+mod config;
 mod control_function;
 mod font;
 mod multiplexer;
@@ -9,7 +10,14 @@ mod terminal;
 mod utils;
 mod window;
 
+lazy_static::lazy_static! {
+    pub static ref TOYTERM_CONFIG: crate::config::Config = crate::config::build();
+}
+
 fn main() {
+    // Force to build the global config
+    lazy_static::initialize(&TOYTERM_CONFIG);
+
     // Setup env_logger
     let our_logs = concat!(module_path!(), "=debug");
     let env = env_logger::Env::default().default_filter_or(our_logs);
