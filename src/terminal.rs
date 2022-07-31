@@ -27,19 +27,20 @@ fn overwrap(outer: &PositionedImage, inner: &PositionedImage) -> bool {
         && b.col + b.width as isize <= a.col + a.width as isize
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CursorStyle {
+    #[default]
     Block,
     Bar,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TerminalSize {
     pub rows: usize,
     pub cols: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CellSize {
     pub w: u32,
     pub h: u32,

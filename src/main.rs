@@ -47,7 +47,7 @@ fn main() {
     if cfg!(feature = "multiplex") {
         let mut mux = multiplexer::Multiplexer::new(display.clone());
 
-        let term = window::TerminalWindow::new(display, width, height);
+        let term = window::TerminalWindow::new(display);
         mux.add(term);
 
         event_loop.run(move |event, _, control_flow| {
@@ -55,7 +55,7 @@ fn main() {
             mux.on_event(&event, control_flow);
         });
     } else {
-        let mut term = window::TerminalWindow::new(display, width, height);
+        let mut term = window::TerminalWindow::new(display);
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;

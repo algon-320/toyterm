@@ -21,6 +21,3 @@ lazy_static = "1.4.0"
 [features]
 default = []
 multiplex = []
-
-[patch.crates-io]
-glutin = { git = "https://github.com/rust-windowing/glutin.git", rev = "2bffbf52d6b4f4c32adc463818e10ac8082948e4" }

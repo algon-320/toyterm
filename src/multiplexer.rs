@@ -85,12 +85,7 @@ impl Multiplexer {
                 // Create a new window
                 WindowEvent::ReceivedCharacter('c') if self.consume => {
                     log::info!("new terminal window");
-                    let inner_size = self.display.gl_window().window().inner_size();
-                    let new_term = TerminalWindow::new(
-                        self.display.clone(),
-                        inner_size.width,
-                        inner_size.height,
-                    );
+                    let new_term = TerminalWindow::new(self.display.clone());
                     self.add(new_term);
                     self.select = self.wins.len() - 1;
                     self.consume = false;

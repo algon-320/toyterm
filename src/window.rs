@@ -1,6 +1,7 @@
 use glium::{glutin, index, texture, uniform, uniforms, Display};
 use glutin::{
-    event::{ElementState, Event, Ime, ModifiersState, MouseButton, VirtualKeyCode, WindowEvent},
+    dpi::{PhysicalPosition, PhysicalSize},
+    event::{ElementState, Event, ModifiersState, MouseButton, VirtualKeyCode, WindowEvent},
     event_loop::ControlFlow,
 };
 use std::rc::Rc;
@@ -133,64 +134,93 @@ fn calculate_cell_size(fonts: &FontSet) -> (CellSize, i32) {
     )
 }
 
+type WindowSize = PhysicalSize<u32>;
+
 struct DrawQuery<V: glium::vertex::Vertex> {
     vertices: glium::VertexBuffer<V>,
     texture: Rc<texture::Texture2d>,
 }
 
+#[derive(Default)]
+struct Contents {
+    lines: Vec<Line>,
+    cursor_row: usize,
+    cursor_col: usize,
+    cursor_style: CursorStyle,
+    cursor_visible: bool,
+    // FIXME: use cell index instead of pixel
+    selection_range: Option<(f64, f64)>,
+    history_head: isize,
+    window_size: WindowSize,
+    cell_size: CellSize,
+}
+
+impl Contents {
+    fn eq_except_for_lines(&self, other: &Self) -> bool {
+        self.cursor_row == other.cursor_row
+            && self.cursor_col == other.cursor_col
+            && self.cursor_style == other.cursor_style
+            && self.cursor_visible == other.cursor_visible
+            && self.selection_range == other.selection_range
+            && self.history_head == other.history_head
+            && self.window_size == other.window_size
+            && self.cell_size == other.cell_size
+    }
+}
+
+#[derive(Default)]
+struct MouseState {
+    wheel_delta_x: f32,
+    wheel_delta_y: f32,
+    cursor_pos: (f64, f64),
+    pressed_pos: Option<(f64, f64)>,
+    released_pos: Option<(f64, f64)>,
+}
+
 pub struct TerminalWindow {
+    terminal: Terminal,
     display: Display,
+    fonts: FontSet,
+    cache: GlyphCache,
+    clipboard: X11Clipboard,
+
+    contents: Contents,
+    history_head: isize,
+    bracketed_paste_mode: bool,
+    window_size: WindowSize,
+    cell_size: CellSize,
+    cell_max_over: i32,
+    modifiers: ModifiersState,
+    mouse: MouseState,
+    started_time: std::time::Instant,
+
     program_cell: glium::Program,
     program_img: glium::Program,
     vertices_fg: Vec<Vertex>,
     vertices_bg: Vec<Vertex>,
-    modifiers: ModifiersState,
-    ime_buf: Vec<char>,
-    fonts: FontSet,
-    cache: GlyphCache,
-    window_width: u32,
-    window_height: u32,
-    cell_size: CellSize,
-    cell_max_over: i32,
-    started_time: std::time::Instant,
-    clipboard: X11Clipboard,
-    buf_lines: Vec<Line>,
-
-    terminal: Terminal,
-    bracketed_paste_mode: bool,
-    mouse_wheel_delta_x: f32,
-    mouse_wheel_delta_y: f32,
-    cursor_position: (f64, f64),
-    mouse_pressed_position: Option<(f64, f64)>,
-    mouse_released_position: Option<(f64, f64)>,
-    last_selected_range: Option<(f64, f64)>,
-    history_head: isize,
-    last_history_head: isize,
     draw_queries_fg: Vec<DrawQuery<Vertex>>,
     draw_queries_bg: Vec<DrawQuery<Vertex>>,
     draw_queries_img: Vec<DrawQuery<SimpleVertex>>,
 }
 
 impl TerminalWindow {
-    pub fn new(display: Display, width: u32, height: u32) -> Self {
+    pub fn new(display: Display) -> Self {
+        let window_size = display.gl_window().window().inner_size();
+
         let fonts = build_font_set();
 
         let (cell_size, cell_max_over) = calculate_cell_size(&fonts);
 
+        // Rasterize ASCII characters and cache them as a texture
+        let cache = GlyphCache::build_ascii_visible(&display, &fonts, cell_size);
+
+        let clipboard = X11Clipboard::new();
+
         let size = TerminalSize {
-            rows: (height / cell_size.h) as usize,
-            cols: (width / cell_size.w) as usize,
+            rows: (window_size.height / cell_size.h) as usize,
+            cols: (window_size.width / cell_size.w) as usize,
         };
         let terminal = Terminal::new(size, cell_size);
-
-        // Use I-beam mouse cursor
-        display
-            .gl_window()
-            .window()
-            .set_cursor_icon(glutin::window::CursorIcon::Text);
-
-        // Receive IME events
-        display.gl_window().window().set_ime_allowed(true);
 
         // Initialize shaders
         let program_cell = {
@@ -223,41 +253,33 @@ impl TerminalWindow {
             Program::new(&display, input).unwrap()
         };
 
-        // Rasterize ASCII characters and cache them as a texture
-        let cache = GlyphCache::build_ascii_visible(&display, &fonts, cell_size);
-
-        let initial_size = display.gl_window().window().inner_size();
-
-        let clipboard = X11Clipboard::new();
+        // Use I-beam mouse cursor
+        display
+            .gl_window()
+            .window()
+            .set_cursor_icon(glutin::window::CursorIcon::Text);
 
         TerminalWindow {
+            terminal,
             display,
+            fonts,
+            cache,
+            clipboard,
+
+            contents: Contents::default(),
+            history_head: 0,
+            bracketed_paste_mode: false,
+            window_size,
+            cell_size,
+            cell_max_over,
+            modifiers: ModifiersState::empty(),
+            mouse: MouseState::default(),
+            started_time: std::time::Instant::now(),
+
             program_cell,
             program_img,
             vertices_fg: Vec::new(),
             vertices_bg: Vec::new(),
-            modifiers: ModifiersState::empty(),
-            ime_buf: Vec::new(),
-            fonts,
-            cache,
-            window_width: initial_size.width,
-            window_height: initial_size.height,
-            cell_size,
-            cell_max_over,
-            started_time: std::time::Instant::now(),
-            clipboard,
-            buf_lines: Vec::new(),
-
-            terminal,
-            bracketed_paste_mode: false,
-            mouse_wheel_delta_x: 0.0,
-            mouse_wheel_delta_y: 0.0,
-            cursor_position: (0.0, 0.0),
-            mouse_pressed_position: None,
-            mouse_released_position: None,
-            last_selected_range: None,
-            history_head: 0,
-            last_history_head: 0,
             draw_queries_fg: Vec::new(),
             draw_queries_bg: Vec::new(),
             draw_queries_img: Vec::new(),
@@ -265,14 +287,14 @@ impl TerminalWindow {
     }
 
     // Returns true if the PTY is closed, false otherwise
-    pub fn draw(&mut self) -> bool {
-        let elapsed = self.started_time.elapsed().as_millis() as f32;
-        let window_width = self.window_width;
-        let window_height = self.window_height;
+    fn update(&mut self) -> bool {
+        let window_width = self.window_size.width;
+        let window_height = self.window_size.height;
         let cell_size = self.cell_size;
 
-        let selected_range = self.mouse_pressed_position.map(|start| {
-            let end = self.mouse_released_position.unwrap_or(self.cursor_position);
+        let mut current = Contents::default();
+        current.selection_range = self.mouse.pressed_pos.map(|start| {
+            let end = self.mouse.released_pos.unwrap_or(self.mouse.cursor_pos);
             let ((sx, sy), (ex, ey)) = sort_points(start, end, cell_size);
             let s_row = sy.round() as u32 / cell_size.h;
             let e_row = ey.round() as u32 / cell_size.h;
@@ -280,41 +302,50 @@ impl TerminalWindow {
             let r = (e_row as f64) * (window_width as f64) + ex;
             (l, r)
         });
+        current.window_size = self.window_size;
+        current.cell_size = self.cell_size;
+        std::mem::swap(&mut current.lines, &mut self.contents.lines);
 
-        let selection_changed = self.last_selected_range != selected_range;
-        self.last_selected_range = selected_range;
+        let previous: &Contents = &self.contents;
 
-        let history_head_changed = self.last_history_head != self.history_head;
-        self.last_history_head = self.history_head;
+        current.cursor_row = previous.cursor_row;
+        current.cursor_col = previous.cursor_col;
+        current.cursor_visible = previous.cursor_visible;
+        current.cursor_style = previous.cursor_style;
 
-        let cursor: (usize, usize);
-        let cursor_visible_mode: bool;
-        let cursor_style: CursorStyle;
-        let buf_updated: bool;
+        let view_changed: bool;
         {
-            // hold the lock during copying states
+            // hold the lock while copying buffer states
             let mut buf = self.terminal.buffer.lock().unwrap();
 
-            buf_updated = buf.updated;
-            buf.updated = false;
+            if buf.closed {
+                return true;
+            }
+
+            self.bracketed_paste_mode = buf.bracketed_paste_mode;
 
             if self.history_head < -(buf.history_size as isize) {
                 self.history_head = -(buf.history_size as isize);
             }
+            current.history_head = self.history_head;
 
-            if buf_updated || history_head_changed {
+            view_changed = buf.updated || previous.history_head != self.history_head;
+
+            if view_changed {
                 let top = self.history_head;
                 let bot = top + buf.lines.len() as isize;
 
-                if self.buf_lines.len() != buf.lines.len() {
-                    self.buf_lines.clear();
-                    self.buf_lines.extend(buf.range(top, bot).cloned());
+                if current.lines.len() != buf.lines.len() {
+                    current.lines.clear();
+                    current.lines.extend(buf.range(top, bot).cloned());
                 } else {
-                    for (src, dst) in buf.range(top, bot).zip(self.buf_lines.iter_mut()) {
+                    for (src, dst) in buf.range(top, bot).zip(current.lines.iter_mut()) {
                         dst.copy_from(src);
                     }
                 }
+            }
 
+            if buf.updated {
                 self.draw_queries_img.clear();
 
                 for img in buf.images.iter() {
@@ -347,28 +378,37 @@ impl TerminalWindow {
                     });
                 }
 
-                self.bracketed_paste_mode = buf.bracketed_paste_mode;
+                current.cursor_row = buf.cursor.0;
+                current.cursor_col = buf.cursor.1;
+                current.cursor_visible = buf.cursor_visible_mode;
+                current.cursor_style = buf.cursor_style;
+
+                self.display
+                    .gl_window()
+                    .window()
+                    .set_ime_position(PhysicalPosition {
+                        x: current.cursor_col as u32 * cell_size.w,
+                        y: (current.cursor_row + 1) as u32 * cell_size.h,
+                    });
             }
 
-            cursor = buf.cursor;
-            cursor_visible_mode = buf.cursor_visible_mode;
-            cursor_style = buf.cursor_style;
-
-            if buf.closed {
-                return true;
-            }
+            buf.updated = false;
         }
 
-        if buf_updated || selection_changed || history_head_changed {
+        if view_changed || !current.eq_except_for_lines(previous) {
             self.vertices_fg.clear();
             self.vertices_bg.clear();
             self.draw_queries_fg.clear();
             self.draw_queries_bg.clear();
 
-            let cursor_visible = cursor_visible_mode && self.history_head >= 0;
+            let cursor_visible = current.cursor_visible && current.history_head >= 0;
+            if !cursor_visible {
+                log::info!("current.cursor_visible: {}", current.cursor_visible);
+                log::info!("current.history_head: {}", current.history_head);
+            }
 
             let mut baseline: u32 = self.cell_max_over as u32;
-            for (i, row) in self.buf_lines.iter().enumerate() {
+            for (i, row) in current.lines.iter().enumerate() {
                 let mut leftline: u32 = 0;
                 for (j, cell) in row.iter().enumerate() {
                     if cell.width == 0 {
@@ -389,11 +429,11 @@ impl TerminalWindow {
                         let is_inversed = cell.attr.inversed;
 
                         let on_cursor = cursor_visible
-                            && cursor_style == CursorStyle::Block
-                            && i == cursor.0
-                            && j == cursor.1;
+                            && current.cursor_style == CursorStyle::Block
+                            && i == current.cursor_row
+                            && j == current.cursor_col;
 
-                        let is_selected = match selected_range {
+                        let is_selected = match current.selection_range {
                             Some((left, right)) => {
                                 let offset = (i as u32 * window_width + leftline) as f64;
                                 let mid_point = offset + (cell_width_px as f64) / 2.0;
@@ -505,9 +545,9 @@ impl TerminalWindow {
                 baseline += cell_size.h;
             }
 
-            if cursor_style == CursorStyle::Bar {
-                let cursor_col = cursor.1 as u32;
-                let cursor_row = cursor.0 as u32;
+            if current.cursor_style == CursorStyle::Bar {
+                let cursor_col = current.cursor_col as u32;
+                let cursor_row = current.cursor_row as u32;
 
                 let fg = Color::Black;
                 let bg = Color::White;
@@ -533,16 +573,22 @@ impl TerminalWindow {
             });
         }
 
+        self.contents = current;
+
+        false
+    }
+
+    pub fn draw(&mut self) {
+        let elapsed = self.started_time.elapsed().as_millis() as f32;
+
         use glium::Surface as _;
         let mut surface = self.display.draw();
 
-        {
-            let config = &crate::TOYTERM_CONFIG;
-            let r = (config.color_black & 0xFF000000) >> 24;
-            let g = (config.color_black & 0x00FF0000) >> 16;
-            let b = (config.color_black & 0x0000FF00) >> 8;
-            surface.clear_color_srgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0);
-        }
+        let config = &crate::TOYTERM_CONFIG;
+        let r = (config.color_black & 0xFF000000) >> 24;
+        let g = (config.color_black & 0x00FF0000) >> 16;
+        let b = (config.color_black & 0x0000FF00) >> 8;
+        surface.clear_color_srgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0);
 
         let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
 
@@ -590,13 +636,15 @@ impl TerminalWindow {
         }
 
         surface.finish().expect("finish");
-        false
     }
 
-    fn resize_window(&mut self, new_width: u32, new_height: u32) {
-        log::debug!("window resized: {}x{} (px)", new_width, new_height);
-        self.window_width = new_width;
-        self.window_height = new_height;
+    fn resize_window(&mut self, new_size: WindowSize) {
+        log::debug!(
+            "window resized: {}x{} (px)",
+            new_size.width,
+            new_size.height
+        );
+        self.window_size = new_size;
         self.resize_buffer();
     }
 
@@ -614,11 +662,11 @@ impl TerminalWindow {
     }
 
     fn resize_buffer(&mut self) {
-        self.mouse_pressed_position = None;
-        self.mouse_released_position = None;
+        self.mouse.pressed_pos = None;
+        self.mouse.released_pos = None;
 
-        let rows = (self.window_height / self.cell_size.h) as usize;
-        let cols = (self.window_width / self.cell_size.w) as usize;
+        let rows = (self.window_size.height / self.cell_size.h) as usize;
+        let cols = (self.window_size.width / self.cell_size.w) as usize;
         let buff_size = TerminalSize { rows, cols };
         self.terminal.request_resize(buff_size, self.cell_size);
     }
@@ -626,49 +674,32 @@ impl TerminalWindow {
     fn copy_clipboard(&mut self) {
         let mut text = String::new();
 
-        {
-            let window_width = self.window_width;
-            let cell_size = self.cell_size;
+        let window_width = self.window_size.width;
+        let cell_size = self.cell_size;
 
-            let lines: Vec<Line> = {
-                let buf = self.terminal.buffer.lock().unwrap();
-                buf.lines.iter().cloned().collect()
-            };
+        for (i, row) in self.contents.lines.iter().enumerate() {
+            let mut x = 0;
+            for cell in row.iter() {
+                let cell_width_px = cell_size.w * cell.width as u32;
 
-            let selected_range = self.mouse_pressed_position.map(|start| {
-                let end = self.mouse_released_position.unwrap_or(self.cursor_position);
-                let ((sx, sy), (ex, ey)) = sort_points(start, end, cell_size);
-                let s_row = sy.round() as u32 / cell_size.h;
-                let e_row = ey.round() as u32 / cell_size.h;
-                let l = (s_row as f64) * (window_width as f64) + sx;
-                let r = (e_row as f64) * (window_width as f64) + ex;
-                (l, r)
-            });
-
-            for (i, row) in lines.iter().enumerate() {
-                let mut x = 0;
-                for cell in row.iter() {
-                    let cell_width_px = cell_size.w * cell.width as u32;
-
-                    let is_selected = match selected_range {
-                        Some((left, right)) => {
-                            let offset = (i as u32 * window_width + x) as f64;
-                            let mid_point = offset + (cell_width_px as f64) / 2.0;
-                            left <= mid_point && mid_point <= right
-                        }
-                        None => false,
-                    };
-
-                    if is_selected {
-                        text.push(cell.ch);
+                let is_selected = match self.contents.selection_range {
+                    Some((left, right)) => {
+                        let offset = (i as u32 * window_width + x) as f64;
+                        let mid_point = offset + (cell_width_px as f64) / 2.0;
+                        left <= mid_point && mid_point <= right
                     }
+                    None => false,
+                };
 
-                    x += cell_width_px;
+                if is_selected {
+                    text.push(cell.ch);
                 }
+
+                x += cell_width_px;
             }
         }
 
-        log::debug!("copy: {:?}", text);
+        log::info!("copy: {:?}", text);
         let _ = self.clipboard.store(&text);
     }
 
@@ -696,45 +727,6 @@ impl TerminalWindow {
         self.terminal.pty_write(utf8);
     }
 
-    fn process_ime_event(&mut self, event: &Ime) {
-        match event {
-            Ime::Enabled => {
-                self.ime_buf.clear();
-            }
-
-            Ime::Disabled => {
-                for _ in self.ime_buf.drain(..) {
-                    self.terminal.pty_write(b"\x7F");
-                }
-            }
-
-            Ime::Preedit(text, _) | Ime::Commit(text) => {
-                let prev: &Vec<char> = &self.ime_buf;
-                let next: Vec<char> = text.chars().collect();
-
-                // preserve common prefix
-                let mut i = 0;
-                while i < prev.len() && i < next.len() && prev[i] == next[i] {
-                    i += 1;
-                }
-                let delete_count = prev.len() - i;
-                self.terminal.pty_write(&vec![b'\x7F'; delete_count]);
-
-                // write changed part
-                for &ch in &next[i..] {
-                    self.pty_write_char_utf8(ch);
-                }
-
-                // update
-                if let Ime::Preedit(..) = event {
-                    self.ime_buf = next;
-                } else {
-                    self.ime_buf.clear();
-                }
-            }
-        }
-    }
-
     pub fn on_event(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
         match event {
             Event::WindowEvent { event, .. } => match event {
@@ -743,14 +735,12 @@ impl TerminalWindow {
                 }
 
                 &WindowEvent::Resized(new_size) => {
-                    self.resize_window(new_size.width, new_size.height);
+                    self.resize_window(new_size);
                 }
 
                 &WindowEvent::ModifiersChanged(new_states) => {
                     self.modifiers = new_states;
                 }
-
-                WindowEvent::Ime(ime) => self.process_ime_event(ime),
 
                 &WindowEvent::ReceivedCharacter(ch) => {
                     // Handle these characters on WindowEvent::KeyboardInput event
@@ -868,7 +858,7 @@ impl TerminalWindow {
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
-                    self.cursor_position = (position.x, position.y);
+                    self.mouse.cursor_pos = (position.x, position.y);
                 }
 
                 WindowEvent::MouseInput {
@@ -877,11 +867,11 @@ impl TerminalWindow {
                     ..
                 } => match state {
                     ElementState::Pressed => {
-                        self.mouse_pressed_position = Some(self.cursor_position);
-                        self.mouse_released_position = None;
+                        self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
+                        self.mouse.released_pos = None;
                     }
                     ElementState::Released => {
-                        self.mouse_released_position = Some(self.cursor_position);
+                        self.mouse.released_pos = Some(self.mouse.cursor_pos);
                     }
                 },
 
@@ -889,14 +879,16 @@ impl TerminalWindow {
                     delta: glutin::event::MouseScrollDelta::LineDelta(dx, dy),
                     ..
                 } => {
-                    self.mouse_wheel_delta_x += dx * 1.2;
-                    self.mouse_wheel_delta_y += dy * 1.2;
+                    let mouse = &mut self.mouse;
 
-                    let horizontal = self.mouse_wheel_delta_x.trunc() as isize;
-                    self.mouse_wheel_delta_x %= 1.0;
+                    mouse.wheel_delta_x += dx * 1.5;
+                    mouse.wheel_delta_y += dy * 1.5;
 
-                    let vertical = self.mouse_wheel_delta_y.trunc() as isize;
-                    self.mouse_wheel_delta_y %= 1.0;
+                    let horizontal = mouse.wheel_delta_x.trunc() as isize;
+                    let vertical = mouse.wheel_delta_y.trunc() as isize;
+
+                    mouse.wheel_delta_x %= 1.0;
+                    mouse.wheel_delta_y %= 1.0;
 
                     if self.modifiers.shift() {
                         // Scroll up history
@@ -924,15 +916,17 @@ impl TerminalWindow {
                         }
                     }
                 }
+
                 _ => {}
             },
 
             Event::MainEventsCleared => {
-                let exit = self.draw();
-
-                if exit {
+                if self.update() {
                     *control_flow = ControlFlow::Exit;
+                    return;
                 }
+
+                self.draw();
             }
 
             _ => {}
