@@ -343,9 +343,7 @@ impl TerminalWindow {
                         dst.copy_from(src);
                     }
                 }
-            }
 
-            if buf.updated {
                 self.draw_queries_img.clear();
 
                 for img in buf.images.iter() {
