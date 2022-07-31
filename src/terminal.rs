@@ -94,6 +94,14 @@ pub enum Color {
     Magenta,
     Cyan,
     White,
+    BrightBlack,
+    BrightRed,
+    BrightGreen,
+    BrightYellow,
+    BrightBlue,
+    BrightMagenta,
+    BrightCyan,
+    BrightWhite,
     Rgb { rgba: u32 },
     Special,
 }
@@ -1065,16 +1073,16 @@ impl Engine {
                             8 => self.attr.concealed = true,
                             28 => self.attr.concealed = false,
 
-                            30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 => {
-                                if let Some(color) = find_color(ps - 30, &mut iter) {
+                            x @ (30..=37 | 38 | 90..=97) => {
+                                if let Some(color) = find_color(x - 30, &mut iter) {
                                     self.attr.fg = color;
                                 }
                             }
                             70 => self.attr.fg = Color::Special,
                             39 => self.attr.fg = GraphicAttribute::default().fg,
 
-                            40 | 41 | 42 | 43 | 44 | 45 | 46 | 47 | 48 => {
-                                if let Some(color) = find_color(ps - 40, &mut iter) {
+                            x @ (40..=47 | 48 | 100..=107) => {
+                                if let Some(color) = find_color(x - 40, &mut iter) {
                                     self.attr.bg = color;
                                 }
                             }
@@ -1375,6 +1383,15 @@ fn find_color(prefix: u16, ps: &mut impl Iterator<Item = u16>) -> Option<Color> 
         6 => Some(Color::Cyan),
         7 => Some(Color::White),
 
+        60 => Some(Color::BrightBlack),
+        61 => Some(Color::BrightRed),
+        62 => Some(Color::BrightGreen),
+        63 => Some(Color::BrightYellow),
+        64 => Some(Color::BrightBlue),
+        65 => Some(Color::BrightMagenta),
+        66 => Some(Color::BrightCyan),
+        67 => Some(Color::BrightWhite),
+
         8 => {
             match ps.next() {
                 // direct color
@@ -1402,15 +1419,14 @@ fn find_color(prefix: u16, ps: &mut impl Iterator<Item = u16>) -> Option<Color> 
                             6 => Some(Color::Cyan),
                             7 => Some(Color::White),
 
-                            // TODO: use ligher color
-                            8 => Some(Color::Black),
-                            9 => Some(Color::Red),
-                            10 => Some(Color::Green),
-                            11 => Some(Color::Yellow),
-                            12 => Some(Color::Blue),
-                            13 => Some(Color::Magenta),
-                            14 => Some(Color::Cyan),
-                            15 => Some(Color::White),
+                            8 => Some(Color::BrightBlack),
+                            9 => Some(Color::BrightRed),
+                            10 => Some(Color::BrightGreen),
+                            11 => Some(Color::BrightYellow),
+                            12 => Some(Color::BrightBlue),
+                            13 => Some(Color::BrightMagenta),
+                            14 => Some(Color::BrightCyan),
+                            15 => Some(Color::BrightWhite),
 
                             // 6x6x6 colors
                             16..=231 => {

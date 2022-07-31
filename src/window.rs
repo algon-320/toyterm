@@ -968,6 +968,9 @@ fn color_to_rgba(color: Color) -> u32 {
     let config = &crate::TOYTERM_CONFIG;
 
     match color {
+        Color::Rgb { rgba } => rgba,
+        Color::Special => 0xFFFFFF00,
+
         Color::Black => config.color_black,
         Color::Red => config.color_red,
         Color::Green => config.color_green,
@@ -977,8 +980,14 @@ fn color_to_rgba(color: Color) -> u32 {
         Color::Cyan => config.color_cyan,
         Color::White => config.color_white,
 
-        Color::Rgb { rgba } => rgba,
-        Color::Special => 0xFFFFFF00,
+        Color::BrightBlack => config.color_bright_black,
+        Color::BrightRed => config.color_bright_red,
+        Color::BrightGreen => config.color_bright_green,
+        Color::BrightYellow => config.color_bright_yellow,
+        Color::BrightBlue => config.color_bright_blue,
+        Color::BrightMagenta => config.color_bright_magenta,
+        Color::BrightCyan => config.color_bright_cyan,
+        Color::BrightWhite => config.color_bright_white,
     }
 }
 

@@ -18,6 +18,14 @@ pub struct Config {
     pub color_magenta: u32,
     pub color_cyan: u32,
     pub color_white: u32,
+    pub color_bright_black: u32,
+    pub color_bright_red: u32,
+    pub color_bright_green: u32,
+    pub color_bright_yellow: u32,
+    pub color_bright_blue: u32,
+    pub color_bright_magenta: u32,
+    pub color_bright_cyan: u32,
+    pub color_bright_white: u32,
 
     pub east_asian_width_ambiguous: u8,
 }
@@ -45,6 +53,15 @@ impl Default for Config {
             color_magenta: 0xFF00FFFF,
             color_cyan: 0x00FFFFFF,
             color_white: 0xFFFFFFFF,
+
+            color_bright_black: 0x505050FF,
+            color_bright_red: 0xFF5050FF,
+            color_bright_green: 0x50FF50FF,
+            color_bright_yellow: 0xFFFF50FF,
+            color_bright_blue: 0x5050FFFF,
+            color_bright_magenta: 0xFF50FFFF,
+            color_bright_cyan: 0x50FFFFFF,
+            color_bright_white: 0xFFFFFFFF,
         }
     }
 }
