@@ -889,8 +889,8 @@ impl TerminalWindow {
                     delta: glutin::event::MouseScrollDelta::LineDelta(dx, dy),
                     ..
                 } => {
-                    self.mouse_wheel_delta_x += dx;
-                    self.mouse_wheel_delta_y += dy;
+                    self.mouse_wheel_delta_x += dx * 1.2;
+                    self.mouse_wheel_delta_y += dy * 1.2;
 
                     let horizontal = self.mouse_wheel_delta_x.trunc() as isize;
                     self.mouse_wheel_delta_x %= 1.0;
