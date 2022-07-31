@@ -20,7 +20,7 @@ toyterm-256color|toyterm (a toy terminal emulator),
 #----------------------
 #
 ## maximum number of colors on screen
-    colors#256,
+    colors#0x1000000,
 ## maximum number of color-pairs on the screen
     pairs#65536,
 ## number of columns in a line
@@ -125,7 +125,7 @@ toyterm-256color|toyterm (a toy terminal emulator),
 ## set background color to #1
     setab=\E[%?%p1%{8}%<%t4%p1%d%e48;2;%p1%{65536}%/%d;%p1%{256}%/%{255}%&%d;%p1%{255}%&%d%;m,
 ## set foreground color to #1
-    setaf=\E[%?%p1%{8}%<%t3%p1%d%e38;2;%p1%{65536}%/%d;%p1%{256} %/%{255}%&%d;%p1%{255}%&%d%;m,
+    setaf=\E[%?%p1%{8}%<%t3%p1%d%e38;2;%p1%{65536}%/%d;%p1%{256}%/%{255}%&%d;%p1%{255}%&%d%;m,
 ## turn off all attributes
     sgr0=\E[m,
 ## string to start programs using cup
