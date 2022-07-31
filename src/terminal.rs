@@ -1106,7 +1106,9 @@ impl Engine {
                         // If there is no space for new character, move cursor to the next line.
                         if self.cursor.right_space() < width {
                             let (row, col) = self.cursor.pos();
-                            buf.lines[row].erase(col..);
+                            if !self.cursor.end {
+                                buf.lines[row].erase(col..);
+                            }
 
                             buffer_scroll_up_if_needed(&mut buf, self.cursor, self.cell_sz);
                             self.cursor = self.cursor.next_row().first_col();
