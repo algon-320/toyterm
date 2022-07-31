@@ -14,14 +14,16 @@ pub struct Font {
 
 impl Font {
     pub fn new(ttf_data: &[u8]) -> Self {
+        let font_size = crate::TOYTERM_CONFIG.font_size;
+
         let freetype = freetype::Library::init().expect("FreeType init");
         let face = freetype.new_memory_face(ttf_data.to_vec(), 0).unwrap();
-        face.set_pixel_sizes(0, 32).unwrap();
+        face.set_pixel_sizes(0, font_size).unwrap();
 
         Self {
             _freetype: freetype,
             face,
-            size: 32,
+            size: font_size,
         }
     }
 

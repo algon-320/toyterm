@@ -19,6 +19,8 @@
 #     "/path/to/your/favorite/thin_font.ttf",
 #     "/path/to/your/favorite/thin_font_fallback.ttf",
 # ]
+#
+# font_size = 32
 
 # Colors in RRGGBBAA format
 # (Note that colors with AA = 00 are reserved for internal usage.)

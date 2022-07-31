@@ -8,6 +8,7 @@ pub struct Config {
     pub fonts_regular: Vec<PathBuf>,
     pub fonts_bold: Vec<PathBuf>,
     pub fonts_faint: Vec<PathBuf>,
+    pub font_size: u32,
 
     // RRGGBBAA
     pub color_black: u32,
@@ -44,6 +45,7 @@ impl Default for Config {
             fonts_regular: vec![PathBuf::new()],
             fonts_bold: vec![PathBuf::new()],
             fonts_faint: vec![PathBuf::new()],
+            font_size: 32,
 
             color_black: 0x000000FF,
             color_red: 0xFF0000FF,
