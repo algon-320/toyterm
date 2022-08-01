@@ -5,6 +5,20 @@ use std::rc::Rc;
 use crate::font::{FontSet, Style};
 use crate::terminal::CellSize;
 
+const STYLES: [Style; 3] = [Style::Regular, Style::Bold, Style::Faint];
+
+// NOTE: STYLES_BITS must be large enough to distinguish STYLES, that is:
+// assert!( STYLES.len() < (1 << STYLES_BITS) )
+const STYLES_BITS: usize = 2;
+
+fn get_ascii_index(ch: char, style: Style) -> usize {
+    debug_assert!(ch.is_ascii());
+    let code = ch as usize;
+    let style = style as u8 as usize;
+    debug_assert!(style < (1 << STYLES_BITS));
+    (code << STYLES_BITS) | style
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct GlyphRegion {
     /// width in pixel
@@ -33,19 +47,33 @@ pub struct GlyphCache {
     ascii_glyph_region: Vec<Option<(GlyphRegion, GlyphMetrics)>>,
 }
 
-fn get_ascii_index(ch: char, style: Style) -> usize {
-    debug_assert!(ch.is_ascii());
-    ((ch as u8 as usize) << 2) | (style as u8 as usize)
-}
-
 impl GlyphCache {
     pub fn build_ascii_visible(display: &Display, fonts: &FontSet, mut cell_sz: CellSize) -> Self {
         // NOTE: add padding to avoid conflict with adjacent glyphs
         cell_sz.w += 1;
         cell_sz.h += 1;
 
+        // Glyph layout in the cache texture:
+        // +----------------+
+        // | !"#$%&'()*+,-./| <-- Regular style
+        // |0123456789:;<=>?|
+        // |@ABCDEFGHIJKLMNO|
+        // |PQRSTUVWXYZ[\]^_|
+        // |`abcdefghijklmno|
+        // |pqrstuvwxyz{|}~ |
+        // +----------------+
+        // | !"#$%&'()*+,-./| <-- Bold style
+        // |0123456789:;<=>?|
+        //        ...
+        // |pqrstuvwxyz{|}~ |
+        // +----------------+
+        // | !"#$%&'()*+,-./| <-- Faint style
+        //        ...
+        // |pqrstuvwxyz{|}~ |
+        // +----------------+
+
         let texture_w = 16 * cell_sz.w;
-        let texture_h = (8 - 2) * cell_sz.h * 3;
+        let texture_h = (6 * cell_sz.h) * 3;
         log::debug!("cache texture: {}x{} (px)", texture_w, texture_h);
 
         let texture = texture::Texture2d::with_mipmaps(
@@ -53,26 +81,33 @@ impl GlyphCache {
             vec![vec![0_u8; texture_w as usize]; texture_h as usize],
             texture::MipmapsOption::NoMipmap,
         )
-        .expect("Failed to create texture");
+        .expect("Failed to create a texture");
 
-        // FIXME: the size is dependent on the fact that font::Style has only 3 variants.
+        assert!(STYLES.len() < (1 << STYLES_BITS));
         let mut ascii_glyph_region: Vec<Option<(GlyphRegion, GlyphMetrics)>> =
-            vec![None; 0x80 << 2];
+            vec![None; 0x80 << STYLES_BITS];
 
         let ascii_visible = ' '..='~';
         for ch in ascii_visible {
             let code = ch as usize;
 
-            let row = ((code & 0x70) >> 4) - 2;
             let col = code & 0xF;
+            let row = ((code & 0x70) >> 4) - 2;
 
-            let y = row as u32 * cell_sz.h;
-            let x = col as u32 * cell_sz.w;
+            let y = (row as u32) * cell_sz.h;
+            let x = (col as u32) * cell_sz.w;
 
-            if let Some((glyph_image, metrics)) = fonts.render(ch, Style::Regular) {
+            for (i, &style) in STYLES.iter().enumerate() {
+                let (glyph_image, metrics) = match fonts.render(ch, style) {
+                    None => continue,
+                    Some(found) => found,
+                };
+
+                let y_origin = (i as u32) * (texture_h / 3);
+
                 let rect = glium::Rect {
                     left: x,
-                    bottom: y,
+                    bottom: y_origin + y,
                     width: glyph_image.width,
                     height: glyph_image.height,
                 };
@@ -88,51 +123,7 @@ impl GlyphCache {
                     tx_h: rect.height as f32 / texture_h as f32,
                 };
 
-                let idx = get_ascii_index(ch, Style::Regular);
-                ascii_glyph_region[idx] = Some((region, metrics));
-            }
-
-            if let Some((glyph_image, metrics)) = fonts.render(ch, Style::Bold) {
-                let rect = glium::Rect {
-                    left: x,
-                    bottom: y + texture_h / 3,
-                    width: glyph_image.width,
-                    height: glyph_image.height,
-                };
-                texture.main_level().write(rect, glyph_image);
-
-                let region = GlyphRegion {
-                    px_w: rect.width,
-                    px_h: rect.height,
-                    tx_x: rect.left as f32 / texture_w as f32,
-                    tx_y: rect.bottom as f32 / texture_h as f32,
-                    tx_w: rect.width as f32 / texture_w as f32,
-                    tx_h: rect.height as f32 / texture_h as f32,
-                };
-
-                let idx = get_ascii_index(ch, Style::Bold);
-                ascii_glyph_region[idx] = Some((region, metrics));
-            }
-
-            if let Some((glyph_image, metrics)) = fonts.render(ch, Style::Faint) {
-                let rect = glium::Rect {
-                    left: x,
-                    bottom: y + texture_h / 3 * 2,
-                    width: glyph_image.width,
-                    height: glyph_image.height,
-                };
-                texture.main_level().write(rect, glyph_image);
-
-                let region = GlyphRegion {
-                    px_w: rect.width,
-                    px_h: rect.height,
-                    tx_x: rect.left as f32 / texture_w as f32,
-                    tx_y: rect.bottom as f32 / texture_h as f32,
-                    tx_w: rect.width as f32 / texture_w as f32,
-                    tx_h: rect.height as f32 / texture_h as f32,
-                };
-
-                let idx = get_ascii_index(ch, Style::Faint);
+                let idx = get_ascii_index(ch, style);
                 ascii_glyph_region[idx] = Some((region, metrics));
             }
         }
