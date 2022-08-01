@@ -1242,6 +1242,7 @@ impl Engine {
                     }
 
                     1006 => {
+                        buf.mouse_track = false;
                         buf.sgr_mouse_track = false;
                         log::debug!("SGR Mouse Tracking Mode Disabled");
                     }
