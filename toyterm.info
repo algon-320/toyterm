@@ -112,6 +112,8 @@ toyterm-256color|toyterm (a toy terminal emulator),
     knp=\E[6~,
 ## previous-page key
     kpp=\E[5~,
+## mouse key
+    kmous=\E[<,
 ## newline
     nel=\r\n,
 ## set default pair to its original value
@@ -138,3 +140,8 @@ toyterm-256color|toyterm (a toy terminal emulator),
     Ss=\E[%p1%d q,
 ## reset cursor style
     Se=\E[2 q,
+## xterm mouse report request
+    XM=\E[?1006;1000%?%p1%{1}%=%th%el%;,
+## xterm mouse report response
+    xm=\E[<%i%p3%d;%p1%d;%p2%d;%?%p4%tM%em%;,
+

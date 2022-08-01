@@ -192,6 +192,8 @@ pub struct TerminalWindow {
     cell_max_over: i32,
     modifiers: ModifiersState,
     mouse: MouseState,
+    mouse_track: bool,
+    sgr_mouse_track: bool,
     started_time: std::time::Instant,
 
     program_cell: glium::Program,
@@ -274,6 +276,8 @@ impl TerminalWindow {
             cell_max_over,
             modifiers: ModifiersState::empty(),
             mouse: MouseState::default(),
+            mouse_track: false,
+            sgr_mouse_track: false,
             started_time: std::time::Instant::now(),
 
             program_cell,
@@ -321,6 +325,9 @@ impl TerminalWindow {
             if buf.closed {
                 return true;
             }
+
+            self.mouse_track = buf.mouse_track;
+            self.sgr_mouse_track = buf.sgr_mouse_track;
 
             self.bracketed_paste_mode = buf.bracketed_paste_mode;
 
@@ -861,17 +868,64 @@ impl TerminalWindow {
 
                 WindowEvent::MouseInput {
                     state,
-                    button: MouseButton::Left,
+                    button,
                     ..
-                } => match state {
-                    ElementState::Pressed => {
-                        self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
-                        self.mouse.released_pos = None;
+                } => {
+                    let mut mods = 0;
+
+                    if self.modifiers.shift() {
+                        mods += 4;
                     }
-                    ElementState::Released => {
-                        self.mouse.released_pos = Some(self.mouse.cursor_pos);
+
+                    if self.modifiers.alt() {
+                        mods += 8;
                     }
-                },
+
+                    if self.modifiers.ctrl() {
+                        mods += 16;
+                    }
+
+                    let button = match button {
+                        MouseButton::Left => 0,
+                        MouseButton::Middle => 1,
+                        MouseButton::Right => 2,
+                        _ => 0 // FIXME: should be panic?
+                    };
+
+                    match state {
+                        ElementState::Pressed => {
+                            self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
+                            self.mouse.released_pos = None;
+
+                            if self.mouse_track {
+                                let pos = self.mouse.cursor_pos;
+                                let col = pos.0.round() as u32 / self.cell_size.w + 1;
+                                let row = pos.1.round() as u32 / self.cell_size.h + 1;
+
+                                if self.sgr_mouse_track {
+                                    self.sgr_mouse_report(col, row, button + mods, state);
+                                } else {
+                                    self.normal_mouse_report(col, row, button + mods);
+                                }
+                            }
+                        }
+                        ElementState::Released => {
+                            self.mouse.released_pos = Some(self.mouse.cursor_pos);
+
+                            if self.mouse_track {
+                                let pos = self.mouse.cursor_pos;
+                                let col = pos.0.round() as u32 / self.cell_size.w + 1;
+                                let row = pos.1.round() as u32 / self.cell_size.h + 1;
+
+                                if self.sgr_mouse_track {
+                                    self.sgr_mouse_report(col, row, button + mods, state);
+                                } else {
+                                    self.normal_mouse_report(col, row, 3 + mods);
+                                }
+                            }
+                        }
+                    }
+                }
 
                 WindowEvent::MouseWheel {
                     delta: glutin::event::MouseScrollDelta::LineDelta(dx, dy),
@@ -929,6 +983,25 @@ impl TerminalWindow {
 
             _ => {}
         }
+    }
+
+    pub fn normal_mouse_report(&mut self, col: u32, row: u32, button: u8) {
+        let mut msg = vec![b'\x1b', b'[', b'M', 32 + button];
+
+        msg.push(32 + col as u8);
+        msg.push(32 + row as u8);
+
+        self.terminal.pty_write(&msg);
+    }
+
+    pub fn sgr_mouse_report(&mut self, col: u32, row: u32, button: u8, state: &ElementState) {
+        let m = match state {
+            ElementState::Pressed => 'M',
+            ElementState::Released => 'm',
+        };
+
+        self.terminal
+            .pty_write(&format!("\x1b[<{button};{col};{row}{m}").into_bytes());
     }
 }
 
