@@ -893,27 +893,31 @@ impl TerminalWindow {
                             self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
                             self.mouse.released_pos = None;
 
-                            let pos = self.mouse.cursor_pos;
-                            let col = pos.0.round() as u32 / self.cell_size.w + 1;
-                            let row = pos.1.round() as u32 / self.cell_size.h + 1;
+                            if self.mouse_track_mode {
+                                let pos = self.mouse.cursor_pos;
+                                let col = pos.0.round() as u32 / self.cell_size.w + 1;
+                                let row = pos.1.round() as u32 / self.cell_size.h + 1;
 
-                            if self.sgr_ext_mouse_track_mode {
-                                self.sgr_ext_mouse_report(button + mods, col, row, state);
-                            } else if self.mouse_track_mode {
-                                self.normal_mouse_report(button + mods, col, row);
+                                if self.sgr_ext_mouse_track_mode {
+                                    self.sgr_ext_mouse_report(button + mods, col, row, state);
+                                } else {
+                                    self.normal_mouse_report(button + mods, col, row);
+                                }
                             }
                         }
                         ElementState::Released => {
                             self.mouse.released_pos = Some(self.mouse.cursor_pos);
 
-                            let pos = self.mouse.cursor_pos;
-                            let col = pos.0.round() as u32 / self.cell_size.w + 1;
-                            let row = pos.1.round() as u32 / self.cell_size.h + 1;
+                            if self.mouse_track_mode {
+                                let pos = self.mouse.cursor_pos;
+                                let col = pos.0.round() as u32 / self.cell_size.w + 1;
+                                let row = pos.1.round() as u32 / self.cell_size.h + 1;
 
-                            if self.sgr_ext_mouse_track_mode {
-                                self.sgr_ext_mouse_report(button + mods, col, row, state);
-                            } else if self.mouse_track_mode {
-                                self.normal_mouse_report(3 + mods, col, row);
+                                if self.sgr_ext_mouse_track_mode {
+                                    self.sgr_ext_mouse_report(button + mods, col, row, state);
+                                } else {
+                                    self.normal_mouse_report(3 + mods, col, row);
+                                }
                             }
                         }
                     }
