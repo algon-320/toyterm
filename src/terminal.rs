@@ -1196,7 +1196,8 @@ impl Engine {
                                 log::debug!("Sixel Scrolling Mode Enabled");
                             }
 
-                            1000 => {
+                            // FIXME : I'm not sure that 1002 is equivalent to 1000 but it works
+                            1000 | 1002 => {
                                 buf.mouse_track_mode = true;
                                 log::debug!("Mouse Tracking Mode Enabled");
                             }
@@ -1245,7 +1246,8 @@ impl Engine {
                                 log::debug!("Sixel Scrolling Mode Disabled");
                             }
 
-                            1000 => {
+                            // FIXME : I'm not sure that 1002 is equivalent to 1000 but it works
+                            1000 | 1002 => {
                                 buf.mouse_track_mode = false;
                                 log::debug!("Mouse Tracking Mode Disabled");
                             }
