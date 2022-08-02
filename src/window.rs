@@ -327,7 +327,7 @@ impl TerminalWindow {
             }
 
             self.mouse_track_mode = buf.mouse_track_mode;
-            self.sgr_ext_mouse_track_mode = buf.sgr_mouse_track_mode;
+            self.sgr_ext_mouse_track_mode = buf.sgr_ext_mouse_track_mode;
 
             self.bracketed_paste_mode = buf.bracketed_paste_mode;
 
