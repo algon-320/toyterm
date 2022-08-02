@@ -885,40 +885,44 @@ impl TerminalWindow {
                         MouseButton::Left => 0,
                         MouseButton::Middle => 1,
                         MouseButton::Right => 2,
-                        _ => 0, // FIXME: should be panic?
+                        MouseButton::Other(button_id) => {
+                            log::warn!("unkown mouse button : {}", button_id);
+                            0
+                        },
                     };
 
-                    match state {
+                    let button = match state {
                         ElementState::Pressed => {
-                            self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
-                            self.mouse.released_pos = None;
-
-                            if self.mouse_track_mode {
-                                let pos = self.mouse.cursor_pos;
-                                let col = pos.0.round() as u32 / self.cell_size.w + 1;
-                                let row = pos.1.round() as u32 / self.cell_size.h + 1;
-
-                                if self.sgr_ext_mouse_track_mode {
-                                    self.sgr_ext_mouse_report(button + mods, col, row, state);
-                                } else {
-                                    self.normal_mouse_report(button + mods, col, row);
-                                }
+                            // text selection is available only not in mouse track mode.
+                            if !self.mouse_track_mode {
+                                self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
+                                self.mouse.released_pos = None;
                             }
+
+                            button
                         }
                         ElementState::Released => {
-                            self.mouse.released_pos = Some(self.mouse.cursor_pos);
-
-                            if self.mouse_track_mode {
-                                let pos = self.mouse.cursor_pos;
-                                let col = pos.0.round() as u32 / self.cell_size.w + 1;
-                                let row = pos.1.round() as u32 / self.cell_size.h + 1;
-
-                                if self.sgr_ext_mouse_track_mode {
-                                    self.sgr_ext_mouse_report(button + mods, col, row, state);
-                                } else {
-                                    self.normal_mouse_report(3 + mods, col, row);
-                                }
+                            if !self.mouse_track_mode {
+                                self.mouse.released_pos = Some(self.mouse.cursor_pos);
                             }
+
+                            if !self.sgr_ext_mouse_track_mode {
+                                3
+                            } else {
+                                button
+                            }
+                        }
+                    };
+
+                    if self.mouse_track_mode {
+                        let pos = self.mouse.cursor_pos;
+                        let col = pos.0.round() as u32 / self.cell_size.w + 1;
+                        let row = pos.1.round() as u32 / self.cell_size.h + 1;
+
+                        if self.sgr_ext_mouse_track_mode {
+                            self.sgr_ext_mouse_report(button + mods, col, row, state);
+                        } else {
+                            self.normal_mouse_report(button + mods, col, row);
                         }
                     }
                 }
@@ -982,11 +986,8 @@ impl TerminalWindow {
     }
 
     fn normal_mouse_report(&mut self, button: u8, col: u32, row: u32) {
-        let rows = self.window_size.height / self.cell_size.h;
-        let cols = self.window_size.width / self.cell_size.w;
-
-        let col = if col < cols { col } else { 0 } as u8;
-        let row = if row < rows { row } else { 0 } as u8;
+        let col = if 0 < col && col < 224 { col } else { 0 } as u8;
+        let row = if 0 < row && row < 224 { row } else { 0 } as u8;
 
         let msg = [b'\x1b', b'[', b'M', 32 + button, 32 + col, 32 + row];
 
