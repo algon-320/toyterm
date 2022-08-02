@@ -1182,85 +1182,98 @@ impl Engine {
                     }
                 },
 
-                SM(b'?', ps) => match ps {
-                    25 => {
-                        buf.cursor_visible_mode = true;
-                    }
+                SM(b'?', ps) => {
+                    log::debug!("SM - ps : {:?}", ps);
 
-                    80 => {
-                        self.sixel_scrolling_mode = true;
-                        log::debug!("Sixel Scrolling Mode Enabled");
-                    }
+                    for p in ps {
+                        match p {
+                            25 => {
+                                buf.cursor_visible_mode = true;
+                            }
 
-                    1000 => {
-                        buf.mouse_track_mode = true;
-                        log::debug!("Mouse Tracking Mode Enabled");
-                    }
+                            80 => {
+                                self.sixel_scrolling_mode = true;
+                                log::debug!("Sixel Scrolling Mode Enabled");
+                            }
 
-                    1006 => {
-                        buf.sgr_ext_mouse_track_mode = true;
-                        log::debug!("SGR Extended Mode Mouse Tracking Disabled");
-                    }
+                            1000 => {
+                                buf.mouse_track_mode = true;
+                                log::debug!("Mouse Tracking Mode Enabled");
+                            }
 
-                    1049 => {
-                        // save current cursor
-                        self.saved_cursor = self.cursor;
-                        self.saved_attr = self.attr;
+                            1006 => {
+                                buf.sgr_ext_mouse_track_mode = true;
+                                log::debug!("SGR Extended Mode Mouse Tracking Enabled");
+                            }
 
-                        // swtich to the alternate screen buffer
-                        for line in buf.alt_lines.iter_mut() {
-                            line.erase_all();
+                            1049 => {
+                                // save current cursor
+                                self.saved_cursor = self.cursor;
+                                self.saved_attr = self.attr;
+
+                                // swtich to the alternate screen buffer
+                                for line in buf.alt_lines.iter_mut() {
+                                    line.erase_all();
+                                }
+                                buf.swap_screen_buffers();
+                            }
+
+                            2004 => {
+                                buf.bracketed_paste_mode = true;
+                                log::debug!("Bracketed Paste Mode Enabled");
+                            }
+
+                            _ => {
+                                log::debug!("Set ? mode: {:?}", ps);
+                            }
                         }
-                        buf.swap_screen_buffers();
                     }
+                }
 
-                    2004 => {
-                        buf.bracketed_paste_mode = true;
-                        log::debug!("Bracketed Paste Mode Enabled");
-                    }
-
-                    _ => {
-                        log::debug!("Set ? mode: {}", ps);
-                    }
-                },
                 SM(..) => ignore!(),
 
-                RM(b'?', ps) => match ps {
-                    25 => {
-                        buf.cursor_visible_mode = false;
-                    }
+                RM(b'?', ps) => {
+                    log::debug!("RM - ps : {:?}", ps);
+                    for p in ps {
+                        match p {
+                            25 => {
+                                buf.cursor_visible_mode = false;
+                            }
 
-                    80 => {
-                        self.sixel_scrolling_mode = false;
-                        log::debug!("Sixel Scrolling Mode Disabled");
-                    }
+                            80 => {
+                                self.sixel_scrolling_mode = false;
+                                log::debug!("Sixel Scrolling Mode Disabled");
+                            }
 
-                    1000 => {
-                        buf.mouse_track_mode = false;
-                        log::debug!("Mouse Tracking Mode Disabled");
-                    }
+                            1000 => {
+                                buf.mouse_track_mode = false;
+                                log::debug!("Mouse Tracking Mode Disabled");
+                            }
 
-                    1006 => {
-                        buf.sgr_ext_mouse_track_mode = false;
-                        log::debug!("SGR Extended Mode Mouse Tracking Disabled");
-                    }
+                            1006 => {
+                                buf.sgr_ext_mouse_track_mode = false;
+                                log::debug!("SGR Extended Mode Mouse Tracking Disabled");
+                            }
 
-                    1049 => {
-                        // restore cursor and switch back to the primary screen buffer
-                        self.cursor = self.saved_cursor;
-                        self.attr = self.saved_attr;
-                        buf.swap_screen_buffers();
-                    }
+                            1049 => {
+                                // restore cursor and switch back to the primary screen buffer
+                                self.cursor = self.saved_cursor;
+                                self.attr = self.saved_attr;
+                                buf.swap_screen_buffers();
+                            }
 
-                    2004 => {
-                        buf.bracketed_paste_mode = false;
-                        log::debug!("Bracketed Paste Mode Disabled");
-                    }
+                            2004 => {
+                                buf.bracketed_paste_mode = false;
+                                log::debug!("Bracketed Paste Mode Disabled");
+                            }
 
-                    _ => {
-                        log::debug!("Reset ? mode: {}", ps);
+                            _ => {
+                                log::debug!("Reset ? mode: {:?}", ps);
+                            }
+                        }
                     }
-                },
+                }
+
                 RM(..) => ignore!(),
 
                 ESC => {

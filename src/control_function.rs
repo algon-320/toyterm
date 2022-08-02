@@ -111,11 +111,11 @@ pub enum Function<'p> {
     VPR,
     HVP(u16, u16),
     TBC,
-    SM(u8, u16),
+    SM(u8, &'p [u16]),
     MC,
     HPB,
     VPB,
-    RM(u8, u16),
+    RM(u8, &'p [u16]),
     SGR(&'p [u16]),
     DSR(u16),
     DAQ,
@@ -418,14 +418,14 @@ fn parse_control_sequence<'b>(
                 (0, '\x65', _) => Some(VPR),
                 (0, '\x66', &[pn1, pn2]) => Some(HVP(pn1, pn2)),
                 (0, '\x67', _) => Some(TBC),
-                (0, '\x68', &[ps]) => {
+                (0, '\x68', ps) => {
                     let private = buf.private.unwrap_or(0);
                     Some(SM(private, ps))
                 }
                 (0, '\x69', _) => Some(MC),
                 (0, '\x6A', _) => Some(HPB),
                 (0, '\x6B', _) => Some(VPB),
-                (0, '\x6C', &[ps]) => {
+                (0, '\x6C', ps) => {
                     let private = buf.private.unwrap_or(0);
                     Some(RM(private, ps))
                 }
