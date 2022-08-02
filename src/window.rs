@@ -192,8 +192,8 @@ pub struct TerminalWindow {
     cell_max_over: i32,
     modifiers: ModifiersState,
     mouse: MouseState,
-    mouse_track: bool,
-    sgr_mouse_track: bool,
+    mouse_track_mode: bool,
+    sgr_ext_mouse_track_mode: bool,
     started_time: std::time::Instant,
 
     program_cell: glium::Program,
@@ -276,8 +276,8 @@ impl TerminalWindow {
             cell_max_over,
             modifiers: ModifiersState::empty(),
             mouse: MouseState::default(),
-            mouse_track: false,
-            sgr_mouse_track: false,
+            mouse_track_mode: false,
+            sgr_ext_mouse_track_mode: false,
             started_time: std::time::Instant::now(),
 
             program_cell,
@@ -326,8 +326,8 @@ impl TerminalWindow {
                 return true;
             }
 
-            self.mouse_track = buf.mouse_track;
-            self.sgr_mouse_track = buf.sgr_mouse_track;
+            self.mouse_track_mode = buf.mouse_track_mode;
+            self.sgr_ext_mouse_track_mode = buf.sgr_mouse_track_mode;
 
             self.bracketed_paste_mode = buf.bracketed_paste_mode;
 
@@ -866,11 +866,7 @@ impl TerminalWindow {
                     self.mouse.cursor_pos = (position.x, position.y);
                 }
 
-                WindowEvent::MouseInput {
-                    state,
-                    button,
-                    ..
-                } => {
+                WindowEvent::MouseInput { state, button, .. } => {
                     let mut mods = 0;
 
                     if self.modifiers.shift() {
@@ -889,7 +885,7 @@ impl TerminalWindow {
                         MouseButton::Left => 0,
                         MouseButton::Middle => 1,
                         MouseButton::Right => 2,
-                        _ => 0 // FIXME: should be panic?
+                        _ => 0, // FIXME: should be panic?
                     };
 
                     match state {
@@ -897,31 +893,27 @@ impl TerminalWindow {
                             self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
                             self.mouse.released_pos = None;
 
-                            if self.mouse_track {
-                                let pos = self.mouse.cursor_pos;
-                                let col = pos.0.round() as u32 / self.cell_size.w + 1;
-                                let row = pos.1.round() as u32 / self.cell_size.h + 1;
+                            let pos = self.mouse.cursor_pos;
+                            let col = pos.0.round() as u32 / self.cell_size.w + 1;
+                            let row = pos.1.round() as u32 / self.cell_size.h + 1;
 
-                                if self.sgr_mouse_track {
-                                    self.sgr_mouse_report(col, row, button + mods, state);
-                                } else {
-                                    self.normal_mouse_report(col, row, button + mods);
-                                }
+                            if self.sgr_ext_mouse_track_mode {
+                                self.sgr_ext_mouse_report(button + mods, col, row, state);
+                            } else if self.mouse_track_mode {
+                                self.normal_mouse_report(button + mods, col, row);
                             }
                         }
                         ElementState::Released => {
                             self.mouse.released_pos = Some(self.mouse.cursor_pos);
 
-                            if self.mouse_track {
-                                let pos = self.mouse.cursor_pos;
-                                let col = pos.0.round() as u32 / self.cell_size.w + 1;
-                                let row = pos.1.round() as u32 / self.cell_size.h + 1;
+                            let pos = self.mouse.cursor_pos;
+                            let col = pos.0.round() as u32 / self.cell_size.w + 1;
+                            let row = pos.1.round() as u32 / self.cell_size.h + 1;
 
-                                if self.sgr_mouse_track {
-                                    self.sgr_mouse_report(col, row, button + mods, state);
-                                } else {
-                                    self.normal_mouse_report(col, row, 3 + mods);
-                                }
+                            if self.sgr_ext_mouse_track_mode {
+                                self.sgr_ext_mouse_report(button + mods, col, row, state);
+                            } else if self.mouse_track_mode {
+                                self.normal_mouse_report(3 + mods, col, row);
                             }
                         }
                     }
@@ -985,16 +977,19 @@ impl TerminalWindow {
         }
     }
 
-    pub fn normal_mouse_report(&mut self, col: u32, row: u32, button: u8) {
-        let mut msg = vec![b'\x1b', b'[', b'M', 32 + button];
+    fn normal_mouse_report(&mut self, button: u8, col: u32, row: u32) {
+        let rows = self.window_size.height / self.cell_size.h;
+        let cols = self.window_size.width / self.cell_size.w;
 
-        msg.push(32 + col as u8);
-        msg.push(32 + row as u8);
+        let col = if col < cols { col } else { 0 } as u8;
+        let row = if row < rows { row } else { 0 } as u8;
+
+        let msg = [b'\x1b', b'[', b'M', 32 + button, 32 + col, 32 + row];
 
         self.terminal.pty_write(&msg);
     }
 
-    pub fn sgr_mouse_report(&mut self, col: u32, row: u32, button: u8, state: &ElementState) {
+    fn sgr_ext_mouse_report(&mut self, button: u8, col: u32, row: u32, state: &ElementState) {
         let m = match state {
             ElementState::Pressed => 'M',
             ElementState::Released => 'm',

@@ -312,8 +312,8 @@ pub struct Buffer {
     pub cursor_visible_mode: bool,
     pub cursor_style: CursorStyle,
     pub bracketed_paste_mode: bool,
-    pub mouse_track: bool,
-    pub sgr_mouse_track: bool,
+    pub mouse_track_mode: bool,
+    pub sgr_ext_mouse_track_mode: bool,
     alt_lines: VecDeque<Line>,
     sz: TerminalSize,
     pub updated: bool,
@@ -345,8 +345,8 @@ impl Buffer {
             cursor_visible_mode: true,
             cursor_style: CursorStyle::Block,
             bracketed_paste_mode: false,
-            mouse_track: false,
-            sgr_mouse_track: false,
+            mouse_track_mode: false,
+            sgr_ext_mouse_track_mode: false,
             alt_lines,
             sz,
             updated: true,
@@ -1193,14 +1193,13 @@ impl Engine {
                     }
 
                     1000 => {
-                        buf.mouse_track = true;
+                        buf.mouse_track_mode = true;
                         log::debug!("Mouse Tracking Mode Enabled");
                     }
 
                     1006 => {
-                        buf.mouse_track = true;
-                        buf.sgr_mouse_track = true;
-                        log::debug!("SGR Mouse Tracking Mode Enabled");
+                        buf.sgr_ext_mouse_track_mode = true;
+                        log::debug!("SGR Extended Mode Mouse Tracking Disabled");
                     }
 
                     1049 => {
@@ -1237,14 +1236,13 @@ impl Engine {
                     }
 
                     1000 => {
-                        buf.mouse_track = false;
+                        buf.mouse_track_mode = false;
                         log::debug!("Mouse Tracking Mode Disabled");
                     }
 
                     1006 => {
-                        buf.mouse_track = false;
-                        buf.sgr_mouse_track = false;
-                        log::debug!("SGR Mouse Tracking Mode Disabled");
+                        buf.sgr_ext_mouse_track_mode = false;
+                        log::debug!("SGR Extended Mode Mouse Tracking Disabled");
                     }
 
                     1049 => {
