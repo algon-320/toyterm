@@ -740,6 +740,10 @@ impl TerminalWindow {
         const CTRL: u32 = Mod::CTRL.bits();
         const CTRL_SHIFT: u32 = Mod::CTRL.bits() | Mod::SHIFT.bits();
 
+        // normally text selection is cleared when user types something,
+        // but there are some exceptions. history_head is cleared too.
+        let mut clear = true;
+
         match (self.modifiers.bits(), keycode) {
             (EMPTY, VirtualKeyCode::Escape) => {
                 self.history_head = 0;
@@ -799,6 +803,7 @@ impl TerminalWindow {
             }
 
             (CTRL_SHIFT, VirtualKeyCode::C) => {
+                clear = false;
                 self.copy_clipboard();
             }
 
@@ -822,7 +827,18 @@ impl TerminalWindow {
 
             (_, keycode) => {
                 log::trace!("key pressed: ({:?}) {:?}", self.modifiers, keycode);
+
+                use VirtualKeyCode::*;
+                if let LControl | RControl | LShift | RShift = keycode {
+                    clear = false;
+                }
             }
+        }
+
+        if clear {
+            self.mouse.pressed_pos = None;
+            self.mouse.released_pos = None;
+            self.history_head = 0;
         }
     }
 
