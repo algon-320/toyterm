@@ -734,6 +734,98 @@ impl TerminalWindow {
         self.terminal.pty_write(utf8);
     }
 
+    fn on_key_press(&mut self, keycode: VirtualKeyCode) {
+        use ModifiersState as Mod;
+        const EMPTY: u32 = Mod::empty().bits();
+        const CTRL: u32 = Mod::CTRL.bits();
+        const CTRL_SHIFT: u32 = Mod::CTRL.bits() | Mod::SHIFT.bits();
+
+        match (self.modifiers.bits(), keycode) {
+            (EMPTY, VirtualKeyCode::Escape) => {
+                self.history_head = 0;
+                self.mouse.pressed_pos = None;
+                self.mouse.released_pos = None;
+                self.terminal.pty_write(b"\x1B");
+            }
+
+            (CTRL, VirtualKeyCode::Minus) => {
+                // font size -
+                self.increase_font_size(-1);
+            }
+            (CTRL, VirtualKeyCode::Equals) => {
+                // font size +
+                self.increase_font_size(1);
+            }
+
+            // Backspace
+            (EMPTY, VirtualKeyCode::Back) => {
+                // Note: send DEL instead of BS
+                self.terminal.pty_write(b"\x7f");
+            }
+
+            (EMPTY, VirtualKeyCode::Delete) => {
+                self.terminal.pty_write(b"\x1b[3~");
+            }
+
+            (EMPTY, VirtualKeyCode::Up) => {
+                self.terminal.pty_write(b"\x1b[\x41");
+            }
+            (EMPTY, VirtualKeyCode::Down) => {
+                self.terminal.pty_write(b"\x1b[\x42");
+            }
+            (EMPTY, VirtualKeyCode::Right) => {
+                self.terminal.pty_write(b"\x1b[\x43");
+            }
+            (EMPTY, VirtualKeyCode::Left) => {
+                self.terminal.pty_write(b"\x1b[\x44");
+            }
+
+            (EMPTY, VirtualKeyCode::PageUp) => {
+                self.terminal.pty_write(b"\x1b[5~");
+            }
+            (EMPTY, VirtualKeyCode::PageDown) => {
+                self.terminal.pty_write(b"\x1b[6~");
+            }
+
+            (EMPTY, VirtualKeyCode::Minus) => {
+                self.terminal.pty_write(b"-");
+            }
+            (EMPTY, VirtualKeyCode::Equals) => {
+                self.terminal.pty_write(b"=");
+            }
+
+            (CTRL, VirtualKeyCode::C) => {
+                self.terminal.pty_write(b"\x03");
+            }
+
+            (CTRL_SHIFT, VirtualKeyCode::C) => {
+                self.copy_clipboard();
+            }
+
+            (CTRL, VirtualKeyCode::V) => {
+                self.terminal.pty_write(b"\x16");
+            }
+
+            (CTRL_SHIFT, VirtualKeyCode::V) => {
+                self.paste_clipboard();
+            }
+
+            (CTRL, VirtualKeyCode::L) => {
+                self.terminal.pty_write(b"\x0c");
+            }
+
+            (CTRL_SHIFT, VirtualKeyCode::L) => {
+                self.history_head = 0;
+                let mut buf = self.terminal.buffer.lock().unwrap();
+                buf.clear_history();
+            }
+
+            (_, keycode) => {
+                log::trace!("key pressed: ({:?}) {:?}", self.modifiers, keycode);
+            }
+        }
+    }
+
     pub fn on_event(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
         match event {
             Event::WindowEvent { event, .. } => match event {
@@ -773,94 +865,8 @@ impl TerminalWindow {
                 WindowEvent::KeyboardInput { input, .. }
                     if input.state == ElementState::Pressed =>
                 {
-                    match input.virtual_keycode {
-                        Some(VirtualKeyCode::Escape) => {
-                            if self.history_head < 0 {
-                                self.history_head = 0;
-                            } else {
-                                self.terminal.pty_write(b"\x1B");
-                            }
-                        }
-
-                        Some(VirtualKeyCode::Minus) if self.modifiers.ctrl() => {
-                            // font size -
-                            self.increase_font_size(-1);
-                        }
-                        Some(VirtualKeyCode::Equals) if self.modifiers.ctrl() => {
-                            // font size +
-                            self.increase_font_size(1);
-                        }
-
-                        // Backspace
-                        Some(VirtualKeyCode::Back) => {
-                            // Note: send DEL instead of BS
-                            self.terminal.pty_write(b"\x7f");
-                        }
-
-                        Some(VirtualKeyCode::Delete) => {
-                            self.terminal.pty_write(b"\x1b[3~");
-                        }
-
-                        Some(VirtualKeyCode::Up) => {
-                            self.terminal.pty_write(b"\x1b[\x41");
-                        }
-                        Some(VirtualKeyCode::Down) => {
-                            self.terminal.pty_write(b"\x1b[\x42");
-                        }
-                        Some(VirtualKeyCode::Right) => {
-                            self.terminal.pty_write(b"\x1b[\x43");
-                        }
-                        Some(VirtualKeyCode::Left) => {
-                            self.terminal.pty_write(b"\x1b[\x44");
-                        }
-
-                        Some(VirtualKeyCode::PageUp) => {
-                            self.terminal.pty_write(b"\x1b[5~");
-                        }
-                        Some(VirtualKeyCode::PageDown) => {
-                            self.terminal.pty_write(b"\x1b[6~");
-                        }
-
-                        Some(VirtualKeyCode::Minus) => {
-                            self.terminal.pty_write(b"-");
-                        }
-                        Some(VirtualKeyCode::Equals) => {
-                            self.terminal.pty_write(b"=");
-                        }
-
-                        Some(VirtualKeyCode::L) if self.modifiers.ctrl() => {
-                            if self.modifiers.shift() {
-                                // Ctrl + Shift + L
-                                self.history_head = 0;
-                                let mut buf = self.terminal.buffer.lock().unwrap();
-                                buf.clear_history();
-                            } else {
-                                // Ctrl + L
-                                self.terminal.pty_write(b"\x0c");
-                            }
-                        }
-
-                        Some(VirtualKeyCode::V) if self.modifiers.ctrl() => {
-                            if self.modifiers.shift() {
-                                // Ctrl + Shift + V
-                                self.paste_clipboard();
-                            } else {
-                                // Ctrl + V
-                                self.terminal.pty_write(b"\x16");
-                            }
-                        }
-
-                        Some(VirtualKeyCode::C) if self.modifiers.ctrl() => {
-                            if self.modifiers.shift() {
-                                // Ctrl + Shift + C
-                                self.copy_clipboard();
-                            } else {
-                                // Ctrl + C
-                                self.terminal.pty_write(b"\x03");
-                            }
-                        }
-
-                        _ => {}
+                    if let Some(key) = input.virtual_keycode {
+                        self.on_key_press(key);
                     }
                 }
 
