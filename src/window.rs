@@ -412,6 +412,14 @@ impl TerminalWindow {
                 log::info!("current.history_head: {}", current.history_head);
             }
 
+            // clear entire screen
+            {
+                let fg = Color::White;
+                let bg = Color::Black;
+                let vs = cell_vertices(-1.0, 1.0, 2.0, 2.0, fg, bg);
+                self.vertices_bg.extend_from_slice(&vs);
+            }
+
             let mut baseline: u32 = self.cell_max_over as u32;
             for (i, row) in current.lines.iter().enumerate() {
                 let mut leftline: u32 = 0;
@@ -588,12 +596,6 @@ impl TerminalWindow {
 
         use glium::Surface as _;
         let mut surface = self.display.draw();
-
-        let config = &crate::TOYTERM_CONFIG;
-        let r = (config.color_black & 0xFF000000) >> 24;
-        let g = (config.color_black & 0x00FF0000) >> 16;
-        let b = (config.color_black & 0x0000FF00) >> 8;
-        surface.clear_color_srgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0);
 
         let indices = index::NoIndices(index::PrimitiveType::TrianglesList);
 
