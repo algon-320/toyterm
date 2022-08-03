@@ -969,10 +969,10 @@ impl TerminalWindow {
     }
 
     fn normal_mouse_report(&mut self, button: u8, col: u32, row: u32) {
-        let col = if 0 < col && col < 224 { col } else { 0 } as u8;
-        let row = if 0 < row && row < 224 { row } else { 0 } as u8;
+        let col = if 0 < col && col < 224 { col + 32 } else { 0 } as u8;
+        let row = if 0 < row && row < 224 { row + 32 } else { 0 } as u8;
 
-        let msg = [b'\x1b', b'[', b'M', 32 + button, 32 + col, 32 + row];
+        let msg = [b'\x1b', b'[', b'M', 32 + button, col, row];
 
         self.terminal.pty_write(&msg);
     }
