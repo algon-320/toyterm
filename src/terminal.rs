@@ -1183,7 +1183,7 @@ impl Engine {
                 },
 
                 SM(b'?', ps) => {
-                    log::debug!("SM - ps : {:?}", ps);
+                    log::trace!("SM - ps : {:?}", ps);
 
                     for p in ps {
                         match p {
@@ -1234,7 +1234,7 @@ impl Engine {
                 SM(..) => ignore!(),
 
                 RM(b'?', ps) => {
-                    log::debug!("RM - ps : {:?}", ps);
+                    log::trace!("RM - ps : {:?}", ps);
                     for p in ps {
                         match p {
                             25 => {
