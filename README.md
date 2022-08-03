@@ -149,6 +149,12 @@ toyterm supports the following modes.
 - Sixel Scrolling Mode (`?80`)
     - Set: a sixel image is displayed at the current cursor position.
     - Reset: a sixel image is displayed at the upper left corner of the screen.
+- Normal Mouse Tracking (`?1000`)
+    - Set: enable sending mouse report
+    - Reset: disable sending mouse report
+- SGR Extended Mode Mouse Tracking (`?1006`)
+    - Set: enable SGR extended mode mouse tracking, change response of mouse click
+    - Reset: disable SGR extended mode mouse tracking
 - Alternate Screen Buffer Mode (`?1049`)
     - Set: clear the screen, save the cursor position, and switch to the alternate screen.
     - Reset: restore the saved cursor position, and switch back to the primary screen.

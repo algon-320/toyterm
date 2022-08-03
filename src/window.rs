@@ -187,6 +187,8 @@ pub struct TerminalWindow {
     contents: Contents,
     history_head: isize,
     bracketed_paste_mode: bool,
+    mouse_track_mode: bool,
+    sgr_ext_mouse_track_mode: bool,
     window_size: WindowSize,
     cell_size: CellSize,
     cell_max_over: i32,
@@ -269,6 +271,8 @@ impl TerminalWindow {
             contents: Contents::default(),
             history_head: 0,
             bracketed_paste_mode: false,
+            mouse_track_mode: false,
+            sgr_ext_mouse_track_mode: false,
             window_size,
             cell_size,
             cell_max_over,
@@ -321,6 +325,9 @@ impl TerminalWindow {
             if buf.closed {
                 return true;
             }
+
+            self.mouse_track_mode = buf.mouse_track_mode;
+            self.sgr_ext_mouse_track_mode = buf.sgr_ext_mouse_track_mode;
 
             self.bracketed_paste_mode = buf.bracketed_paste_mode;
 
@@ -859,19 +866,49 @@ impl TerminalWindow {
                     self.mouse.cursor_pos = (position.x, position.y);
                 }
 
-                WindowEvent::MouseInput {
-                    state,
-                    button: MouseButton::Left,
-                    ..
-                } => match state {
-                    ElementState::Pressed => {
-                        self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
-                        self.mouse.released_pos = None;
+                WindowEvent::MouseInput { state, button, .. } => {
+                    if self.mouse_track_mode {
+                        let button = match state {
+                            ElementState::Released if !self.sgr_ext_mouse_track_mode => 3,
+                            _ => match button {
+                                MouseButton::Left => 0,
+                                MouseButton::Middle => 1,
+                                MouseButton::Right => 2,
+                                MouseButton::Other(button_id) => {
+                                    // FIXME : Support multi button mouse?
+                                    log::warn!("unkown mouse button : {}", button_id);
+                                    0
+                                }
+                            },
+                        };
+
+                        #[cfg_attr(rustfmt, rustfmt_skip)]
+                        let mods =
+                            if self.modifiers.shift() { 0b00000100 } else { 0 }
+                        |   if self.modifiers.alt()   { 0b00001000 } else { 0 }
+                        |   if self.modifiers.ctrl()  { 0b00010000 } else { 0 };
+
+                        let pos = self.mouse.cursor_pos;
+                        let col = pos.0.round() as u32 / self.cell_size.w + 1;
+                        let row = pos.1.round() as u32 / self.cell_size.h + 1;
+
+                        if self.sgr_ext_mouse_track_mode {
+                            self.sgr_ext_mouse_report(button + mods, col, row, state);
+                        } else {
+                            self.normal_mouse_report(button + mods, col, row);
+                        }
+                    } else {
+                        match state {
+                            ElementState::Pressed => {
+                                self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
+                                self.mouse.released_pos = None;
+                            }
+                            ElementState::Released => {
+                                self.mouse.released_pos = Some(self.mouse.cursor_pos);
+                            }
+                        }
                     }
-                    ElementState::Released => {
-                        self.mouse.released_pos = Some(self.mouse.cursor_pos);
-                    }
-                },
+                }
 
                 WindowEvent::MouseWheel {
                     delta: glutin::event::MouseScrollDelta::LineDelta(dx, dy),
@@ -929,6 +966,25 @@ impl TerminalWindow {
 
             _ => {}
         }
+    }
+
+    fn normal_mouse_report(&mut self, button: u8, col: u32, row: u32) {
+        let col = if 0 < col && col < 224 { col + 32 } else { 0 } as u8;
+        let row = if 0 < row && row < 224 { row + 32 } else { 0 } as u8;
+
+        let msg = [b'\x1b', b'[', b'M', 32 + button, col, row];
+
+        self.terminal.pty_write(&msg);
+    }
+
+    fn sgr_ext_mouse_report(&mut self, button: u8, col: u32, row: u32, state: &ElementState) {
+        let m = match state {
+            ElementState::Pressed => 'M',
+            ElementState::Released => 'm',
+        };
+
+        self.terminal
+            .pty_write(format!("\x1b[<{button};{col};{row}{m}").as_bytes());
     }
 }
 
