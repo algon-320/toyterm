@@ -9,8 +9,9 @@ toyterm is a toy terminal emulator.
 - hardware accelerated graphics
 - support for SIXEL graphics
 - support for X11 clipboard (copying & pasting)
-- (optional) support for multiplexing
 - manual font fallback: you can specify the order of fonts for each style
+- support for mouse reporting
+- (optional) support for multiplexing
 - toyterm assumes UTF-8 encoding
 - following basic functions are TODO
     - automatic font selection by integrating with fontconfig
