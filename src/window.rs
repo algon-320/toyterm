@@ -984,7 +984,7 @@ impl TerminalWindow {
         };
 
         self.terminal
-            .pty_write(&format!("\x1b[<{button};{col};{row}{m}").into_bytes());
+            .pty_write(format!("\x1b[<{button};{col};{row}{m}").as_bytes());
     }
 }
 
