@@ -687,6 +687,10 @@ impl TerminalWindow {
         for (i, row) in self.contents.lines.iter().enumerate() {
             let mut x = 0;
             for cell in row.iter() {
+                if cell.width == 0 {
+                    continue;
+                }
+
                 let cell_width_px = cell_size.w * cell.width as u32;
 
                 let is_selected = match self.contents.selection_range {
