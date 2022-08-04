@@ -910,7 +910,7 @@ impl TerminalWindow {
                             },
                         };
 
-                        #[cfg_attr(rustfmt, rustfmt_skip)]
+                        #[rustfmt::skip]
                         let mods =
                             if self.modifiers.shift() { 0b00000100 } else { 0 }
                         |   if self.modifiers.alt()   { 0b00001000 } else { 0 }
