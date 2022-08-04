@@ -34,65 +34,42 @@ fn build_font_set() -> FontSet {
 
     let mut fonts = FontSet::empty();
 
-    for p in config.fonts_regular.iter() {
+    use std::iter::repeat;
+    let regular_iter = repeat(Style::Regular).zip(config.fonts_regular.iter());
+    let bold_iter = repeat(Style::Bold).zip(config.fonts_bold.iter());
+    let faint_iter = repeat(Style::Faint).zip(config.fonts_faint.iter());
+
+    for (style, path) in regular_iter.chain(bold_iter).chain(faint_iter) {
         // FIXME
-        if p.as_os_str().is_empty() {
+        if path.as_os_str().is_empty() {
             continue;
         }
 
-        if !p.exists() {
-            log::warn!("font file {:?} doesn't exist, ignored", p.display());
-            continue;
-        }
+        log::debug!("add {:?} font: {:?}", style, path.display());
 
-        log::debug!("add regular font: {:?}", p.display());
-        let data = std::fs::read(p).expect("cannot open font");
-        let font = Font::new(&data);
-        fonts.add(Style::Regular, font);
+        match std::fs::read(path) {
+            Ok(data) => {
+                let font = Font::new(&data);
+                fonts.add(style, font);
+            }
+
+            Err(e) => {
+                log::warn!("ignore {:?} (reason: {:?})", path.display(), e);
+            }
+        }
     }
 
-    for p in config.fonts_bold.iter() {
-        // FIXME
-        if p.as_os_str().is_empty() {
-            continue;
-        }
+    // Add embedded fonts
+    {
+        let regular_font = Font::new(include_bytes!("../fonts/Mplus1Code-Regular.ttf"));
+        fonts.add(Style::Regular, regular_font);
 
-        if !p.exists() {
-            log::warn!("font file {:?} doesn't exist, ignored", p.display());
-            continue;
-        }
+        let bold_font = Font::new(include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"));
+        fonts.add(Style::Bold, bold_font);
 
-        log::debug!("add bold font: {:?}", p.display());
-        let data = std::fs::read(p).expect("cannot open font");
-        let font = Font::new(&data);
-        fonts.add(Style::Bold, font);
+        let faint_font = Font::new(include_bytes!("../fonts/Mplus1Code-Thin.ttf"));
+        fonts.add(Style::Faint, faint_font);
     }
-
-    for p in config.fonts_faint.iter() {
-        // FIXME
-        if p.as_os_str().is_empty() {
-            continue;
-        }
-
-        if !p.exists() {
-            log::warn!("font file {:?} doesn't exist, ignored", p.display());
-            continue;
-        }
-
-        log::debug!("add faint font: {:?}", p.display());
-        let data = std::fs::read(p).expect("cannot open font");
-        let font = Font::new(&data);
-        fonts.add(Style::Faint, font);
-    }
-
-    let regular_font = Font::new(include_bytes!("../fonts/Mplus1Code-Regular.ttf"));
-    fonts.add(Style::Regular, regular_font);
-
-    let bold_font = Font::new(include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"));
-    fonts.add(Style::Bold, bold_font);
-
-    let faint_font = Font::new(include_bytes!("../fonts/Mplus1Code-Thin.ttf"));
-    fonts.add(Style::Faint, faint_font);
 
     fonts
 }
