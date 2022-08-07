@@ -315,7 +315,7 @@ pub struct Buffer {
     pub mouse_track_mode: bool,
     pub sgr_ext_mouse_track_mode: bool,
     alt_lines: VecDeque<Line>,
-    sz: TerminalSize,
+    pub size: TerminalSize,
     pub updated: bool,
     pub closed: bool,
 }
@@ -348,7 +348,7 @@ impl Buffer {
             mouse_track_mode: false,
             sgr_ext_mouse_track_mode: false,
             alt_lines,
-            sz,
+            size: sz,
             updated: true,
             closed: false,
         }
@@ -381,7 +381,7 @@ impl Buffer {
     }
 
     fn resize(&mut self, sz: TerminalSize) {
-        self.sz = sz;
+        self.size = sz;
 
         self.lines.resize_with(sz.rows, || Line::new(sz.cols));
         for line in self.lines.iter_mut() {
@@ -413,7 +413,7 @@ impl Buffer {
     fn copy_lines(&mut self, src: (usize, usize), dst_first: usize) {
         let (src_first, src_last) = src;
         let src_count = src_last - src_first + 1;
-        let room = self.sz.rows - dst_first;
+        let room = self.size.rows - dst_first;
         let copies = min(src_count, room);
 
         let mut first_to_last = 0..copies;
@@ -656,7 +656,7 @@ impl Engine {
         buf.resize(sz);
         buf.cursor = self.cursor.pos();
 
-        debug_assert_eq!(self.sz, buf.sz);
+        debug_assert_eq!(self.sz, buf.size);
         debug_assert_eq!(self.sz, self.cursor.sz);
         debug_assert_eq!(self.sz, self.saved_cursor.sz);
     }

@@ -11,24 +11,6 @@ use crate::clipboard::X11Clipboard;
 use crate::font::{Font, FontSet, Style};
 use crate::terminal::{CellSize, Color, CursorStyle, Line, Terminal, TerminalSize};
 
-fn sort_points(a: (f64, f64), b: (f64, f64), cell_sz: CellSize) -> ((f64, f64), (f64, f64)) {
-    let (ax, ay) = a;
-    let (bx, by) = b;
-
-    let a_row = ay.round() as u32 / cell_sz.h;
-    let b_row = by.round() as u32 / cell_sz.h;
-
-    if a_row < b_row {
-        (a, b)
-    } else if a_row > b_row {
-        (b, a)
-    } else if ax < bx {
-        (a, b)
-    } else {
-        (b, a)
-    }
-}
-
 fn build_font_set() -> FontSet {
     let config = &crate::TOYTERM_CONFIG;
 
@@ -125,9 +107,9 @@ struct Contents {
     cursor_col: usize,
     cursor_style: CursorStyle,
     cursor_visible: bool,
-    // FIXME: use cell index instead of pixel
-    selection_range: Option<(f64, f64)>,
+    selection_range: Option<(usize, usize)>,
     history_head: isize,
+    terminal_size: TerminalSize,
     window_size: WindowSize,
     cell_size: CellSize,
 }
@@ -140,6 +122,7 @@ impl Contents {
             && self.cursor_visible == other.cursor_visible
             && self.selection_range == other.selection_range
             && self.history_head == other.history_head
+            && self.terminal_size == other.terminal_size
             && self.window_size == other.window_size
             && self.cell_size == other.cell_size
     }
@@ -274,25 +257,12 @@ impl TerminalWindow {
         let cell_size = self.cell_size;
 
         let mut current = Contents::default();
-        current.selection_range = self.mouse.pressed_pos.map(|start| {
-            let end = self.mouse.released_pos.unwrap_or(self.mouse.cursor_pos);
-            let ((sx, sy), (ex, ey)) = sort_points(start, end, cell_size);
-            let s_row = sy.round() as u32 / cell_size.h;
-            let e_row = ey.round() as u32 / cell_size.h;
-            let l = (s_row as f64) * (window_width as f64) + sx;
-            let r = (e_row as f64) * (window_width as f64) + ex;
-            (l, r)
-        });
+        current.selection_range = None;
         current.window_size = self.window_size;
         current.cell_size = self.cell_size;
         std::mem::swap(&mut current.lines, &mut self.contents.lines);
 
         let previous: &Contents = &self.contents;
-
-        current.cursor_row = previous.cursor_row;
-        current.cursor_col = previous.cursor_col;
-        current.cursor_visible = previous.cursor_visible;
-        current.cursor_style = previous.cursor_style;
 
         let view_changed: bool;
         {
@@ -365,6 +335,8 @@ impl TerminalWindow {
                 current.cursor_visible = buf.cursor_visible_mode;
                 current.cursor_style = buf.cursor_style;
 
+                current.terminal_size = buf.size;
+
                 self.display
                     .gl_window()
                     .window()
@@ -372,9 +344,35 @@ impl TerminalWindow {
                         x: current.cursor_col as u32 * cell_size.w,
                         y: (current.cursor_row + 1) as u32 * cell_size.h,
                     });
+            } else {
+                current.cursor_row = previous.cursor_row;
+                current.cursor_row = previous.cursor_row;
+                current.cursor_col = previous.cursor_col;
+                current.cursor_visible = previous.cursor_visible;
+                current.cursor_style = previous.cursor_style;
+
+                current.terminal_size = previous.terminal_size;
             }
 
             buf.updated = false;
+        }
+
+        if let Some((sx, sy)) = self.mouse.pressed_pos {
+            let (ex, ey) = self.mouse.released_pos.unwrap_or(self.mouse.cursor_pos);
+
+            let mut s_row = (sy / cell_size.h as f64).floor() as usize;
+            let mut s_col = (sx / cell_size.w as f64).round() as usize;
+            let mut e_row = (ey / cell_size.h as f64).floor() as usize;
+            let mut e_col = (ex / cell_size.w as f64).round() as usize;
+
+            if (e_row, e_col) < (s_row, s_col) {
+                std::mem::swap(&mut s_row, &mut e_row);
+                std::mem::swap(&mut s_col, &mut e_col);
+            }
+
+            let l = s_row * current.terminal_size.cols + s_col;
+            let r = e_row * current.terminal_size.cols + e_col;
+            current.selection_range = Some((l, r));
         }
 
         if view_changed || !current.eq_except_for_lines(previous) {
@@ -425,9 +423,9 @@ impl TerminalWindow {
 
                         let is_selected = match current.selection_range {
                             Some((left, right)) => {
-                                let offset = (i as u32 * window_width + leftline) as f64;
-                                let mid_point = offset + (cell_width_px as f64) / 2.0;
-                                left <= mid_point && mid_point <= right
+                                let offset = i * current.terminal_size.cols + j;
+                                let center = offset + (cell.width / 2) as usize;
+                                left <= center && center < right
                             }
                             None => false,
                         };
@@ -658,23 +656,17 @@ impl TerminalWindow {
     fn copy_clipboard(&mut self) {
         let mut text = String::new();
 
-        let window_width = self.window_size.width;
-        let cell_size = self.cell_size;
-
         for (i, row) in self.contents.lines.iter().enumerate() {
-            let mut x = 0;
-            for cell in row.iter() {
+            for (j, cell) in row.iter().enumerate() {
                 if cell.width == 0 {
                     continue;
                 }
 
-                let cell_width_px = cell_size.w * cell.width as u32;
-
                 let is_selected = match self.contents.selection_range {
                     Some((left, right)) => {
-                        let offset = (i as u32 * window_width + x) as f64;
-                        let mid_point = offset + (cell_width_px as f64) / 2.0;
-                        left <= mid_point && mid_point <= right
+                        let offset = i * self.contents.terminal_size.cols + j;
+                        let center = offset + (cell.width / 2) as usize;
+                        left <= center && center < right
                     }
                     None => false,
                 };
@@ -682,8 +674,6 @@ impl TerminalWindow {
                 if is_selected {
                     text.push(cell.ch);
                 }
-
-                x += cell_width_px;
             }
         }
 
