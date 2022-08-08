@@ -273,9 +273,16 @@ impl TerminalWindow {
                 return true;
             }
 
+            // Change cursor icon of the window
+            if self.mouse_track_mode != buf.mouse_track_mode {
+                let ibeam = glutin::window::CursorIcon::Text;
+                let arrow = glutin::window::CursorIcon::Arrow;
+                let icon = if buf.mouse_track_mode { arrow } else { ibeam };
+                self.display.gl_window().window().set_cursor_icon(icon);
+            }
+
             self.mouse_track_mode = buf.mouse_track_mode;
             self.sgr_ext_mouse_track_mode = buf.sgr_ext_mouse_track_mode;
-
             self.bracketed_paste_mode = buf.bracketed_paste_mode;
 
             if self.history_head < -(buf.history_size as isize) {
