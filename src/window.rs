@@ -384,10 +384,6 @@ impl TerminalWindow {
             self.draw_queries_bg.clear();
 
             let cursor_visible = current.cursor_visible && current.history_head >= 0;
-            if !cursor_visible {
-                log::info!("current.cursor_visible: {}", current.cursor_visible);
-                log::info!("current.history_head: {}", current.history_head);
-            }
 
             // clear entire screen
             {
