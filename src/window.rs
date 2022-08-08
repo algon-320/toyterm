@@ -289,13 +289,15 @@ impl TerminalWindow {
                 let top = self.history_head;
                 let bot = top + buf.lines.len() as isize;
 
-                if current.lines.len() != buf.lines.len() {
-                    current.lines.clear();
-                    current.lines.extend(buf.range(top, bot).cloned());
-                } else {
+                if current.lines.len() == buf.lines.len() {
+                    // Copy lines w/o heap allocation
                     for (src, dst) in buf.range(top, bot).zip(current.lines.iter_mut()) {
                         dst.copy_from(src);
                     }
+                } else {
+                    // Copy lines w/ heap allocation
+                    current.lines.clear();
+                    current.lines.extend(buf.range(top, bot).cloned());
                 }
 
                 self.draw_queries_img.clear();
