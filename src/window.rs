@@ -661,7 +661,7 @@ impl TerminalWindow {
     fn copy_clipboard(&mut self) {
         let mut text = String::new();
 
-        for (i, row) in self.contents.lines.iter().enumerate() {
+        'row: for (i, row) in self.contents.lines.iter().enumerate() {
             for (j, cell) in row.iter().enumerate() {
                 if cell.width == 0 {
                     continue;
@@ -678,6 +678,23 @@ impl TerminalWindow {
 
                 if is_selected {
                     text.push(cell.ch);
+                }
+
+                if cell.ch == '\n' {
+                    continue 'row;
+                }
+            }
+
+            if !row.linewrap() {
+                let is_selected = match self.contents.selection_range {
+                    Some((left, right)) => {
+                        let offset = (i + 1) * self.contents.terminal_size.cols;
+                        left < offset && offset < right
+                    }
+                    None => false,
+                };
+                if is_selected {
+                    text.push('\n');
                 }
             }
         }

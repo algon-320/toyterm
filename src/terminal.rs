@@ -83,6 +83,14 @@ impl Cell {
         backlink: 0,
         attr: GraphicAttribute::default(),
     };
+
+    // A marker representing a termination of line
+    const TERM: Self = Cell {
+        ch: '\n',
+        width: 1,
+        backlink: 0,
+        attr: GraphicAttribute::default(),
+    };
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -149,24 +157,31 @@ impl GraphicAttribute {
 /// `Cell { ch: '#',  width: 0, backlink: 3 }`.
 ///
 #[derive(Clone)]
-pub struct Line(Vec<Cell>);
+pub struct Line {
+    cells: Vec<Cell>,
+    linewrap: bool,
+}
 
 impl Line {
     fn new(len: usize) -> Self {
-        Line(vec![Cell::SPACE; len])
-    }
-
-    pub fn copy_from(&mut self, src: &Self) {
-        if self.0.len() == src.0.len() {
-            self.0.copy_from_slice(&src.0);
-        } else {
-            self.0.clear();
-            self.0.extend_from_slice(&src.0);
+        Line {
+            cells: vec![Cell::TERM; len],
+            linewrap: false,
         }
     }
 
+    pub fn copy_from(&mut self, src: &Self) {
+        if self.cells.len() == src.cells.len() {
+            self.cells.copy_from_slice(&src.cells);
+        } else {
+            self.cells.clear();
+            self.cells.extend_from_slice(&src.cells);
+        }
+        self.linewrap = src.linewrap;
+    }
+
     fn saturating_range<R: RangeBounds<usize>>(&self, range: R) -> Range<usize> {
-        let len = self.0.len();
+        let len = self.cells.len();
 
         use std::ops::Bound;
         let start = match range.start_bound() {
@@ -189,12 +204,12 @@ impl Line {
 
     fn copy_within<R: RangeBounds<usize> + Clone>(&mut self, src: R, dst: usize) {
         let src = self.saturating_range(src);
-        let count = min(src.len(), self.0.len() - dst);
+        let count = min(src.len(), self.cells.len() - dst);
         if count == 0 {
             return;
         }
 
-        self.0.copy_within(src.start..src.start + count, dst);
+        self.cells.copy_within(src.start..src.start + count, dst);
 
         let (dst_start, dst_end) = (dst, dst + count);
 
@@ -203,28 +218,28 @@ impl Line {
             // correct ..dst_start)
             if dst_start > 0 {
                 let head = self.get_head_pos(dst_start - 1);
-                if head + self.0[head].width as usize > dst_start {
-                    self.0[head..dst_start].fill(Cell::SPACE);
+                if head + self.cells[head].width as usize > dst_start {
+                    self.cells[head..dst_start].fill(Cell::SPACE);
                 }
             }
 
             // correct [dst_start..
             let mut i = dst_start;
-            while i < dst_end && self.0[i].width == 0 {
-                self.0[i] = Cell::SPACE;
+            while i < dst_end && self.cells[i].width == 0 {
+                self.cells[i] = Cell::SPACE;
                 i += 1;
             }
 
             // correct ..dst_end)
             let head = self.get_head_pos(dst_end - 1);
-            if head + self.0[head].width as usize > dst_end {
-                self.0[head..dst_end].fill(Cell::SPACE);
+            if head + self.cells[head].width as usize > dst_end {
+                self.cells[head..dst_end].fill(Cell::SPACE);
             }
 
             // correct [dst_end..
             let mut i = dst + count;
-            while i < self.0.len() && self.0[i].width == 0 {
-                self.0[i] = Cell::SPACE;
+            while i < self.cells.len() && self.cells[i].width == 0 {
+                self.cells[i] = Cell::SPACE;
                 i += 1;
             }
         }
@@ -237,33 +252,34 @@ impl Line {
     }
 
     fn erase_all(&mut self) {
-        self.0.fill(Cell::SPACE);
+        self.cells.fill(Cell::TERM);
+        self.linewrap = false;
     }
 
     fn erase_at(&mut self, at: usize) {
         let head = self.get_head_pos(at);
-        let width = self.0[head].width as usize;
-        let end = min(head + width, self.0.len());
+        let width = self.cells[head].width as usize;
+        let end = min(head + width, self.cells.len());
 
         #[cfg(debug_assertions)]
         for i in head + 1..end {
-            debug_assert_eq!(self.0[i].width, 0);
-            debug_assert_eq!(self.0[i].backlink as usize, i - head);
+            debug_assert_eq!(self.cells[i].width, 0);
+            debug_assert_eq!(self.cells[i].backlink as usize, i - head);
         }
 
-        self.0[head..end].fill(Cell::SPACE);
+        self.cells[head..end].fill(Cell::SPACE);
     }
 
     fn get_head_pos(&self, at: usize) -> usize {
-        at - self.0[at].backlink as usize
+        at - self.cells[at].backlink as usize
     }
 
     fn resize(&mut self, new_len: usize) {
-        self.0.resize(new_len, Cell::SPACE);
+        self.cells.resize(new_len, Cell::TERM);
 
         let head = self.get_head_pos(new_len - 1);
-        let width = self.0[head].width as usize;
-        if head + width > self.0.len() {
+        let width = self.cells[head].width as usize;
+        if head + width > self.cells.len() {
             self.erase_at(head);
         }
     }
@@ -271,29 +287,33 @@ impl Line {
     fn put(&mut self, at: usize, cell: Cell) {
         let width = cell.width as usize;
 
-        debug_assert!(at + width <= self.0.len());
+        debug_assert!(at + width <= self.cells.len());
 
         self.erase(at..at + width);
-        self.0[at] = cell;
+        self.cells[at] = cell;
         for d in 1..width {
             let mut cell = Cell::VOID;
             cell.backlink = d as u16;
-            self.0[at + d] = cell;
+            self.cells[at + d] = cell;
         }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = Cell> + '_ {
-        self.0.iter().copied()
+        self.cells.iter().copied()
+    }
+
+    pub fn linewrap(&self) -> bool {
+        self.linewrap
     }
 }
 
 impl std::fmt::Debug for Line {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         writeln!(f, "[")?;
-        for c in self.0.iter() {
+        for c in self.cells.iter() {
             writeln!(
                 f,
-                "\tch: {}, width: {}, backlink: {}",
+                "\tch: {:?}, width: {}, backlink: {}",
                 c.ch, c.width, c.backlink
             )?;
         }
@@ -796,7 +816,7 @@ impl Engine {
                     debug_assert!(advance > 0);
 
                     let tab = Cell {
-                        ch: ' ',
+                        ch: '\t',
                         width: advance as u16,
                         backlink: 0,
                         attr: self.attr,
@@ -1114,6 +1134,7 @@ impl Engine {
                             if !self.cursor.end {
                                 buf.lines[row].erase(col..);
                             }
+                            buf.lines[row].linewrap = true;
 
                             buffer_scroll_up_if_needed(&mut buf, self.cursor, self.cell_sz);
                             self.cursor = self.cursor.next_row().first_col();
