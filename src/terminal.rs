@@ -1079,7 +1079,7 @@ impl Engine {
                             28 => self.attr.concealed = false,
 
                             x @ (30..=37 | 38 | 90..=97) => {
-                                if let Some(color) = find_color(x - 30, &mut iter) {
+                                if let Some(color) = parse_color(x - 30, &mut iter) {
                                     self.attr.fg = color;
                                 }
                             }
@@ -1087,7 +1087,7 @@ impl Engine {
                             39 => self.attr.fg = GraphicAttribute::default().fg,
 
                             x @ (40..=47 | 48 | 100..=107) => {
-                                if let Some(color) = find_color(x - 40, &mut iter) {
+                                if let Some(color) = parse_color(x - 40, &mut iter) {
                                     self.attr.bg = color;
                                 }
                             }
@@ -1414,7 +1414,7 @@ impl Engine {
     }
 }
 
-fn find_color(prefix: u16, ps: &mut impl Iterator<Item = u16>) -> Option<Color> {
+fn parse_color(prefix: u16, ps: &mut impl Iterator<Item = u16>) -> Option<Color> {
     match prefix {
         0 => Some(Color::Black),
         1 => Some(Color::Red),
