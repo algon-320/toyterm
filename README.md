@@ -1,6 +1,6 @@
 # toyterm
 
-toyterm is a toy terminal emulator.
+toyterm is a toy terminal emulator for Linux.
 
 ![screenshot01.png](docs/screenshot01.png)
 
@@ -15,6 +15,7 @@ toyterm is a toy terminal emulator.
 - toyterm assumes UTF-8 encoding
 - following basic functions are TODO
     - automatic font selection by integrating with fontconfig
+    - support for operating systems other than Linux
 
 ## Usage
 
@@ -25,7 +26,9 @@ $ cd toyterm
 $ tic -x -o "$HOME/.terminfo/" toyterm.info
 $ cargo install --path .
 ```
-To enable multiplexing feature, please add "--features multiplex" to the last line.
+
+- To enable multiplexing feature, please add "--features multiplex" to the last line.
+- To install the terminfo globally, please do `$ sudo tic -x toyterm.info` instead.
 
 To configure:
 ```sh
@@ -40,6 +43,8 @@ $ rm "$HOME/.terminfo/t/toyterm-256color"
 $ cargo uninstall toyterm
 $ rm -r "$HOME/.config/toyterm"
 ```
+
+- If you would like to remove the globally installed terminfo, please try `$ sudo rm /usr/share/terminfo/t/toyterm-256color` too.
 
 ## Keybinding
 
@@ -167,5 +172,5 @@ toyterm supports the following modes.
 
 This software is licensed under MIT License.
 
-The embedded font (M PLUS 1 Code) itself is redistributed under the Open Font License (OFL).
-See `font/OFL.txt` for more details.
+The embedded fonts (M PLUS 1 Code) are redistributed under the Open Font License (OFL).
+See also `font/OFL.txt` for more details.
