@@ -298,6 +298,15 @@ impl Line {
         }
     }
 
+    pub fn get(&self, at: usize) -> Option<Cell> {
+        if at < self.cells.len() {
+            let head = self.get_head_pos(at);
+            Some(self.cells[head])
+        } else {
+            None
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = Cell> + '_ {
         self.cells.iter().copied()
     }

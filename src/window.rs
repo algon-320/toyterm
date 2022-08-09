@@ -4,6 +4,7 @@ use glutin::{
     event::{ElementState, Event, ModifiersState, MouseButton, VirtualKeyCode, WindowEvent},
     event_loop::ControlFlow,
 };
+use std::cmp::{max, min};
 use std::rc::Rc;
 
 use crate::cache::GlyphCache;
@@ -57,8 +58,6 @@ fn build_font_set() -> FontSet {
 }
 
 fn calculate_cell_size(fonts: &FontSet) -> (CellSize, i32) {
-    use std::cmp::max;
-
     let mut max_advance_x: i32 = 0;
     let mut max_over: i32 = 0;
     let mut max_under: i32 = 0;
@@ -128,13 +127,14 @@ impl Contents {
     }
 }
 
-#[derive(Default)]
 struct MouseState {
     wheel_delta_x: f32,
     wheel_delta_y: f32,
     cursor_pos: (f64, f64),
     pressed_pos: Option<(f64, f64)>,
     released_pos: Option<(f64, f64)>,
+    click_count: usize,
+    last_clicked: std::time::Instant,
 }
 
 pub struct TerminalWindow {
@@ -237,7 +237,15 @@ impl TerminalWindow {
             cell_size,
             cell_max_over,
             modifiers: ModifiersState::empty(),
-            mouse: MouseState::default(),
+            mouse: MouseState {
+                wheel_delta_x: 0.0,
+                wheel_delta_y: 0.0,
+                cursor_pos: (0.0, 0.0),
+                pressed_pos: None,
+                released_pos: None,
+                click_count: 0,
+                last_clicked: std::time::Instant::now() - std::time::Duration::from_secs(10),
+            },
             started_time: std::time::Instant::now(),
 
             program_cell,
@@ -369,6 +377,13 @@ impl TerminalWindow {
         if let Some((sx, sy)) = self.mouse.pressed_pos {
             let (ex, ey) = self.mouse.released_pos.unwrap_or(self.mouse.cursor_pos);
 
+            let x_max = cell_size.w as f64 * current.terminal_size.cols as f64;
+            let y_max = cell_size.h as f64 * current.terminal_size.rows as f64;
+            let sx = sx.clamp(0.0, x_max - 0.1);
+            let sy = sy.clamp(0.0, y_max - 0.1);
+            let ex = ex.clamp(0.0, x_max - 0.1);
+            let ey = ey.clamp(0.0, y_max - 0.1);
+
             let mut s_row = (sy / cell_size.h as f64).floor() as usize;
             let mut s_col = (sx / cell_size.w as f64).round() as usize;
             let mut e_row = (ey / cell_size.h as f64).floor() as usize;
@@ -377,6 +392,49 @@ impl TerminalWindow {
             if (e_row, e_col) < (s_row, s_col) {
                 std::mem::swap(&mut s_row, &mut e_row);
                 std::mem::swap(&mut s_col, &mut e_col);
+            }
+
+            // NOTE: selecton is closed range [s, e]
+            e_col = max(e_col, 1) - 1;
+
+            match self.mouse.click_count {
+                // single click: character selection
+                1 => {
+                    // nothing to do
+                }
+
+                // double click: word selection
+                2 => {
+                    fn delimiter(ch: char) -> bool {
+                        ch.is_ascii_punctuation() || ch.is_ascii_whitespace()
+                    }
+                    fn on_different_word(a: char, b: char) -> bool {
+                        delimiter(a) || delimiter(b)
+                    }
+
+                    while 0 < s_col && s_col <= current.terminal_size.cols - 1 {
+                        let prev = current.lines[s_row].get(s_col - 1).unwrap().ch;
+                        let curr = current.lines[s_row].get(s_col).unwrap().ch;
+                        if on_different_word(prev, curr) {
+                            break;
+                        }
+                        s_col -= 1;
+                    }
+                    while e_col < current.terminal_size.cols - 1 {
+                        let prev = current.lines[e_row].get(e_col).unwrap().ch;
+                        let curr = current.lines[e_row].get(e_col + 1).unwrap().ch;
+                        if on_different_word(prev, curr) {
+                            break;
+                        }
+                        e_col += 1;
+                    }
+                }
+
+                // tripple click (or more): line selection
+                _ => {
+                    s_col = 0;
+                    e_col = current.terminal_size.cols - 1;
+                }
             }
 
             let l = s_row * current.terminal_size.cols + s_col;
@@ -430,7 +488,7 @@ impl TerminalWindow {
                             Some((left, right)) => {
                                 let offset = i * current.terminal_size.cols + j;
                                 let center = offset + (cell.width / 2) as usize;
-                                left <= center && center < right
+                                left <= center && center <= right
                             }
                             None => false,
                         };
@@ -671,7 +729,7 @@ impl TerminalWindow {
                     Some((left, right)) => {
                         let offset = i * self.contents.terminal_size.cols + j;
                         let center = offset + (cell.width / 2) as usize;
-                        left <= center && center < right
+                        left <= center && center <= right
                     }
                     None => false,
                 };
@@ -689,7 +747,7 @@ impl TerminalWindow {
                 let is_selected = match self.contents.selection_range {
                     Some((left, right)) => {
                         let offset = (i + 1) * self.contents.terminal_size.cols;
-                        left < offset && offset < right
+                        left < offset && offset <= right
                     }
                     None => false,
                 };
@@ -917,6 +975,15 @@ impl TerminalWindow {
                     } else {
                         match state {
                             ElementState::Pressed => {
+                                const CLICK_INTERVAL: std::time::Duration =
+                                    std::time::Duration::from_millis(400);
+                                if self.mouse.last_clicked.elapsed() > CLICK_INTERVAL {
+                                    self.mouse.click_count = 0;
+                                }
+                                self.mouse.click_count += 1;
+                                self.mouse.last_clicked = std::time::Instant::now();
+                                log::debug!("clicked {} times", self.mouse.click_count);
+
                                 self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
                                 self.mouse.released_pos = None;
                             }
@@ -944,7 +1011,7 @@ impl TerminalWindow {
 
                     if self.modifiers.shift() {
                         // Scroll up history
-                        self.history_head = std::cmp::min(self.history_head - vertical, 0);
+                        self.history_head = min(self.history_head - vertical, 0);
                     } else {
                         // Send Up/Down key
                         if vertical > 0 {
