@@ -12,92 +12,7 @@ use crate::clipboard::X11Clipboard;
 use crate::font::{Font, FontSet, Style};
 use crate::terminal::{CellSize, Color, CursorStyle, Line, Mode, Terminal, TerminalSize};
 
-fn build_font_set() -> FontSet {
-    let config = &crate::TOYTERM_CONFIG;
-
-    let mut fonts = FontSet::empty();
-
-    use std::iter::repeat;
-    let regular_iter = repeat(Style::Regular).zip(config.fonts_regular.iter());
-    let bold_iter = repeat(Style::Bold).zip(config.fonts_bold.iter());
-    let faint_iter = repeat(Style::Faint).zip(config.fonts_faint.iter());
-
-    for (style, path) in regular_iter.chain(bold_iter).chain(faint_iter) {
-        // FIXME
-        if path.as_os_str().is_empty() {
-            continue;
-        }
-
-        log::debug!("add {:?} font: {:?}", style, path.display());
-
-        match std::fs::read(path) {
-            Ok(data) => {
-                let font = Font::new(&data);
-                fonts.add(style, font);
-            }
-
-            Err(e) => {
-                log::warn!("ignore {:?} (reason: {:?})", path.display(), e);
-            }
-        }
-    }
-
-    // Add embedded fonts
-    {
-        let regular_font = Font::new(include_bytes!("../fonts/Mplus1Code-Regular.ttf"));
-        fonts.add(Style::Regular, regular_font);
-
-        let bold_font = Font::new(include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"));
-        fonts.add(Style::Bold, bold_font);
-
-        let faint_font = Font::new(include_bytes!("../fonts/Mplus1Code-Thin.ttf"));
-        fonts.add(Style::Faint, faint_font);
-    }
-
-    fonts
-}
-
-fn calculate_cell_size(fonts: &FontSet) -> (CellSize, i32) {
-    let mut max_advance_x: i32 = 0;
-    let mut max_over: i32 = 0;
-    let mut max_under: i32 = 0;
-
-    let ascii_visible = ' '..='~';
-    for ch in ascii_visible {
-        for style in [Style::Regular, Style::Bold, Style::Faint] {
-            let metrics = fonts.metrics(ch, style).expect("undefined glyph");
-
-            let advance_x = (metrics.horiAdvance >> 6) as i32;
-            max_advance_x = max(max_advance_x, advance_x);
-
-            let over = (metrics.horiBearingY >> 6) as i32;
-            max_over = max(max_over, over);
-
-            let under = ((metrics.height - metrics.horiBearingY) >> 6) as i32;
-            max_under = max(max_under, under);
-        }
-    }
-
-    let cell_w = max_advance_x as u32;
-    let cell_h = (max_over + max_under) as u32;
-
-    log::debug!("cell size: {}x{} (px)", cell_w, cell_h);
-
-    (
-        CellSize {
-            w: cell_w,
-            h: cell_h,
-        },
-        max_over,
-    )
-}
-
 type WindowSize = PhysicalSize<u32>;
-
-struct DrawQuery<V: glium::vertex::Vertex> {
-    vertices: glium::VertexBuffer<V>,
-    texture: Rc<texture::Texture2d>,
-}
 
 #[derive(Default)]
 struct Contents {
@@ -127,16 +42,6 @@ impl Contents {
     }
 }
 
-struct MouseState {
-    wheel_delta_x: f32,
-    wheel_delta_y: f32,
-    cursor_pos: (f64, f64),
-    pressed_pos: Option<(f64, f64)>,
-    released_pos: Option<(f64, f64)>,
-    click_count: usize,
-    last_clicked: std::time::Instant,
-}
-
 pub struct TerminalWindow {
     terminal: Terminal,
     display: Display,
@@ -163,6 +68,21 @@ pub struct TerminalWindow {
     draw_queries_img: Vec<DrawQuery<SimpleVertex>>,
 }
 
+struct MouseState {
+    wheel_delta_x: f32,
+    wheel_delta_y: f32,
+    cursor_pos: (f64, f64),
+    pressed_pos: Option<(f64, f64)>,
+    released_pos: Option<(f64, f64)>,
+    click_count: usize,
+    last_clicked: std::time::Instant,
+}
+
+struct DrawQuery<V: glium::vertex::Vertex> {
+    vertices: glium::VertexBuffer<V>,
+    texture: Rc<texture::Texture2d>,
+}
+
 impl TerminalWindow {
     pub fn new(display: Display) -> Self {
         let window_size = display.gl_window().window().inner_size();
@@ -174,13 +94,13 @@ impl TerminalWindow {
         // Rasterize ASCII characters and cache them as a texture
         let cache = GlyphCache::build_ascii_visible(&display, &fonts, cell_size);
 
-        let clipboard = X11Clipboard::new();
-
         let size = TerminalSize {
             rows: (window_size.height / cell_size.h) as usize,
             cols: (window_size.width / cell_size.w) as usize,
         };
         let terminal = Terminal::new(size, cell_size);
+
+        let clipboard = X11Clipboard::new();
 
         // Initialize shaders
         let program_cell = {
@@ -710,183 +630,6 @@ impl TerminalWindow {
         self.terminal.request_resize(buff_size, self.cell_size);
     }
 
-    fn copy_clipboard(&mut self) {
-        let mut text = String::new();
-
-        'row: for (i, row) in self.contents.lines.iter().enumerate() {
-            for (j, cell) in row.iter().enumerate() {
-                if cell.width == 0 {
-                    continue;
-                }
-
-                let is_selected = match self.contents.selection_range {
-                    Some((left, right)) => {
-                        let offset = i * self.contents.terminal_size.cols + j;
-                        let center = offset + (cell.width / 2) as usize;
-                        left <= center && center <= right
-                    }
-                    None => false,
-                };
-
-                if is_selected {
-                    text.push(cell.ch);
-                }
-
-                if cell.ch == '\n' {
-                    continue 'row;
-                }
-            }
-
-            if !row.linewrap() {
-                let is_selected = match self.contents.selection_range {
-                    Some((left, right)) => {
-                        let offset = (i + 1) * self.contents.terminal_size.cols;
-                        left < offset && offset <= right
-                    }
-                    None => false,
-                };
-                if is_selected {
-                    text.push('\n');
-                }
-            }
-        }
-
-        log::info!("copy: {:?}", text);
-        let _ = self.clipboard.store(&text);
-    }
-
-    fn paste_clipboard(&mut self) {
-        match self.clipboard.load() {
-            Ok(text) => {
-                log::debug!("paste: {:?}", text);
-                if self.mode.bracketed_paste {
-                    self.terminal.pty_write(b"\x1b[200~");
-                    self.terminal.pty_write(text.as_bytes());
-                    self.terminal.pty_write(b"\x1b[201~");
-                } else {
-                    self.terminal.pty_write(text.as_bytes());
-                }
-            }
-            Err(_) => {
-                log::error!("Failed to paste something from clipboard");
-            }
-        }
-    }
-
-    fn pty_write_char_utf8(&mut self, ch: char) {
-        let mut buf = [0_u8; 4];
-        let utf8 = ch.encode_utf8(&mut buf).as_bytes();
-        self.terminal.pty_write(utf8);
-    }
-
-    fn on_key_press(&mut self, keycode: VirtualKeyCode) {
-        use ModifiersState as Mod;
-        const EMPTY: u32 = Mod::empty().bits();
-        const CTRL: u32 = Mod::CTRL.bits();
-        const CTRL_SHIFT: u32 = Mod::CTRL.bits() | Mod::SHIFT.bits();
-
-        // normally text selection is cleared when user types something,
-        // but there are some exceptions. history_head is cleared too.
-        let mut clear = true;
-
-        match (self.modifiers.bits(), keycode) {
-            (EMPTY, VirtualKeyCode::Escape) => {
-                self.history_head = 0;
-                self.mouse.pressed_pos = None;
-                self.mouse.released_pos = None;
-                self.terminal.pty_write(b"\x1B");
-            }
-
-            (CTRL, VirtualKeyCode::Minus) => {
-                // font size -
-                self.increase_font_size(-1);
-            }
-            (CTRL, VirtualKeyCode::Equals) => {
-                // font size +
-                self.increase_font_size(1);
-            }
-
-            // Backspace
-            (EMPTY, VirtualKeyCode::Back) => {
-                // Note: send DEL instead of BS
-                self.terminal.pty_write(b"\x7f");
-            }
-
-            (EMPTY, VirtualKeyCode::Delete) => {
-                self.terminal.pty_write(b"\x1b[3~");
-            }
-
-            (EMPTY, VirtualKeyCode::Up) => {
-                self.terminal.pty_write(b"\x1b[\x41");
-            }
-            (EMPTY, VirtualKeyCode::Down) => {
-                self.terminal.pty_write(b"\x1b[\x42");
-            }
-            (EMPTY, VirtualKeyCode::Right) => {
-                self.terminal.pty_write(b"\x1b[\x43");
-            }
-            (EMPTY, VirtualKeyCode::Left) => {
-                self.terminal.pty_write(b"\x1b[\x44");
-            }
-
-            (EMPTY, VirtualKeyCode::PageUp) => {
-                self.terminal.pty_write(b"\x1b[5~");
-            }
-            (EMPTY, VirtualKeyCode::PageDown) => {
-                self.terminal.pty_write(b"\x1b[6~");
-            }
-
-            (EMPTY, VirtualKeyCode::Minus) => {
-                self.terminal.pty_write(b"-");
-            }
-            (EMPTY, VirtualKeyCode::Equals) => {
-                self.terminal.pty_write(b"=");
-            }
-
-            (CTRL, VirtualKeyCode::C) => {
-                self.terminal.pty_write(b"\x03");
-            }
-
-            (CTRL_SHIFT, VirtualKeyCode::C) => {
-                clear = false;
-                self.copy_clipboard();
-            }
-
-            (CTRL, VirtualKeyCode::V) => {
-                self.terminal.pty_write(b"\x16");
-            }
-
-            (CTRL_SHIFT, VirtualKeyCode::V) => {
-                self.paste_clipboard();
-            }
-
-            (CTRL, VirtualKeyCode::L) => {
-                self.terminal.pty_write(b"\x0c");
-            }
-
-            (CTRL_SHIFT, VirtualKeyCode::L) => {
-                self.history_head = 0;
-                let mut buf = self.terminal.buffer.lock().unwrap();
-                buf.clear_history();
-            }
-
-            (_, keycode) => {
-                log::trace!("key pressed: ({:?}) {:?}", self.modifiers, keycode);
-
-                use VirtualKeyCode::*;
-                if let LControl | RControl | LShift | RShift = keycode {
-                    clear = false;
-                }
-            }
-        }
-
-        if clear {
-            self.mouse.pressed_pos = None;
-            self.mouse.released_pos = None;
-            self.history_head = 0;
-        }
-    }
-
     pub fn on_event(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
         match event {
             Event::WindowEvent { event, .. } => match event {
@@ -920,7 +663,9 @@ impl TerminalWindow {
                         log::debug!("input: {:?}", ch);
                     }
 
-                    self.pty_write_char_utf8(ch);
+                    let mut buf = [0_u8; 4];
+                    let utf8 = ch.encode_utf8(&mut buf).as_bytes();
+                    self.terminal.pty_write(utf8);
                 }
 
                 WindowEvent::KeyboardInput { input, .. }
@@ -1046,6 +791,177 @@ impl TerminalWindow {
         }
     }
 
+    fn on_key_press(&mut self, keycode: VirtualKeyCode) {
+        use ModifiersState as Mod;
+        const EMPTY: u32 = Mod::empty().bits();
+        const CTRL: u32 = Mod::CTRL.bits();
+        const CTRL_SHIFT: u32 = Mod::CTRL.bits() | Mod::SHIFT.bits();
+
+        // normally text selection is cleared when user types something,
+        // but there are some exceptions. history_head is cleared too.
+        let mut clear = true;
+
+        match (self.modifiers.bits(), keycode) {
+            (EMPTY, VirtualKeyCode::Escape) => {
+                self.history_head = 0;
+                self.mouse.pressed_pos = None;
+                self.mouse.released_pos = None;
+                self.terminal.pty_write(b"\x1B");
+            }
+
+            (CTRL, VirtualKeyCode::Minus) => {
+                // font size -
+                self.increase_font_size(-1);
+            }
+            (CTRL, VirtualKeyCode::Equals) => {
+                // font size +
+                self.increase_font_size(1);
+            }
+
+            // Backspace
+            (EMPTY, VirtualKeyCode::Back) => {
+                // Note: send DEL instead of BS
+                self.terminal.pty_write(b"\x7f");
+            }
+
+            (EMPTY, VirtualKeyCode::Delete) => {
+                self.terminal.pty_write(b"\x1b[3~");
+            }
+
+            (EMPTY, VirtualKeyCode::Up) => {
+                self.terminal.pty_write(b"\x1b[\x41");
+            }
+            (EMPTY, VirtualKeyCode::Down) => {
+                self.terminal.pty_write(b"\x1b[\x42");
+            }
+            (EMPTY, VirtualKeyCode::Right) => {
+                self.terminal.pty_write(b"\x1b[\x43");
+            }
+            (EMPTY, VirtualKeyCode::Left) => {
+                self.terminal.pty_write(b"\x1b[\x44");
+            }
+
+            (EMPTY, VirtualKeyCode::PageUp) => {
+                self.terminal.pty_write(b"\x1b[5~");
+            }
+            (EMPTY, VirtualKeyCode::PageDown) => {
+                self.terminal.pty_write(b"\x1b[6~");
+            }
+
+            (EMPTY, VirtualKeyCode::Minus) => {
+                self.terminal.pty_write(b"-");
+            }
+            (EMPTY, VirtualKeyCode::Equals) => {
+                self.terminal.pty_write(b"=");
+            }
+
+            (CTRL, VirtualKeyCode::C) => {
+                self.terminal.pty_write(b"\x03");
+            }
+
+            (CTRL_SHIFT, VirtualKeyCode::C) => {
+                clear = false;
+                self.copy_clipboard();
+            }
+
+            (CTRL, VirtualKeyCode::V) => {
+                self.terminal.pty_write(b"\x16");
+            }
+
+            (CTRL_SHIFT, VirtualKeyCode::V) => {
+                self.paste_clipboard();
+            }
+
+            (CTRL, VirtualKeyCode::L) => {
+                self.terminal.pty_write(b"\x0c");
+            }
+
+            (CTRL_SHIFT, VirtualKeyCode::L) => {
+                self.history_head = 0;
+                let mut buf = self.terminal.buffer.lock().unwrap();
+                buf.clear_history();
+            }
+
+            (_, keycode) => {
+                log::trace!("key pressed: ({:?}) {:?}", self.modifiers, keycode);
+
+                use VirtualKeyCode::*;
+                if let LControl | RControl | LShift | RShift = keycode {
+                    clear = false;
+                }
+            }
+        }
+
+        if clear {
+            self.mouse.pressed_pos = None;
+            self.mouse.released_pos = None;
+            self.history_head = 0;
+        }
+    }
+
+    fn copy_clipboard(&mut self) {
+        let mut text = String::new();
+
+        'row: for (i, row) in self.contents.lines.iter().enumerate() {
+            for (j, cell) in row.iter().enumerate() {
+                if cell.width == 0 {
+                    continue;
+                }
+
+                let is_selected = match self.contents.selection_range {
+                    Some((left, right)) => {
+                        let offset = i * self.contents.terminal_size.cols + j;
+                        let center = offset + (cell.width / 2) as usize;
+                        left <= center && center <= right
+                    }
+                    None => false,
+                };
+
+                if is_selected {
+                    text.push(cell.ch);
+                }
+
+                if cell.ch == '\n' {
+                    continue 'row;
+                }
+            }
+
+            if !row.linewrap() {
+                let is_selected = match self.contents.selection_range {
+                    Some((left, right)) => {
+                        let offset = (i + 1) * self.contents.terminal_size.cols;
+                        left < offset && offset <= right
+                    }
+                    None => false,
+                };
+                if is_selected {
+                    text.push('\n');
+                }
+            }
+        }
+
+        log::info!("copy: {:?}", text);
+        let _ = self.clipboard.store(&text);
+    }
+
+    fn paste_clipboard(&mut self) {
+        match self.clipboard.load() {
+            Ok(text) => {
+                log::debug!("paste: {:?}", text);
+                if self.mode.bracketed_paste {
+                    self.terminal.pty_write(b"\x1b[200~");
+                    self.terminal.pty_write(text.as_bytes());
+                    self.terminal.pty_write(b"\x1b[201~");
+                } else {
+                    self.terminal.pty_write(text.as_bytes());
+                }
+            }
+            Err(_) => {
+                log::error!("Failed to paste something from clipboard");
+            }
+        }
+    }
+
     fn normal_mouse_report(&mut self, button: u8, col: u32, row: u32) {
         let col = if 0 < col && col < 224 { col + 32 } else { 0 } as u8;
         let row = if 0 < row && row < 224 { row + 32 } else { 0 } as u8;
@@ -1064,6 +980,86 @@ impl TerminalWindow {
         self.terminal
             .pty_write(format!("\x1b[<{button};{col};{row}{m}").as_bytes());
     }
+}
+
+fn build_font_set() -> FontSet {
+    let config = &crate::TOYTERM_CONFIG;
+
+    let mut fonts = FontSet::empty();
+
+    use std::iter::repeat;
+    let regular_iter = repeat(Style::Regular).zip(config.fonts_regular.iter());
+    let bold_iter = repeat(Style::Bold).zip(config.fonts_bold.iter());
+    let faint_iter = repeat(Style::Faint).zip(config.fonts_faint.iter());
+
+    for (style, path) in regular_iter.chain(bold_iter).chain(faint_iter) {
+        // FIXME
+        if path.as_os_str().is_empty() {
+            continue;
+        }
+
+        log::debug!("add {:?} font: {:?}", style, path.display());
+
+        match std::fs::read(path) {
+            Ok(data) => {
+                let font = Font::new(&data);
+                fonts.add(style, font);
+            }
+
+            Err(e) => {
+                log::warn!("ignore {:?} (reason: {:?})", path.display(), e);
+            }
+        }
+    }
+
+    // Add embedded fonts
+    {
+        let regular_font = Font::new(include_bytes!("../fonts/Mplus1Code-Regular.ttf"));
+        fonts.add(Style::Regular, regular_font);
+
+        let bold_font = Font::new(include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"));
+        fonts.add(Style::Bold, bold_font);
+
+        let faint_font = Font::new(include_bytes!("../fonts/Mplus1Code-Thin.ttf"));
+        fonts.add(Style::Faint, faint_font);
+    }
+
+    fonts
+}
+
+fn calculate_cell_size(fonts: &FontSet) -> (CellSize, i32) {
+    let mut max_advance_x: i32 = 0;
+    let mut max_over: i32 = 0;
+    let mut max_under: i32 = 0;
+
+    let ascii_visible = ' '..='~';
+    for ch in ascii_visible {
+        for style in [Style::Regular, Style::Bold, Style::Faint] {
+            let metrics = fonts.metrics(ch, style).expect("undefined glyph");
+
+            let advance_x = (metrics.horiAdvance >> 6) as i32;
+            max_advance_x = max(max_advance_x, advance_x);
+
+            let over = (metrics.horiBearingY >> 6) as i32;
+            max_over = max(max_over, over);
+
+            let under = ((metrics.height - metrics.horiBearingY) >> 6) as i32;
+            max_under = max(max_under, under);
+        }
+    }
+
+    let cell_w = max_advance_x as u32;
+    let cell_h = (max_over + max_under) as u32;
+
+    log::debug!("cell size: {}x{} (px)", cell_w, cell_h);
+
+    (
+        CellSize {
+            w: cell_w,
+            h: cell_h,
+        },
+        max_over,
+    )
 }
 
 #[derive(Copy, Clone)]
