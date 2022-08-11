@@ -284,6 +284,10 @@ impl Line {
         }
     }
 
+    pub fn columns(&self) -> usize {
+        self.cells.len()
+    }
+
     fn put(&mut self, at: usize, cell: Cell) {
         let width = cell.width as usize;
 
