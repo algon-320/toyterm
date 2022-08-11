@@ -12,8 +12,6 @@ use crate::clipboard::X11Clipboard;
 use crate::font::{Font, FontSet, Style};
 use crate::terminal::{CellSize, Color, CursorStyle, Line, Mode, Terminal, TerminalSize};
 
-type WindowSize = PhysicalSize<u32>;
-
 #[derive(Default)]
 struct Contents {
     lines: Vec<Line>,
@@ -24,7 +22,7 @@ struct Contents {
     selection_range: Option<(usize, usize)>,
     history_head: isize,
     terminal_size: TerminalSize,
-    window_size: WindowSize,
+    viewport: glium::Rect,
     cell_size: CellSize,
 }
 
@@ -37,7 +35,7 @@ impl Contents {
             && self.selection_range == other.selection_range
             && self.history_head == other.history_head
             && self.terminal_size == other.terminal_size
-            && self.window_size == other.window_size
+            && self.viewport == other.viewport
             && self.cell_size == other.cell_size
     }
 }
@@ -52,13 +50,13 @@ pub struct TerminalWindow {
     contents: Contents,
     mode: Mode,
     history_head: isize,
-    window_size: WindowSize,
     cell_size: CellSize,
     cell_max_over: i32,
     modifiers: ModifiersState,
     mouse: MouseState,
     started_time: std::time::Instant,
 
+    draw_params: glium::DrawParameters<'static>,
     program_cell: glium::Program,
     program_img: glium::Program,
     vertices_fg: Vec<Vertex>,
@@ -85,8 +83,17 @@ struct DrawQuery<V: glium::vertex::Vertex> {
 
 impl TerminalWindow {
     pub fn new(display: Display) -> Self {
-        let window_size = display.gl_window().window().inner_size();
+        let size = display.gl_window().window().inner_size();
+        let full = glium::Rect {
+            left: 0,
+            bottom: 0,
+            width: size.width,
+            height: size.height,
+        };
+        Self::with_viewport(display, full)
+    }
 
+    pub fn with_viewport(display: Display, viewport: glium::Rect) -> Self {
         let fonts = build_font_set();
 
         let (cell_size, cell_max_over) = calculate_cell_size(&fonts);
@@ -95,12 +102,18 @@ impl TerminalWindow {
         let cache = GlyphCache::build_ascii_visible(&display, &fonts, cell_size);
 
         let size = TerminalSize {
-            rows: (window_size.height / cell_size.h) as usize,
-            cols: (window_size.width / cell_size.w) as usize,
+            rows: (viewport.height / cell_size.h) as usize,
+            cols: (viewport.width / cell_size.w) as usize,
         };
         let terminal = Terminal::new(size, cell_size);
 
         let clipboard = X11Clipboard::new();
+
+        let draw_params = glium::DrawParameters {
+            blend: glium::Blend::alpha_blending(),
+            viewport: Some(viewport),
+            ..glium::DrawParameters::default()
+        };
 
         // Initialize shaders
         let program_cell = {
@@ -149,7 +162,6 @@ impl TerminalWindow {
             contents: Contents::default(),
             mode: Mode::default(),
             history_head: 0,
-            window_size,
             cell_size,
             cell_max_over,
             modifiers: ModifiersState::empty(),
@@ -164,6 +176,7 @@ impl TerminalWindow {
             },
             started_time: std::time::Instant::now(),
 
+            draw_params,
             program_cell,
             program_img,
             vertices_fg: Vec::new(),
@@ -176,13 +189,13 @@ impl TerminalWindow {
 
     // Returns true if the PTY is closed, false otherwise
     fn update(&mut self) -> bool {
-        let window_width = self.window_size.width;
-        let window_height = self.window_size.height;
+        let window_width = self.draw_params.viewport.unwrap().width;
+        let window_height = self.draw_params.viewport.unwrap().height;
         let cell_size = self.cell_size;
 
         let mut current = Contents::default();
         current.selection_range = None;
-        current.window_size = self.window_size;
+        current.viewport = self.draw_params.viewport.unwrap();
         current.cell_size = self.cell_size;
         std::mem::swap(&mut current.lines, &mut self.contents.lines);
 
@@ -567,10 +580,7 @@ impl TerminalWindow {
                     indices,
                     &self.program_cell,
                     &uniforms,
-                    &glium::DrawParameters {
-                        blend: glium::Blend::alpha_blending(),
-                        ..glium::DrawParameters::default()
-                    },
+                    &self.draw_params,
                 )
                 .expect("draw cells");
         }
@@ -589,7 +599,7 @@ impl TerminalWindow {
                     indices,
                     &self.program_img,
                     &uniforms,
-                    &glium::DrawParameters::default(),
+                    &self.draw_params,
                 )
                 .expect("draw image");
         }
@@ -597,13 +607,23 @@ impl TerminalWindow {
         surface.finish().expect("finish");
     }
 
-    fn resize_window(&mut self, new_size: WindowSize) {
+    #[allow(unused)]
+    pub fn change_viewport(&mut self, new_viewport: glium::Rect) {
+        self.draw_params.viewport = Some(new_viewport);
+    }
+
+    fn resize_window(&mut self, new_size: PhysicalSize<u32>) {
         log::debug!(
             "window resized: {}x{} (px)",
             new_size.width,
             new_size.height
         );
-        self.window_size = new_size;
+
+        // update viewport
+        let viewport = self.draw_params.viewport.as_mut().unwrap();
+        viewport.width = new_size.width;
+        viewport.height = new_size.height;
+
         self.resize_buffer();
     }
 
@@ -624,8 +644,10 @@ impl TerminalWindow {
         self.mouse.pressed_pos = None;
         self.mouse.released_pos = None;
 
-        let rows = (self.window_size.height / self.cell_size.h) as usize;
-        let cols = (self.window_size.width / self.cell_size.w) as usize;
+        let window_width = self.draw_params.viewport.unwrap().width;
+        let window_height = self.draw_params.viewport.unwrap().height;
+        let rows = (window_height / self.cell_size.h) as usize;
+        let cols = (window_width / self.cell_size.w) as usize;
         let buff_size = TerminalSize { rows, cols };
         self.terminal.request_resize(buff_size, self.cell_size);
     }
