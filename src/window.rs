@@ -977,6 +977,9 @@ impl TerminalWindow {
         }
 
         if clear {
+            self.view.contents.selection_range = None;
+            self.view.updated = true;
+
             self.mouse.pressed_pos = None;
             self.mouse.released_pos = None;
             self.history_head = 0;
