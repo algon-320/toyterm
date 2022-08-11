@@ -91,6 +91,13 @@ impl Cell {
         backlink: 0,
         attr: GraphicAttribute::default(),
     };
+
+    #[allow(unused)]
+    pub fn new_ascii(ch: char) -> Cell {
+        let mut cell = Self::SPACE;
+        cell.ch = ch;
+        cell
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -160,6 +167,18 @@ impl GraphicAttribute {
 pub struct Line {
     cells: Vec<Cell>,
     linewrap: bool,
+}
+
+impl std::iter::FromIterator<Cell> for Line {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = Cell>,
+    {
+        Line {
+            cells: iter.into_iter().collect(),
+            linewrap: false,
+        }
+    }
 }
 
 impl Line {

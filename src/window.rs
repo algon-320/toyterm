@@ -127,7 +127,7 @@ impl TerminalView {
         self.updated = true;
     }
 
-    fn increase_font_size(&mut self, size_diff: i32) {
+    pub fn increase_font_size(&mut self, size_diff: i32) {
         log::debug!("increase font size: {} (diff)", size_diff);
         self.fonts.increase_size(size_diff);
 
@@ -356,21 +356,20 @@ impl TerminalView {
         self.updated = false;
     }
 
-    fn draw(&mut self) {
+    pub fn draw(&mut self, surface: &mut glium::Frame) {
         if self.updated {
             self.update();
         }
 
         let elapsed = self.clock.elapsed().as_millis() as f32;
 
-        use glium::Surface as _;
-        let mut surface = self.display.draw();
-
         const TRIANGLES: index::NoIndices = index::NoIndices(index::PrimitiveType::TrianglesList);
 
         let iter_fg = self.draw_queries_fg.iter();
         let iter_bg = self.draw_queries_bg.iter();
         let iter_img = self.draw_queries_img.iter();
+
+        use glium::Surface as _;
 
         for query in iter_bg.chain(iter_fg) {
             let sampler = query
@@ -409,8 +408,6 @@ impl TerminalView {
                 )
                 .expect("draw image");
         }
-
-        surface.finish().expect("finish");
     }
 }
 
@@ -438,6 +435,7 @@ struct MouseState {
 }
 
 impl TerminalWindow {
+    #[allow(unused)]
     pub fn new(display: Display) -> Self {
         let size = display.gl_window().window().inner_size();
         let full = glium::Rect {
@@ -651,6 +649,15 @@ impl TerminalWindow {
         false
     }
 
+    pub fn draw(&mut self, surface: &mut glium::Frame) {
+        self.view.draw(surface);
+    }
+
+    #[allow(unused)]
+    pub fn change_viewport(&mut self, new_viewport: glium::Rect) {
+        self.view.change_viewport(new_viewport);
+    }
+
     fn resize_window(&mut self, new_size: PhysicalSize<u32>) {
         log::debug!(
             "window resized: {}x{} (px)",
@@ -776,7 +783,18 @@ impl TerminalWindow {
                                 self.mouse.last_clicked = std::time::Instant::now();
                                 log::debug!("clicked {} times", self.mouse.click_count);
 
-                                self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
+                                let (x, y) = self.mouse.cursor_pos;
+                                let viewport = self.view.viewport();
+                                let is_inner = 0.0 <= x
+                                    && x < viewport.width as f64
+                                    && 0.0 <= y
+                                    && y < viewport.height as f64;
+
+                                if is_inner {
+                                    self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
+                                } else {
+                                    self.mouse.pressed_pos = None;
+                                }
                                 self.mouse.released_pos = None;
                             }
                             ElementState::Released => {
@@ -836,8 +854,21 @@ impl TerminalWindow {
                     *control_flow = ControlFlow::Exit;
                     return;
                 }
+                self.display.gl_window().window().request_redraw();
+            }
 
-                self.view.draw();
+            Event::RedrawRequested(_) => {
+                #[cfg(feature = "multiplex")]
+                {
+                    unreachable!();
+                }
+
+                #[cfg(not(feature = "multiplex"))]
+                {
+                    let mut surface = self.display.draw();
+                    self.draw(&mut surface);
+                    surface.finish().expect("finish");
+                }
             }
 
             _ => {}
