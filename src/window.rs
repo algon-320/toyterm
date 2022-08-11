@@ -10,7 +10,7 @@ use std::rc::Rc;
 use crate::cache::GlyphCache;
 use crate::clipboard::X11Clipboard;
 use crate::font::{Font, FontSet, Style};
-use crate::terminal::{CellSize, Color, CursorStyle, Line, Terminal, TerminalSize};
+use crate::terminal::{CellSize, Color, CursorStyle, Line, Mode, Terminal, TerminalSize};
 
 fn build_font_set() -> FontSet {
     let config = &crate::TOYTERM_CONFIG;
@@ -145,10 +145,8 @@ pub struct TerminalWindow {
     clipboard: X11Clipboard,
 
     contents: Contents,
+    mode: Mode,
     history_head: isize,
-    bracketed_paste_mode: bool,
-    mouse_track_mode: bool,
-    sgr_ext_mouse_track_mode: bool,
     window_size: WindowSize,
     cell_size: CellSize,
     cell_max_over: i32,
@@ -229,10 +227,8 @@ impl TerminalWindow {
             clipboard,
 
             contents: Contents::default(),
+            mode: Mode::default(),
             history_head: 0,
-            bracketed_paste_mode: false,
-            mouse_track_mode: false,
-            sgr_ext_mouse_track_mode: false,
             window_size,
             cell_size,
             cell_max_over,
@@ -282,16 +278,14 @@ impl TerminalWindow {
             }
 
             // Change cursor icon of the window
-            if self.mouse_track_mode != buf.mouse_track_mode {
+            if self.mode.mouse_track != buf.mode.mouse_track {
                 let ibeam = glutin::window::CursorIcon::Text;
                 let arrow = glutin::window::CursorIcon::Arrow;
-                let icon = if buf.mouse_track_mode { arrow } else { ibeam };
+                let icon = if buf.mode.mouse_track { arrow } else { ibeam };
                 self.display.gl_window().window().set_cursor_icon(icon);
             }
 
-            self.mouse_track_mode = buf.mouse_track_mode;
-            self.sgr_ext_mouse_track_mode = buf.sgr_ext_mouse_track_mode;
-            self.bracketed_paste_mode = buf.bracketed_paste_mode;
+            self.mode = buf.mode;
 
             if self.history_head < -(buf.history_size as isize) {
                 self.history_head = -(buf.history_size as isize);
@@ -302,9 +296,9 @@ impl TerminalWindow {
 
             if view_changed {
                 let top = self.history_head;
-                let bot = top + buf.lines.len() as isize;
+                let bot = top + buf.size.rows as isize;
 
-                if current.lines.len() == buf.lines.len() {
+                if current.lines.len() == buf.size.rows {
                     // Copy lines w/o heap allocation
                     for (src, dst) in buf.range(top, bot).zip(current.lines.iter_mut()) {
                         dst.copy_from(src);
@@ -349,7 +343,7 @@ impl TerminalWindow {
 
                 current.cursor_row = buf.cursor.0;
                 current.cursor_col = buf.cursor.1;
-                current.cursor_visible = buf.cursor_visible_mode;
+                current.cursor_visible = buf.mode.cursor_visible;
                 current.cursor_style = buf.cursor_style;
 
                 current.terminal_size = buf.size;
@@ -765,7 +759,7 @@ impl TerminalWindow {
         match self.clipboard.load() {
             Ok(text) => {
                 log::debug!("paste: {:?}", text);
-                if self.bracketed_paste_mode {
+                if self.mode.bracketed_paste {
                     self.terminal.pty_write(b"\x1b[200~");
                     self.terminal.pty_write(text.as_bytes());
                     self.terminal.pty_write(b"\x1b[201~");
@@ -942,9 +936,9 @@ impl TerminalWindow {
                 }
 
                 WindowEvent::MouseInput { state, button, .. } => {
-                    if self.mouse_track_mode {
+                    if self.mode.mouse_track {
                         let button = match state {
-                            ElementState::Released if !self.sgr_ext_mouse_track_mode => 3,
+                            ElementState::Released if !self.mode.sgr_ext_mouse_track => 3,
                             _ => match button {
                                 MouseButton::Left => 0,
                                 MouseButton::Middle => 1,
@@ -967,7 +961,7 @@ impl TerminalWindow {
                         let col = pos.0.round() as u32 / self.cell_size.w + 1;
                         let row = pos.1.round() as u32 / self.cell_size.h + 1;
 
-                        if self.sgr_ext_mouse_track_mode {
+                        if self.mode.sgr_ext_mouse_track {
                             self.sgr_ext_mouse_report(button + mods, col, row, state);
                         } else {
                             self.normal_mouse_report(button + mods, col, row);

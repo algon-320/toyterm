@@ -331,20 +331,40 @@ impl std::fmt::Debug for Line {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Mode {
+    pub cursor_visible: bool,
+    pub bracketed_paste: bool,
+    pub mouse_track: bool,
+    pub sgr_ext_mouse_track: bool,
+    pub sixel_scrolling: bool,
+}
+
+impl Default for Mode {
+    fn default() -> Self {
+        Mode {
+            cursor_visible: true,
+            bracketed_paste: false,
+            mouse_track: false,
+            sgr_ext_mouse_track: false,
+            sixel_scrolling: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Buffer {
-    pub lines: VecDeque<Line>,
-    pub history: VecDeque<Line>,
+    lines: VecDeque<Line>,
+    history: VecDeque<Line>,
+    alt_lines: VecDeque<Line>,
+
+    pub size: TerminalSize,
     pub history_size: usize,
     pub images: Vec<PositionedImage>,
     pub cursor: (usize, usize),
-    pub cursor_visible_mode: bool,
     pub cursor_style: CursorStyle,
-    pub bracketed_paste_mode: bool,
-    pub mouse_track_mode: bool,
-    pub sgr_ext_mouse_track_mode: bool,
-    alt_lines: VecDeque<Line>,
-    pub size: TerminalSize,
+    pub mode: Mode,
+
     pub updated: bool,
     pub closed: bool,
 }
@@ -368,16 +388,15 @@ impl Buffer {
         Self {
             lines,
             history,
+            alt_lines,
+
+            size: sz,
             history_size: 0,
             images: Vec::new(),
             cursor: (0, 0),
-            cursor_visible_mode: true,
             cursor_style: CursorStyle::Block,
-            bracketed_paste_mode: false,
-            mouse_track_mode: false,
-            sgr_ext_mouse_track_mode: false,
-            alt_lines,
-            size: sz,
+            mode: Mode::default(),
+
             updated: true,
             closed: false,
         }
@@ -604,8 +623,6 @@ struct Engine {
     attr: GraphicAttribute,
     saved_cursor: Cursor,
     saved_attr: GraphicAttribute,
-
-    sixel_scrolling_mode: bool,
 }
 
 impl Engine {
@@ -648,8 +665,6 @@ impl Engine {
             attr: GraphicAttribute::default(),
             saved_cursor: cursor,
             saved_attr: GraphicAttribute::default(),
-
-            sixel_scrolling_mode: true,
         }
     }
 
@@ -1171,7 +1186,7 @@ impl Engine {
                     let cell_w = self.cell_sz.w as u64;
                     let cell_h = self.cell_sz.h as u64;
 
-                    let (row, col) = if self.sixel_scrolling_mode {
+                    let (row, col) = if buf.mode.sixel_scrolling {
                         (cursor_row as isize, cursor_col as isize)
                     } else {
                         (0, 0)
@@ -1190,7 +1205,7 @@ impl Engine {
 
                     log::debug!("total {} images", buf.images.len());
 
-                    if self.sixel_scrolling_mode {
+                    if buf.mode.sixel_scrolling {
                         let advance_h = (image.width + cell_w - 1) / cell_w;
                         let advance_v = (image.height + cell_h - 1) / cell_h - 1;
 
@@ -1218,22 +1233,22 @@ impl Engine {
                     for p in ps {
                         match p {
                             25 => {
-                                buf.cursor_visible_mode = true;
+                                buf.mode.cursor_visible = true;
                             }
 
                             80 => {
-                                self.sixel_scrolling_mode = true;
+                                buf.mode.sixel_scrolling = true;
                                 log::debug!("Sixel Scrolling Mode Enabled");
                             }
 
                             // FIXME : I'm not sure that 1002 is equivalent to 1000 but it works
                             1000 | 1002 => {
-                                buf.mouse_track_mode = true;
+                                buf.mode.mouse_track = true;
                                 log::debug!("Mouse Tracking Mode Enabled");
                             }
 
                             1006 => {
-                                buf.sgr_ext_mouse_track_mode = true;
+                                buf.mode.sgr_ext_mouse_track = true;
                                 log::debug!("SGR Extended Mode Mouse Tracking Enabled");
                             }
 
@@ -1250,7 +1265,7 @@ impl Engine {
                             }
 
                             2004 => {
-                                buf.bracketed_paste_mode = true;
+                                buf.mode.bracketed_paste = true;
                                 log::debug!("Bracketed Paste Mode Enabled");
                             }
 
@@ -1268,22 +1283,22 @@ impl Engine {
                     for p in ps {
                         match p {
                             25 => {
-                                buf.cursor_visible_mode = false;
+                                buf.mode.cursor_visible = false;
                             }
 
                             80 => {
-                                self.sixel_scrolling_mode = false;
+                                buf.mode.sixel_scrolling = false;
                                 log::debug!("Sixel Scrolling Mode Disabled");
                             }
 
                             // FIXME : I'm not sure that 1002 is equivalent to 1000 but it works
                             1000 | 1002 => {
-                                buf.mouse_track_mode = false;
+                                buf.mode.mouse_track = false;
                                 log::debug!("Mouse Tracking Mode Disabled");
                             }
 
                             1006 => {
-                                buf.sgr_ext_mouse_track_mode = false;
+                                buf.mode.sgr_ext_mouse_track = false;
                                 log::debug!("SGR Extended Mode Mouse Tracking Disabled");
                             }
 
@@ -1295,7 +1310,7 @@ impl Engine {
                             }
 
                             2004 => {
-                                buf.bracketed_paste_mode = false;
+                                buf.mode.bracketed_paste = false;
                                 log::debug!("Bracketed Paste Mode Disabled");
                             }
 
