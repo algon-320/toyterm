@@ -118,9 +118,9 @@ impl Parser {
             '#' => {
                 iter.next();
                 let ps = self.parse_parameters(iter);
-                match ps.as_slice() {
-                    &[pc] => Some(Function::SelectColor(pc as u8)),
-                    &[pc, pu @ (1 | 2), px, py, pz] => {
+                match *ps.as_slice() {
+                    [pc] => Some(Function::SelectColor(pc as u8)),
+                    [pc, pu @ (1 | 2), px, py, pz] => {
                         let reg = pc as u8;
                         match pu {
                             1 => {

@@ -64,14 +64,8 @@ impl Font {
     }
 
     pub fn increase_size(&mut self, inc: i32) {
-        if inc > 0 {
-            self.size += inc as u32;
-        } else if inc < 0 {
-            let dec = (-inc) as u32;
-            if self.size > dec {
-                self.size -= dec;
-            }
-        }
+        let new_size = self.size as i32 + inc;
+        self.size = new_size.clamp(1, i32::MAX) as u32;
         self.face.set_pixel_sizes(0, self.size).unwrap();
     }
 }

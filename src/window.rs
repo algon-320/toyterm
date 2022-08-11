@@ -192,10 +192,12 @@ impl TerminalWindow {
         let viewport = self.draw_params.viewport.unwrap();
         let cell_size = self.cell_size;
 
-        let mut current = Contents::default();
-        current.selection_range = None;
-        current.viewport = self.draw_params.viewport.unwrap();
-        current.cell_size = self.cell_size;
+        let mut current = Contents {
+            selection_range: None,
+            viewport,
+            cell_size,
+            ..Contents::default()
+        };
         std::mem::swap(&mut current.lines, &mut self.contents.lines);
 
         let previous: &Contents = &self.contents;
@@ -340,7 +342,7 @@ impl TerminalWindow {
                         delimiter(a) || delimiter(b)
                     }
 
-                    while 0 < s_col && s_col <= current.terminal_size.cols - 1 {
+                    while 0 < s_col && s_col < current.terminal_size.cols {
                         let prev = current.lines[s_row].get(s_col - 1).unwrap().ch;
                         let curr = current.lines[s_row].get(s_col).unwrap().ch;
                         if on_different_word(prev, curr) {
