@@ -72,14 +72,20 @@ impl Font {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 #[repr(u8)]
-pub enum Style {
+pub enum FontStyle {
     Regular,
     Bold,
     Faint,
 }
 
+impl FontStyle {
+    pub const fn all() -> [FontStyle; 3] {
+        [FontStyle::Regular, FontStyle::Bold, FontStyle::Faint]
+    }
+}
+
 pub struct FontSet {
-    fonts: HashMap<Style, Vec<Font>>,
+    fonts: HashMap<FontStyle, Vec<Font>>,
 }
 
 impl FontSet {
@@ -89,19 +95,23 @@ impl FontSet {
         }
     }
 
-    pub fn add(&mut self, style: Style, font: Font) {
+    pub fn add(&mut self, style: FontStyle, font: Font) {
         let fallbacks = self.fonts.entry(style).or_insert_with(Vec::new);
         fallbacks.push(font);
     }
 
-    pub fn metrics(&self, character: char, style: Style) -> Option<GlyphMetrics> {
+    pub fn metrics(&self, character: char, style: FontStyle) -> Option<GlyphMetrics> {
         self.fonts
             .get(&style)?
             .iter()
             .find_map(|f| f.metrics(character))
     }
 
-    pub fn render(&self, character: char, style: Style) -> Option<(RawImage2d<u8>, GlyphMetrics)> {
+    pub fn render(
+        &self,
+        character: char,
+        style: FontStyle,
+    ) -> Option<(RawImage2d<u8>, GlyphMetrics)> {
         self.fonts
             .get(&style)?
             .iter()

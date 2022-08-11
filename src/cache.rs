@@ -2,16 +2,14 @@ use freetype::GlyphMetrics;
 use glium::{texture, Display};
 use std::rc::Rc;
 
-use crate::font::{FontSet, Style};
+use crate::font::{FontSet, FontStyle};
 use crate::terminal::CellSize;
 
-const STYLES: [Style; 3] = [Style::Regular, Style::Bold, Style::Faint];
-
-// NOTE: STYLES_BITS must be large enough to distinguish STYLES, that is:
-// assert!( STYLES.len() < (1 << STYLES_BITS) )
+// NOTE: STYLES_BITS must be large enough to distinguish `FontStyle`s, that is:
+// assert!( FontStyle::all().len() < (1 << STYLES_BITS) )
 const STYLES_BITS: usize = 2;
 
-fn get_ascii_index(ch: char, style: Style) -> usize {
+fn get_ascii_index(ch: char, style: FontStyle) -> usize {
     debug_assert!(ch.is_ascii());
     let code = ch as usize;
     let style = style as u8 as usize;
@@ -83,7 +81,7 @@ impl GlyphCache {
         )
         .expect("Failed to create a texture");
 
-        assert!(STYLES.len() < (1 << STYLES_BITS));
+        assert!(FontStyle::all().len() < (1 << STYLES_BITS));
         let mut ascii_glyph_region: Vec<Option<(GlyphRegion, GlyphMetrics)>> =
             vec![None; 0x80 << STYLES_BITS];
 
@@ -97,7 +95,7 @@ impl GlyphCache {
             let y = (row as u32) * cell_sz.h;
             let x = (col as u32) * cell_sz.w;
 
-            for (i, &style) in STYLES.iter().enumerate() {
+            for (i, &style) in FontStyle::all().iter().enumerate() {
                 let (glyph_image, metrics) = match fonts.render(ch, style) {
                     None => continue,
                     Some(found) => found,
@@ -134,7 +132,7 @@ impl GlyphCache {
         }
     }
 
-    pub fn get(&self, ch: char, style: Style) -> Option<(GlyphRegion, GlyphMetrics)> {
+    pub fn get(&self, ch: char, style: FontStyle) -> Option<(GlyphRegion, GlyphMetrics)> {
         if ch.is_ascii() {
             let idx = get_ascii_index(ch, style);
             self.ascii_glyph_region[idx]

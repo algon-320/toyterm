@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use crate::cache::{GlyphCache, GlyphRegion};
 use crate::clipboard::X11Clipboard;
-use crate::font::{Font, FontSet, Style};
+use crate::font::{Font, FontSet, FontStyle};
 use crate::terminal::{CellSize, Color, CursorStyle, Line, Mode, Terminal, TerminalSize};
 
 #[derive(Default)]
@@ -405,11 +405,11 @@ impl TerminalWindow {
                     let cell_width_px = cell_size.w * cell.width as u32;
 
                     let style = if cell.attr.bold == -1 {
-                        Style::Faint
+                        FontStyle::Faint
                     } else if cell.attr.bold == 0 {
-                        Style::Regular
+                        FontStyle::Regular
                     } else {
-                        Style::Bold
+                        FontStyle::Bold
                     };
 
                     let (fg, bg) = {
@@ -1007,9 +1007,9 @@ fn build_font_set() -> FontSet {
     let mut fonts = FontSet::empty();
 
     use std::iter::repeat;
-    let regular_iter = repeat(Style::Regular).zip(config.fonts_regular.iter());
-    let bold_iter = repeat(Style::Bold).zip(config.fonts_bold.iter());
-    let faint_iter = repeat(Style::Faint).zip(config.fonts_faint.iter());
+    let regular_iter = repeat(FontStyle::Regular).zip(config.fonts_regular.iter());
+    let bold_iter = repeat(FontStyle::Bold).zip(config.fonts_bold.iter());
+    let faint_iter = repeat(FontStyle::Faint).zip(config.fonts_faint.iter());
 
     for (style, path) in regular_iter.chain(bold_iter).chain(faint_iter) {
         // FIXME
@@ -1034,13 +1034,13 @@ fn build_font_set() -> FontSet {
     // Add embedded fonts
     {
         let regular_font = Font::new(include_bytes!("../fonts/Mplus1Code-Regular.ttf"));
-        fonts.add(Style::Regular, regular_font);
+        fonts.add(FontStyle::Regular, regular_font);
 
         let bold_font = Font::new(include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"));
-        fonts.add(Style::Bold, bold_font);
+        fonts.add(FontStyle::Bold, bold_font);
 
         let faint_font = Font::new(include_bytes!("../fonts/Mplus1Code-Thin.ttf"));
-        fonts.add(Style::Faint, faint_font);
+        fonts.add(FontStyle::Faint, faint_font);
     }
 
     fonts
@@ -1053,7 +1053,7 @@ fn calculate_cell_size(fonts: &FontSet) -> (CellSize, i32) {
 
     let ascii_visible = ' '..='~';
     for ch in ascii_visible {
-        for style in [Style::Regular, Style::Bold, Style::Faint] {
+        for style in FontStyle::all() {
             let metrics = fonts.metrics(ch, style).expect("undefined glyph");
 
             let advance_x = (metrics.horiAdvance >> 6) as i32;
