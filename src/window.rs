@@ -542,17 +542,15 @@ impl TerminalWindow {
                 }
                 std::mem::swap(&mut contents.lines, &mut lines);
 
-                if !buf.images.is_empty() {
-                    contents.images = buf
-                        .images
-                        .iter()
-                        .cloned()
-                        .map(|mut img| {
-                            img.row -= self.history_head;
-                            img
-                        })
-                        .collect();
-                }
+                contents.images = buf
+                    .images
+                    .iter()
+                    .cloned()
+                    .map(|mut img| {
+                        img.row -= self.history_head;
+                        img
+                    })
+                    .collect();
 
                 if self.history_head >= 0 && buf.mode.cursor_visible {
                     let (cursor_row, cursor_col) = buf.cursor;
