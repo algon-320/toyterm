@@ -7,7 +7,7 @@ use glutin::{
 use std::cmp::{max, min};
 use std::rc::Rc;
 
-use crate::cache::GlyphCache;
+use crate::cache::{GlyphCache, GlyphRegion};
 use crate::clipboard::X11Clipboard;
 use crate::font::{Font, FontSet, Style};
 use crate::terminal::{CellSize, Color, CursorStyle, Line, Mode, Terminal, TerminalSize};
@@ -189,8 +189,7 @@ impl TerminalWindow {
 
     // Returns true if the PTY is closed, false otherwise
     fn update(&mut self) -> bool {
-        let window_width = self.draw_params.viewport.unwrap().width;
-        let window_height = self.draw_params.viewport.unwrap().height;
+        let viewport = self.draw_params.viewport.unwrap();
         let cell_size = self.cell_size;
 
         let mut current = Contents::default();
@@ -248,11 +247,13 @@ impl TerminalWindow {
                     let col = img.col;
                     let row = img.row - self.history_head;
 
-                    let gl_x = x_to_gl(col as i32 * cell_size.w as i32, window_width);
-                    let gl_y = y_to_gl(row as i32 * cell_size.h as i32, window_height);
-                    let gl_w = w_to_gl(img.width as u32, window_width);
-                    let gl_h = h_to_gl(img.height as u32, window_height);
-                    let vs = image_vertices(gl_x, gl_y, gl_w, gl_h);
+                    let image_rect = PixelRect {
+                        x: col as i32 * cell_size.w as i32,
+                        y: row as i32 * cell_size.h as i32,
+                        w: img.width as u32,
+                        h: img.height as u32,
+                    };
+                    let vs = image_vertices(image_rect.to_gl(viewport));
 
                     let vertices = glium::VertexBuffer::new(&self.display, &vs).unwrap();
 
@@ -379,9 +380,15 @@ impl TerminalWindow {
 
             // clear entire screen
             {
+                let rect = GlRect {
+                    x: -1.0,
+                    y: 1.0,
+                    w: 2.0,
+                    h: 2.0,
+                };
                 let fg = Color::White;
                 let bg = Color::Black;
-                let vs = cell_vertices(-1.0, 1.0, 2.0, 2.0, fg, bg);
+                let vs = cell_vertices(rect, fg, bg);
                 self.vertices_bg.extend_from_slice(&vs);
             }
 
@@ -434,13 +441,18 @@ impl TerminalWindow {
                         (fg, bg)
                     };
 
+                    let blinking = cell.attr.blinking;
+
                     // Background
                     {
-                        let gl_x = x_to_gl((j as u32 * cell_size.w) as i32, window_width);
-                        let gl_y = y_to_gl((i as u32 * cell_size.h) as i32, window_height);
-                        let gl_w = w_to_gl(cell_width_px, window_width);
-                        let gl_h = h_to_gl(cell_size.h, window_height);
-                        let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
+                        let rect = PixelRect {
+                            x: (j as u32 * cell_size.w) as i32,
+                            y: (i as u32 * cell_size.h) as i32,
+                            w: cell_width_px,
+                            h: cell_size.h,
+                        };
+
+                        let vs = cell_vertices(rect.to_gl(viewport), fg, bg);
                         self.vertices_bg.extend_from_slice(&vs);
                     }
 
@@ -449,26 +461,14 @@ impl TerminalWindow {
                             let bearing_x = (metrics.horiBearingX >> 6) as u32;
                             let bearing_y = (metrics.horiBearingY >> 6) as u32;
 
-                            let x = leftline as i32 + bearing_x as i32;
-                            let y = baseline as i32 - bearing_y as i32;
-                            let gl_x = x_to_gl(x, window_width);
-                            let gl_y = y_to_gl(y, window_height);
-                            let gl_w = w_to_gl(region.px_w, window_width);
-                            let gl_h = h_to_gl(region.px_h, window_height);
+                            let rect = PixelRect {
+                                x: leftline as i32 + bearing_x as i32,
+                                y: baseline as i32 - bearing_y as i32,
+                                w: region.px_w,
+                                h: region.px_h,
+                            };
 
-                            let vs = glyph_vertices(
-                                gl_x,
-                                gl_y,
-                                gl_w,
-                                gl_h,
-                                region.tx_x,
-                                region.tx_y,
-                                region.tx_w,
-                                region.tx_h,
-                                fg,
-                                bg,
-                                cell.attr.blinking,
-                            );
+                            let vs = glyph_vertices(rect.to_gl(viewport), region, fg, bg, blinking);
                             self.vertices_fg.extend_from_slice(&vs);
                         }
                     } else if let Some((glyph_image, metrics)) = self.fonts.render(cell.ch, style) {
@@ -477,27 +477,23 @@ impl TerminalWindow {
                             let bearing_x = (metrics.horiBearingX >> 6) as u32;
                             let bearing_y = (metrics.horiBearingY >> 6) as u32;
 
-                            let glyph_width = glyph_image.width;
-                            let glyph_height = glyph_image.height;
+                            let rect = PixelRect {
+                                x: leftline as i32 + bearing_x as i32,
+                                y: baseline as i32 - bearing_y as i32,
+                                w: glyph_image.width,
+                                h: glyph_image.height,
+                            };
 
-                            let gl_x = x_to_gl(leftline as i32 + bearing_x as i32, window_width);
-                            let gl_y = y_to_gl(baseline as i32 - bearing_y as i32, window_height);
-                            let gl_w = w_to_gl(glyph_width, window_width);
-                            let gl_h = h_to_gl(glyph_height, window_height);
+                            let region = GlyphRegion {
+                                px_w: glyph_image.width,
+                                px_h: glyph_image.height,
+                                tx_x: 0.0,
+                                tx_y: 0.0,
+                                tx_w: 1.0,
+                                tx_h: 1.0,
+                            };
 
-                            let vs = glyph_vertices(
-                                gl_x,
-                                gl_y,
-                                gl_w,
-                                gl_h,
-                                0.0,
-                                0.0,
-                                1.0,
-                                1.0,
-                                fg,
-                                bg,
-                                cell.attr.blinking,
-                            );
+                            let vs = glyph_vertices(rect.to_gl(viewport), region, fg, bg, blinking);
 
                             let vertex_buffer =
                                 glium::VertexBuffer::new(&self.display, &vs).unwrap();
@@ -524,17 +520,17 @@ impl TerminalWindow {
             }
 
             if current.cursor_style == CursorStyle::Bar {
-                let cursor_col = current.cursor_col as u32;
-                let cursor_row = current.cursor_row as u32;
+                let rect = PixelRect {
+                    x: ((current.cursor_col as u32) * cell_size.w) as i32,
+                    y: ((current.cursor_row as u32) * cell_size.h) as i32,
+                    w: 4,
+                    h: cell_size.h,
+                };
 
                 let fg = Color::Black;
                 let bg = Color::White;
 
-                let gl_x = x_to_gl((cursor_col * cell_size.w) as i32, window_width);
-                let gl_y = y_to_gl((cursor_row * cell_size.h) as i32, window_height);
-                let gl_w = w_to_gl(4, window_width);
-                let gl_h = h_to_gl(cell_size.h, window_height);
-                let vs = cell_vertices(gl_x, gl_y, gl_w, gl_h, fg, bg);
+                let vs = cell_vertices(rect.to_gl(viewport), fg, bg);
                 self.vertices_fg.extend_from_slice(&vs);
             }
 
@@ -644,10 +640,9 @@ impl TerminalWindow {
         self.mouse.pressed_pos = None;
         self.mouse.released_pos = None;
 
-        let window_width = self.draw_params.viewport.unwrap().width;
-        let window_height = self.draw_params.viewport.unwrap().height;
-        let rows = (window_height / self.cell_size.h) as usize;
-        let cols = (window_width / self.cell_size.w) as usize;
+        let viewport = self.draw_params.viewport.unwrap();
+        let rows = (viewport.height / self.cell_size.h) as usize;
+        let cols = (viewport.width / self.cell_size.w) as usize;
         let buff_size = TerminalSize { rows, cols };
         self.terminal.request_resize(buff_size, self.cell_size);
     }
@@ -1084,30 +1079,6 @@ fn calculate_cell_size(fonts: &FontSet) -> (CellSize, i32) {
     )
 }
 
-#[derive(Copy, Clone)]
-struct Vertex {
-    position: [f32; 2],
-    tex_coords: [f32; 2],
-    color: [u32; 2],
-    is_bg: u32,
-    blinking: u32,
-}
-glium::implement_vertex!(Vertex, position, tex_coords, color, is_bg, blinking);
-
-// Converts window coordinate to opengl coordinate
-fn x_to_gl(x: i32, window_width: u32) -> f32 {
-    (x as f32 / window_width as f32) * 2.0 - 1.0
-}
-fn y_to_gl(y: i32, window_height: u32) -> f32 {
-    -(y as f32 / window_height as f32) * 2.0 + 1.0
-}
-fn w_to_gl(w: u32, window_width: u32) -> f32 {
-    (w as f32 / window_width as f32) * 2.0
-}
-fn h_to_gl(h: u32, window_height: u32) -> f32 {
-    (h as f32 / window_height as f32) * 2.0
-}
-
 fn color_to_rgba(color: Color) -> u32 {
     let config = &crate::TOYTERM_CONFIG;
 
@@ -1135,39 +1106,70 @@ fn color_to_rgba(color: Color) -> u32 {
     }
 }
 
+#[derive(Clone, Copy)]
+struct PixelRect {
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+}
+
+#[derive(Clone, Copy)]
+struct GlRect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+impl PixelRect {
+    fn to_gl(self, viewport: glium::Rect) -> GlRect {
+        let window_width = viewport.width;
+        let window_height = viewport.height;
+        GlRect {
+            x: (self.x as f32 / window_width as f32) * 2.0 - 1.0,
+            y: -(self.y as f32 / window_height as f32) * 2.0 + 1.0,
+            w: (self.w as f32 / window_width as f32) * 2.0,
+            h: (self.h as f32 / window_height as f32) * 2.0,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+struct Vertex {
+    position: [f32; 2],
+    tex_coords: [f32; 2],
+    color: [u32; 2],
+    is_bg: u32,
+    blinking: u32,
+}
+glium::implement_vertex!(Vertex, position, tex_coords, color, is_bg, blinking);
+
 /// Generate vertices for a single glyph image
 fn glyph_vertices(
-    gl_x: f32,
-    gl_y: f32,
-    gl_w: f32,
-    gl_h: f32,
-    tx_x: f32,
-    tx_y: f32,
-    tx_w: f32,
-    tx_h: f32,
+    gl_rect: GlRect,
+    region: GlyphRegion,
     fg_color: Color,
     bg_color: Color,
     blinking: u8,
 ) -> [Vertex; 6] {
     // top-left, bottom-left, bottom-right, top-right
     let gl_ps = [
-        [gl_x, gl_y],
-        [gl_x, gl_y - gl_h],
-        [gl_x + gl_w, gl_y - gl_h],
-        [gl_x + gl_w, gl_y],
+        [gl_rect.x, gl_rect.y],
+        [gl_rect.x, gl_rect.y - gl_rect.h],
+        [gl_rect.x + gl_rect.w, gl_rect.y - gl_rect.h],
+        [gl_rect.x + gl_rect.w, gl_rect.y],
     ];
-
-    // top-left, bottom-left, bottom-right, top-right
-    let tex_ps = [
-        [tx_x, tx_y],
-        [tx_x, tx_y + tx_h],
-        [tx_x + tx_w, tx_y + tx_h],
-        [tx_x + tx_w, tx_y],
+    let tx_ps = [
+        [region.tx_x, region.tx_y],
+        [region.tx_x, region.tx_y + region.tx_h],
+        [region.tx_x + region.tx_w, region.tx_y + region.tx_h],
+        [region.tx_x + region.tx_w, region.tx_y],
     ];
 
     let v = |idx| Vertex {
         position: gl_ps[idx],
-        tex_coords: tex_ps[idx],
+        tex_coords: tx_ps[idx],
         color: [color_to_rgba(bg_color), color_to_rgba(fg_color)],
         is_bg: 0,
         blinking: blinking as u32,
@@ -1182,34 +1184,15 @@ fn glyph_vertices(
     // *----*
     // 1    2
 
-    [
-        // A
-        v(0),
-        v(1),
-        v(2),
-        // B
-        v(2),
-        v(3),
-        v(0),
-    ]
+    [/* A */ v(0), v(1), v(2), /* B */ v(2), v(3), v(0)]
 }
 
 /// Generate vertices for a single cell (background)
-fn cell_vertices(
-    gl_x: f32,
-    gl_y: f32,
-    gl_w: f32,
-    gl_h: f32,
-    fg_color: Color,
-    bg_color: Color,
-) -> [Vertex; 6] {
+fn cell_vertices(gl_rect: GlRect, fg_color: Color, bg_color: Color) -> [Vertex; 6] {
+    let GlRect { x, y, w, h } = gl_rect;
+
     // top-left, bottom-left, bottom-right, top-right
-    let gl_ps = [
-        [gl_x, gl_y],
-        [gl_x, gl_y - gl_h],
-        [gl_x + gl_w, gl_y - gl_h],
-        [gl_x + gl_w, gl_y],
-    ];
+    let gl_ps = [[x, y], [x, y - h], [x + w, y - h], [x + w, y]];
 
     let v = |idx| Vertex {
         position: gl_ps[idx],
@@ -1219,25 +1202,7 @@ fn cell_vertices(
         blinking: 0,
     };
 
-    // 0    3
-    // *----*
-    // |\  B|
-    // | \  |
-    // |  \ |
-    // |A  \|
-    // *----*
-    // 1    2
-
-    [
-        // A
-        v(0),
-        v(1),
-        v(2),
-        // B
-        v(2),
-        v(3),
-        v(0),
-    ]
+    [v(0), v(1), v(2), v(2), v(3), v(0)]
 }
 
 #[derive(Clone, Copy)]
@@ -1248,18 +1213,16 @@ struct SimpleVertex {
 glium::implement_vertex!(SimpleVertex, position, tex_coords);
 
 /// Generate vertices for a single sixel image
-fn image_vertices(gl_x: f32, gl_y: f32, gl_w: f32, gl_h: f32) -> [SimpleVertex; 6] {
-    let gl_ps = [
-        [gl_x, gl_y],
-        [gl_x, gl_y - gl_h],
-        [gl_x + gl_w, gl_y - gl_h],
-        [gl_x + gl_w, gl_y],
-    ];
-    let tex_ps = [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]];
+fn image_vertices(gl_rect: GlRect) -> [SimpleVertex; 6] {
+    let GlRect { x, y, w, h } = gl_rect;
+
+    // top-left, bottom-left, bottom-right, top-right
+    let gl_ps = [[x, y], [x, y - h], [x + w, y - h], [x + w, y]];
+    let tx_ps = [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]];
 
     let v = |idx| SimpleVertex {
         position: gl_ps[idx],
-        tex_coords: tex_ps[idx],
+        tex_coords: tx_ps[idx],
     };
 
     [v(0), v(1), v(2), v(2), v(3), v(0)]
