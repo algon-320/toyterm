@@ -25,8 +25,12 @@ impl Multiplexer {
         }
     }
 
-    pub fn add(&mut self, window: TerminalWindow) {
-        self.wins.push(Some(window));
+    pub fn allocate_new_window(&mut self) -> usize {
+        log::info!("new terminal window added");
+        let new = TerminalWindow::new(self.display.clone());
+        let num = self.wins.len();
+        self.wins.push(Some(new));
+        num
     }
 
     pub fn on_event(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
@@ -84,10 +88,7 @@ impl Multiplexer {
 
                 // Create a new window
                 WindowEvent::ReceivedCharacter('c') if self.consume => {
-                    log::info!("new terminal window");
-                    let new_term = TerminalWindow::new(self.display.clone());
-                    self.add(new_term);
-                    self.select = self.wins.len() - 1;
+                    self.select = self.allocate_new_window();
                     self.consume = false;
                     return;
                 }

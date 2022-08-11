@@ -3,12 +3,14 @@ mod clipboard;
 mod config;
 mod control_function;
 mod font;
-mod multiplexer;
 mod pipe_channel;
 mod sixel;
 mod terminal;
 mod utils;
 mod window;
+
+#[cfg(feature = "multiplex")]
+mod multiplexer;
 
 lazy_static::lazy_static! {
     pub static ref TOYTERM_CONFIG: crate::config::Config = crate::config::build();
@@ -44,22 +46,24 @@ fn main() {
     let ctx_builder = ContextBuilder::new().with_vsync(true).with_srgb(true);
     let display = Display::new(win_builder, ctx_builder, &event_loop).expect("display new");
 
-    if cfg!(feature = "multiplex") {
-        let mut mux = multiplexer::Multiplexer::new(display.clone());
-
-        let term = window::TerminalWindow::new(display);
-        mux.add(term);
-
-        event_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Poll;
-            mux.on_event(&event, control_flow);
-        });
-    } else {
+    #[cfg(not(feature = "multiplex"))]
+    {
         let mut term = window::TerminalWindow::new(display);
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;
             term.on_event(&event, control_flow);
+        });
+    }
+
+    #[cfg(feature = "multiplex")]
+    {
+        let mut mux = multiplexer::Multiplexer::new(display);
+        mux.allocate_new_window();
+
+        event_loop.run(move |event, _, control_flow| {
+            *control_flow = ControlFlow::Poll;
+            mux.on_event(&event, control_flow);
         });
     }
 }
