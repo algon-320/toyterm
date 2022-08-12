@@ -18,7 +18,7 @@ use crate::terminal::{
 pub struct Contents {
     pub lines: Vec<Line>,
     pub images: Vec<PositionedImage>,
-    pub cursor: Option<(usize, usize, CursorStyle)>,
+    pub cursor: Option<(usize, usize, CursorStyle, bool)>,
     pub selection_range: Option<(usize, usize)>,
 }
 
@@ -218,13 +218,12 @@ impl TerminalView {
                 let (fg, bg) = {
                     let is_inversed = cell.attr.inversed;
 
-                    let on_cursor = if let Some((cursor_row, cursor_col, cursor_style)) =
-                        self.contents.cursor
-                    {
-                        cursor_style == CursorStyle::Block && i == cursor_row && j == cursor_col
-                    } else {
-                        false
-                    };
+                    let on_cursor =
+                        if let Some((row, col, CursorStyle::Block, true)) = self.contents.cursor {
+                            i == row && j == col
+                        } else {
+                            false
+                        };
 
                     let is_selected = match self.contents.selection_range {
                         Some((left, right)) => {
@@ -326,10 +325,10 @@ impl TerminalView {
             baseline += cell_size.h;
         }
 
-        if let Some((cursor_row, cursor_col, CursorStyle::Bar)) = self.contents.cursor {
+        if let Some((row, col, CursorStyle::Bar, true)) = self.contents.cursor {
             let rect = PixelRect {
-                x: ((cursor_col as u32) * cell_size.w) as i32,
-                y: ((cursor_row as u32) * cell_size.h) as i32,
+                x: ((col as u32) * cell_size.w) as i32,
+                y: ((row as u32) * cell_size.h) as i32,
                 w: 4,
                 h: cell_size.h,
             };
@@ -420,6 +419,7 @@ pub struct TerminalWindow {
     mode: Mode,
     history_head: isize,
     last_history_head: isize,
+    focused: bool,
     modifiers: ModifiersState,
     mouse: MouseState,
 }
@@ -473,6 +473,7 @@ impl TerminalWindow {
             mode: Mode::default(),
             history_head: 0,
             last_history_head: 0,
+            focused: true,
             modifiers: ModifiersState::empty(),
             mouse: MouseState {
                 wheel_delta_x: 0.0,
@@ -486,7 +487,8 @@ impl TerminalWindow {
         }
     }
 
-    pub fn refresh_cursor_icon(&mut self) {
+    // Change cursor icon according to the current mouse_track mode
+    fn refresh_cursor_icon(&mut self) {
         let icon = if self.mode.mouse_track {
             glutin::window::CursorIcon::Arrow
         } else {
@@ -554,15 +556,15 @@ impl TerminalWindow {
                     .collect();
 
                 if self.history_head >= 0 && buf.mode.cursor_visible {
-                    let (cursor_row, cursor_col) = buf.cursor;
-                    contents.cursor = Some((cursor_row, cursor_col, buf.cursor_style));
+                    let (row, col) = buf.cursor;
+                    contents.cursor = Some((row, col, buf.cursor_style, self.focused));
 
                     self.display
                         .gl_window()
                         .window()
                         .set_ime_position(PhysicalPosition {
-                            x: cursor_col as u32 * cell_size.w,
-                            y: (cursor_row + 1) as u32 * cell_size.h,
+                            x: col as u32 * cell_size.w,
+                            y: (row + 1) as u32 * cell_size.h,
                         });
                 } else {
                     contents.cursor = None;
@@ -707,6 +709,20 @@ impl TerminalWindow {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => {
                     *control_flow = ControlFlow::Exit;
+                }
+
+                &WindowEvent::Focused(gain) => {
+                    self.focused = gain;
+
+                    // Update cursor
+                    if let Some((_, _, _, focused)) = self.view.contents.cursor.as_mut() {
+                        *focused = self.focused;
+                        self.view.updated = true;
+                    }
+
+                    if gain {
+                        self.refresh_cursor_icon();
+                    }
                 }
 
                 &WindowEvent::Resized(new_size) => {

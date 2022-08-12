@@ -261,13 +261,6 @@ impl Layout {
         }
     }
 
-    fn focused_window_mut(&mut self) -> &mut TerminalWindow {
-        match self {
-            Self::Single(win) => win,
-            Self::Binary(layout) => layout.focused_mut().focused_window_mut(),
-        }
-    }
-
     fn detach(&mut self) -> Box<Layout> {
         match self {
             Self::Single(_) => panic!(),
@@ -335,7 +328,14 @@ impl Layout {
         }
     }
 
-    pub fn focus_change(&mut self, focus: FocusDirection) -> bool {
+    fn focused_window_mut(&mut self) -> &mut TerminalWindow {
+        match self {
+            Self::Single(win) => win,
+            Self::Binary(layout) => layout.focused_mut().focused_window_mut(),
+        }
+    }
+
+    fn focus_change(&mut self, focus: FocusDirection) -> bool {
         match self {
             Self::Single(_) => false,
             Self::Binary(layout) => {
@@ -361,7 +361,7 @@ impl Layout {
         }
     }
 
-    pub fn focus_change_mouse(&mut self, p: CursorPosition) {
+    fn focus_change_mouse(&mut self, p: CursorPosition) {
         match self {
             Self::Single(_) => {}
             Self::Binary(layout) => {
@@ -502,6 +502,32 @@ impl Multiplexer {
         self.wins[self.select].as_mut().unwrap()
     }
 
+    fn notify_focus_gain(&mut self) {
+        let window_id = self.display.gl_window().window().id();
+        let event = Event::WindowEvent {
+            window_id,
+            event: WindowEvent::Focused(true),
+        };
+        let mut cf = ControlFlow::default();
+        self.current()
+            .focused_window_mut()
+            .on_event(&event, &mut cf);
+        // FIXME: check cf
+    }
+
+    fn notify_focus_lost(&mut self) {
+        let window_id = self.display.gl_window().window().id();
+        let event = Event::WindowEvent {
+            window_id,
+            event: WindowEvent::Focused(false),
+        };
+        let mut cf = ControlFlow::default();
+        self.current()
+            .focused_window_mut()
+            .on_event(&event, &mut cf);
+        // FIXME: check cf
+    }
+
     pub fn on_event(&mut self, event: &Event, control_flow: &mut ControlFlow) {
         if self.wins.is_empty() {
             *control_flow = ControlFlow::Exit;
@@ -572,8 +598,9 @@ impl Multiplexer {
                     let mut p = self.mouse_cursor_pos;
                     p.y -= self.status_bar_height() as f64;
 
+                    self.notify_focus_lost();
                     self.current().focus_change_mouse(p);
-                    self.current().focused_window_mut().refresh_cursor_icon();
+                    self.notify_focus_gain();
                 }
 
                 WindowEvent::ReceivedCharacter(PREFIX_KEY) if !self.consume => {
@@ -604,9 +631,10 @@ impl Multiplexer {
                 // Next
                 WindowEvent::ReceivedCharacter('n') if self.consume => {
                     log::debug!("next window");
+                    self.notify_focus_lost();
                     self.select += 1;
                     self.select %= self.wins.len();
-                    self.current().focused_window_mut().refresh_cursor_icon();
+                    self.notify_focus_gain();
                     self.update_status_bar();
 
                     self.consume = false;
@@ -615,9 +643,10 @@ impl Multiplexer {
                 // Prev
                 WindowEvent::ReceivedCharacter('p') if self.consume => {
                     log::debug!("prev window");
+                    self.notify_focus_lost();
                     self.select = self.wins.len() + self.select - 1;
                     self.select %= self.wins.len();
-                    self.current().focused_window_mut().refresh_cursor_icon();
+                    self.notify_focus_gain();
                     self.update_status_bar();
 
                     self.consume = false;
@@ -637,6 +666,8 @@ impl Multiplexer {
                         }
                         _ => unreachable!(),
                     };
+
+                    self.notify_focus_lost();
 
                     if self.current().is_single() {
                         let old_win = match self.wins[self.select].take() {
@@ -663,6 +694,8 @@ impl Multiplexer {
                         self.current().attach(Box::new(layout));
                     }
 
+                    self.notify_focus_gain();
+
                     self.consume = false;
                     return;
                 }
@@ -679,20 +712,24 @@ impl Multiplexer {
                     if let Some(key) = input.virtual_keycode {
                         match key {
                             VirtualKeyCode::Up => {
+                                self.notify_focus_lost();
                                 self.current().focus_change(FocusDirection::Up);
-                                self.current().focused_window_mut().refresh_cursor_icon();
+                                self.notify_focus_gain();
                             }
                             VirtualKeyCode::Down => {
+                                self.notify_focus_lost();
                                 self.current().focus_change(FocusDirection::Down);
-                                self.current().focused_window_mut().refresh_cursor_icon();
+                                self.notify_focus_gain();
                             }
                             VirtualKeyCode::Left => {
+                                self.notify_focus_lost();
                                 self.current().focus_change(FocusDirection::Left);
-                                self.current().focused_window_mut().refresh_cursor_icon();
+                                self.notify_focus_gain();
                             }
                             VirtualKeyCode::Right => {
+                                self.notify_focus_lost();
                                 self.current().focus_change(FocusDirection::Right);
-                                self.current().focused_window_mut().refresh_cursor_icon();
+                                self.notify_focus_gain();
                             }
                             _ => {}
                         }
