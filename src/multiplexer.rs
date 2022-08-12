@@ -30,6 +30,7 @@ struct BinLayout {
     y: Option<Box<Layout>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Split {
     Horizontal,
     Vertical,
@@ -338,16 +339,14 @@ impl Layout {
         match self {
             Self::Single(_) => false,
             Self::Binary(layout) => {
-                let changeable = if layout.focus_x {
-                    match layout.split {
-                        Split::Vertical => focus == FocusDirection::Down,
-                        Split::Horizontal => focus == FocusDirection::Right,
-                    }
-                } else {
-                    match layout.split {
-                        Split::Vertical => focus == FocusDirection::Up,
-                        Split::Horizontal => focus == FocusDirection::Left,
-                    }
+                let split = layout.split;
+                let (x_focused, y_focused) = (layout.focus_x, !layout.focus_x);
+
+                let changeable = match focus {
+                    FocusDirection::Down => split == Split::Vertical && x_focused,
+                    FocusDirection::Up => split == Split::Vertical && y_focused,
+                    FocusDirection::Right => split == Split::Horizontal && x_focused,
+                    FocusDirection::Left => split == Split::Horizontal && y_focused,
                 };
 
                 if changeable {
@@ -391,7 +390,7 @@ impl Layout {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum FocusDirection {
     Up,
     Down,
