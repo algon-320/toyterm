@@ -653,12 +653,16 @@ impl TerminalWindow {
         self.view.draw(surface);
     }
 
+    pub fn viewport(&self) -> glium::Rect {
+        self.view.viewport()
+    }
+
     #[allow(unused)]
     pub fn change_viewport(&mut self, new_viewport: glium::Rect) {
         self.view.change_viewport(new_viewport);
     }
 
-    fn resize_window(&mut self, new_size: PhysicalSize<u32>) {
+    pub fn resize_window(&mut self, new_size: PhysicalSize<u32>) {
         log::debug!(
             "window resized: {}x{} (px)",
             new_size.width,
