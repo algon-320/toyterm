@@ -260,6 +260,13 @@ impl Layout {
         }
     }
 
+    fn focused_window_mut(&mut self) -> &mut TerminalWindow {
+        match self {
+            Self::Single(win) => win,
+            Self::Binary(layout) => layout.focused_mut().focused_window_mut(),
+        }
+    }
+
     fn detach(&mut self) -> Box<Layout> {
         match self {
             Self::Single(_) => panic!(),
@@ -560,6 +567,7 @@ impl Multiplexer {
                     p.y -= self.status_bar_height() as f64;
 
                     self.current().focus_change_mouse(p);
+                    self.current().focused_window_mut().refresh_cursor_icon();
                 }
 
                 WindowEvent::ReceivedCharacter(PREFIX_KEY) if !self.consume => {
@@ -590,6 +598,8 @@ impl Multiplexer {
                     log::debug!("next window");
                     self.select += 1;
                     self.select %= self.wins.len();
+                    self.current().focused_window_mut().refresh_cursor_icon();
+
                     self.consume = false;
                     return;
                 }
@@ -598,6 +608,8 @@ impl Multiplexer {
                     log::debug!("prev window");
                     self.select = self.wins.len() + self.select - 1;
                     self.select %= self.wins.len();
+                    self.current().focused_window_mut().refresh_cursor_icon();
+
                     self.consume = false;
                     return;
                 }
@@ -658,15 +670,19 @@ impl Multiplexer {
                         match key {
                             VirtualKeyCode::Up => {
                                 self.current().focus_change(FocusDirection::Up);
+                                self.current().focused_window_mut().refresh_cursor_icon();
                             }
                             VirtualKeyCode::Down => {
                                 self.current().focus_change(FocusDirection::Down);
+                                self.current().focused_window_mut().refresh_cursor_icon();
                             }
                             VirtualKeyCode::Left => {
                                 self.current().focus_change(FocusDirection::Left);
+                                self.current().focused_window_mut().refresh_cursor_icon();
                             }
                             VirtualKeyCode::Right => {
                                 self.current().focus_change(FocusDirection::Right);
+                                self.current().focused_window_mut().refresh_cursor_icon();
                             }
                             _ => {}
                         }
@@ -679,7 +695,10 @@ impl Multiplexer {
                             | VirtualKeyCode::LAlt
                             | VirtualKeyCode::RAlt => {}
 
-                            VirtualKeyCode::C | VirtualKeyCode::N | VirtualKeyCode::P => {
+                            VirtualKeyCode::A
+                            | VirtualKeyCode::C
+                            | VirtualKeyCode::N
+                            | VirtualKeyCode::P => {
                                 return;
                             }
 

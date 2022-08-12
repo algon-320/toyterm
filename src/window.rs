@@ -486,11 +486,21 @@ impl TerminalWindow {
         }
     }
 
+    pub fn refresh_cursor_icon(&mut self) {
+        let icon = if self.mode.mouse_track {
+            glutin::window::CursorIcon::Arrow
+        } else {
+            glutin::window::CursorIcon::Text
+        };
+        self.display.gl_window().window().set_cursor_icon(icon);
+    }
+
     // Returns true if the PTY is closed, false otherwise
     fn check_update(&mut self) -> bool {
         let cell_size = self.view.cell_size;
 
         let contents_updated: bool;
+        let mouse_track_mode_changed: bool;
         let terminal_size: TerminalSize;
         {
             // hold the lock while copying buffer states
@@ -500,14 +510,7 @@ impl TerminalWindow {
                 return true;
             }
 
-            // Change cursor icon of the window
-            if self.mode.mouse_track != buf.mode.mouse_track {
-                let ibeam = glutin::window::CursorIcon::Text;
-                let arrow = glutin::window::CursorIcon::Arrow;
-                let icon = if buf.mode.mouse_track { arrow } else { ibeam };
-                self.display.gl_window().window().set_cursor_icon(icon);
-            }
-
+            mouse_track_mode_changed = self.mode.mouse_track != buf.mode.mouse_track;
             self.mode = buf.mode;
 
             if self.history_head < -(buf.history_size as isize) {
@@ -569,6 +572,10 @@ impl TerminalWindow {
             }
 
             buf.updated = false;
+        }
+
+        if mouse_track_mode_changed {
+            self.refresh_cursor_icon();
         }
 
         if let Some((sx, sy)) = self.mouse.pressed_pos {
