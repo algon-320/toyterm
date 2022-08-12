@@ -121,7 +121,7 @@ impl TerminalView {
     }
 
     #[allow(unused)]
-    pub fn change_viewport(&mut self, new_viewport: glium::Rect) {
+    pub fn set_viewport(&mut self, new_viewport: glium::Rect) {
         log::debug!("viewport changed: {:?}", new_viewport);
         self.draw_params.viewport = Some(new_viewport);
         self.updated = true;
@@ -653,13 +653,14 @@ impl TerminalWindow {
         self.view.draw(surface);
     }
 
+    #[allow(unused)]
     pub fn viewport(&self) -> glium::Rect {
         self.view.viewport()
     }
 
     #[allow(unused)]
-    pub fn change_viewport(&mut self, new_viewport: glium::Rect) {
-        self.view.change_viewport(new_viewport);
+    pub fn set_viewport(&mut self, new_viewport: glium::Rect) {
+        self.view.set_viewport(new_viewport);
     }
 
     pub fn resize_window(&mut self, new_size: PhysicalSize<u32>) {
@@ -673,7 +674,7 @@ impl TerminalWindow {
         let mut viewport = self.view.viewport();
         viewport.width = new_size.width;
         viewport.height = new_size.height;
-        self.view.change_viewport(viewport);
+        self.view.set_viewport(viewport);
 
         self.resize_buffer();
     }

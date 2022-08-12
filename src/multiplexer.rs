@@ -190,7 +190,7 @@ impl Layout {
             x: Some(x),
             y: Some(y),
         });
-        layout.change_viewport(viewport);
+        layout.set_viewport(viewport);
         layout
     }
 
@@ -215,10 +215,10 @@ impl Layout {
         }
     }
 
-    fn change_viewport(&mut self, viewport: Viewport) {
+    fn set_viewport(&mut self, viewport: Viewport) {
         match self {
             Self::Single(win) => {
-                win.change_viewport(viewport);
+                win.set_viewport(viewport);
                 win.resize_window(PhysicalSize {
                     width: viewport.width,
                     height: viewport.height,
@@ -227,8 +227,8 @@ impl Layout {
             Self::Binary(layout) => {
                 layout.viewport = viewport;
                 let (vp_x, vp_y) = layout.split_viewport();
-                layout.x_mut().change_viewport(vp_x);
-                layout.y_mut().change_viewport(vp_y);
+                layout.x_mut().set_viewport(vp_x);
+                layout.y_mut().set_viewport(vp_y);
             }
         }
     }
@@ -439,13 +439,13 @@ impl Multiplexer {
 
     // Recalculate viewport recursively for each window/pane
     fn refresh_layout(&mut self) {
-        self.status_view.change_viewport(self.viewport);
+        self.status_view.set_viewport(self.viewport);
 
         let mut window_viewport = self.viewport;
         window_viewport.height -= self.status_bar_height();
 
         for win in self.wins.iter_mut().flatten() {
-            win.change_viewport(window_viewport);
+            win.set_viewport(window_viewport);
         }
     }
 
