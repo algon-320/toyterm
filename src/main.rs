@@ -17,7 +17,7 @@ lazy_static::lazy_static! {
 }
 
 fn main() {
-    // Force to build the global config
+    // Make sure that configuration errors are detected earlier
     lazy_static::initialize(&TOYTERM_CONFIG);
 
     // Setup env_logger
@@ -27,47 +27,29 @@ fn main() {
         .format_timestamp(None)
         .init();
 
-    use glium::{glutin, Display};
-    use glutin::{
-        dpi::PhysicalSize,
-        event_loop::{ControlFlow, EventLoop},
-        window::WindowBuilder,
-        ContextBuilder,
+    let event_loop = glium::glutin::event_loop::EventLoop::new();
+
+    let title = "toyterm";
+    let display = {
+        use glium::glutin::{window::WindowBuilder, ContextBuilder};
+        let win_builder = WindowBuilder::new().with_title(title).with_resizable(true);
+        let ctx_builder = ContextBuilder::new().with_vsync(true).with_srgb(true);
+        glium::Display::new(win_builder, ctx_builder, &event_loop).expect("display new")
     };
 
-    let event_loop = EventLoop::new();
-
-    let width = 1000;
-    let height = 500;
-    let win_builder = WindowBuilder::new()
-        .with_title("toyterm")
-        .with_inner_size(PhysicalSize::new(width, height))
-        .with_resizable(true);
-    let ctx_builder = ContextBuilder::new().with_vsync(true).with_srgb(true);
-    let display = Display::new(win_builder, ctx_builder, &event_loop).expect("display new");
-
     #[cfg(not(feature = "multiplex"))]
-    {
-        let mut term = window::TerminalWindow::new(display);
-
-        event_loop.run(move |event, _, control_flow| {
-            if let Some(event) = event.to_static() {
-                *control_flow = ControlFlow::Poll;
-                term.on_event(&event, control_flow);
-            }
-        });
-    }
+    let mut term = window::TerminalWindow::new(display);
 
     #[cfg(feature = "multiplex")]
-    {
+    let mut term = {
         let mut mux = multiplexer::Multiplexer::new(display);
         mux.allocate_new_window();
+        mux
+    };
 
-        event_loop.run(move |event, _, control_flow| {
-            if let Some(event) = event.to_static() {
-                *control_flow = ControlFlow::Poll;
-                mux.on_event(&event, control_flow);
-            }
-        });
-    }
+    event_loop.run(move |event, _, control_flow| {
+        if let Some(event) = event.to_static() {
+            term.on_event(&event, control_flow);
+        }
+    });
 }
