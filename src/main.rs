@@ -51,8 +51,10 @@ fn main() {
         let mut term = window::TerminalWindow::new(display);
 
         event_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Poll;
-            term.on_event(&event, control_flow);
+            if let Some(event) = event.to_static() {
+                *control_flow = ControlFlow::Poll;
+                term.on_event(&event, control_flow);
+            }
         });
     }
 
@@ -62,8 +64,10 @@ fn main() {
         mux.allocate_new_window();
 
         event_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Poll;
-            mux.on_event(&event, control_flow);
+            if let Some(event) = event.to_static() {
+                *control_flow = ControlFlow::Poll;
+                mux.on_event(&event, control_flow);
+            }
         });
     }
 }
