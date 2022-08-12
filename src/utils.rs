@@ -1,44 +1,13 @@
 #![allow(unused)]
 
-pub mod fd {
-    use std::fs::File;
-    use std::os::unix::io::{FromRawFd, RawFd};
+pub mod io {
+    use std::os::unix::io::{AsRawFd as _, OwnedFd};
 
-    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct OwnedFd(RawFd);
+    pub struct FdIo<'a>(pub &'a OwnedFd);
 
-    impl OwnedFd {
-        /// Safety: `fd` must not be used in other place
-        pub unsafe fn from_raw_fd(fd: RawFd) -> Self {
-            Self(fd)
-        }
-
-        pub fn as_raw(&self) -> RawFd {
-            self.0
-        }
-
-        pub fn dup(&self) -> std::io::Result<Self> {
-            let new_fd = nix::unistd::dup(self.0)?;
-            Ok(OwnedFd(new_fd))
-        }
-
-        pub fn into_file(self) -> File {
-            let raw_fd = self.0;
-            let file = unsafe { File::from_raw_fd(raw_fd) };
-            std::mem::forget(self);
-            file
-        }
-    }
-
-    impl Drop for OwnedFd {
-        fn drop(&mut self) {
-            let _ = nix::unistd::close(self.0);
-        }
-    }
-
-    impl std::io::Write for OwnedFd {
+    impl<'a> std::io::Write for FdIo<'a> {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            let nb = nix::unistd::write(self.as_raw(), bytes)?;
+            let nb = nix::unistd::write(self.0.as_raw_fd(), bytes)?;
             Ok(nb)
         }
         fn flush(&mut self) -> std::io::Result<()> {
@@ -46,22 +15,11 @@ pub mod fd {
         }
     }
 
-    impl std::io::Read for OwnedFd {
+    impl<'a> std::io::Read for FdIo<'a> {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            let nb = nix::unistd::read(self.as_raw(), buf)?;
+            let nb = nix::unistd::read(self.0.as_raw_fd(), buf)?;
             Ok(nb)
         }
-    }
-}
-
-pub mod wrapper {
-    use super::fd::OwnedFd;
-
-    pub fn pipe() -> std::io::Result<(OwnedFd, OwnedFd)> {
-        let (rfd, wfd) = nix::unistd::pipe()?;
-        let rfd = unsafe { OwnedFd::from_raw_fd(rfd) };
-        let wfd = unsafe { OwnedFd::from_raw_fd(wfd) };
-        Ok((rfd, wfd))
     }
 }
 

@@ -2,11 +2,12 @@ use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::io::Result;
 use std::ops::{Range, RangeBounds};
+use std::os::unix::io::{AsRawFd as _, FromRawFd as _, OwnedFd};
 use std::sync::{Arc, Mutex};
 
 use crate::control_function;
 use crate::pipe_channel;
-use crate::utils::fd::OwnedFd;
+use crate::utils::io::FdIo;
 use crate::utils::utf8;
 
 #[derive(Debug, Clone)]
@@ -56,7 +57,7 @@ fn set_term_window_size(pty_master: &OwnedFd, size: TerminalSize) -> Result<()> 
     };
 
     nix::ioctl_write_ptr_bad!(tiocswinsz, nix::libc::TIOCSWINSZ, nix::pty::Winsize);
-    unsafe { tiocswinsz(pty_master.as_raw(), &winsize as *const nix::pty::Winsize) }?;
+    unsafe { tiocswinsz(pty_master.as_raw_fd(), &winsize as *const nix::pty::Winsize) }?;
 
     Ok(())
 }
@@ -532,7 +533,7 @@ impl Terminal {
         let (control_res_tx, control_res_rx) = pipe_channel::channel();
 
         let engine = Engine::new(
-            pty.dup().expect("dup"),
+            pty.try_clone().expect("dup"),
             control_req_rx,
             control_res_tx,
             size,
@@ -553,7 +554,7 @@ impl Terminal {
     pub fn pty_write(&mut self, data: &[u8]) {
         log::trace!("pty_write: {:x?}", data);
         use std::io::Write as _;
-        self.pty.write_all(data).unwrap();
+        FdIo(&self.pty).write_all(data).unwrap();
     }
 
     pub fn request_resize(&mut self, buff_sz: TerminalSize, cell_sz: CellSize) {
@@ -729,7 +730,7 @@ impl Engine {
     }
 
     fn start(mut self) {
-        let pty_fd = self.pty.as_raw();
+        let pty_fd = self.pty.as_raw_fd();
         let ctl_fd = self.control_req.get_fd();
 
         let mut buf = vec![0_u8; 0x1000];
@@ -1037,14 +1038,14 @@ impl Engine {
                     5 => {
                         // ready, no malfunction detected
                         use std::io::Write as _;
-                        self.pty.write_all(b"\x1b[0\x6E").unwrap();
+                        FdIo(&self.pty).write_all(b"\x1b[0\x6E").unwrap();
                     }
                     6 => {
                         let (row, col) = self.cursor.pos();
 
                         // a report of the active position
                         use std::io::Write as _;
-                        self.pty
+                        FdIo(&self.pty)
                             .write_fmt(format_args!("\x1b[{};{}\x52", row + 1, col + 1))
                             .unwrap();
                     }

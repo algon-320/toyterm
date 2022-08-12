@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
+use std::os::unix::io::{AsRawFd as _, FromRawFd as _, OwnedFd};
 
-use crate::utils::fd::OwnedFd;
-use crate::utils::wrapper::pipe;
+use crate::utils::io::FdIo;
 
 #[derive(Debug)]
 pub struct Sender<T> {
@@ -23,8 +23,8 @@ impl<T> Sender<T> {
         let pid_bytes = pid.to_ne_bytes();
 
         use std::io::Write as _;
-        self.tx.write_all(&pid_bytes).unwrap();
-        self.tx.write_all(val_bytes).unwrap();
+        FdIo(&self.tx).write_all(&pid_bytes).unwrap();
+        FdIo(&self.tx).write_all(val_bytes).unwrap();
     }
 }
 
@@ -41,7 +41,7 @@ unsafe impl<T: Send> Send for Receiver<T> {}
 
 impl<T> Receiver<T> {
     pub fn get_fd(&self) -> std::os::unix::io::RawFd {
-        self.rx.as_raw()
+        self.rx.as_raw_fd()
     }
 
     pub fn recv(&mut self) -> T {
@@ -51,8 +51,8 @@ impl<T> Receiver<T> {
         let mut pid_buf = [0_u8; std::mem::size_of::<u32>()];
 
         use std::io::Read as _;
-        self.rx.read_exact(&mut pid_buf).unwrap();
-        self.rx.read_exact(&mut self.buf[..size]).unwrap();
+        FdIo(&self.rx).read_exact(&mut pid_buf).unwrap();
+        FdIo(&self.rx).read_exact(&mut self.buf[..size]).unwrap();
 
         let sender_pid = u32::from_ne_bytes(pid_buf);
         if sender_pid != std::process::id() {
@@ -74,7 +74,9 @@ impl<T> Receiver<T> {
 }
 
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
-    let (rx, tx) = pipe().expect("pipe");
+    let (rx, tx) = nix::unistd::pipe().expect("pipe");
+    let rx = unsafe { OwnedFd::from_raw_fd(rx) };
+    let tx = unsafe { OwnedFd::from_raw_fd(tx) };
 
     let sender = Sender {
         tx,
