@@ -781,6 +781,8 @@ impl Multiplexer {
         self.current().on_event(event, &mut cf);
 
         if cf == ControlFlow::Exit {
+            self.notify_focus_lost();
+
             // remove selected window
             if self.current().is_single() {
                 self.wins.remove(self.select);
@@ -799,6 +801,7 @@ impl Multiplexer {
                 }
             }
 
+            self.notify_focus_gain();
             self.refresh_layout();
         }
     }
