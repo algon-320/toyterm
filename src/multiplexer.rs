@@ -422,7 +422,7 @@ impl Multiplexer {
 
         let status_view = TerminalView::with_viewport(display.clone(), viewport);
 
-        Multiplexer {
+        let mut mux = Multiplexer {
             display,
             viewport,
             select: 0,
@@ -430,7 +430,12 @@ impl Multiplexer {
             consume: false,
             status_view,
             mouse_cursor_pos: CursorPosition::default(),
-        }
+        };
+
+        mux.select = mux.allocate_new_window();
+        mux.update_status_bar();
+
+        mux
     }
 
     pub fn allocate_new_window(&mut self) -> usize {
@@ -440,8 +445,10 @@ impl Multiplexer {
         log::info!("new terminal window added");
         let new = TerminalWindow::with_viewport(self.display.clone(), window_viewport);
 
+        let num = self.wins.len();
         self.wins.push(Some(Layout::new_single(Box::new(new))));
-        self.wins.len() - 1
+
+        num
     }
 
     // Recalculate viewport recursively for each window/pane
@@ -589,6 +596,8 @@ impl Multiplexer {
                 WindowEvent::ReceivedCharacter('c') if self.consume => {
                     log::debug!("create a new window");
                     self.select = self.allocate_new_window();
+                    self.update_status_bar();
+
                     self.consume = false;
                     return;
                 }
@@ -599,6 +608,7 @@ impl Multiplexer {
                     self.select += 1;
                     self.select %= self.wins.len();
                     self.current().focused_window_mut().refresh_cursor_icon();
+                    self.update_status_bar();
 
                     self.consume = false;
                     return;
@@ -609,6 +619,7 @@ impl Multiplexer {
                     self.select = self.wins.len() + self.select - 1;
                     self.select %= self.wins.len();
                     self.current().focused_window_mut().refresh_cursor_icon();
+                    self.update_status_bar();
 
                     self.consume = false;
                     return;
@@ -723,7 +734,6 @@ impl Multiplexer {
             }
 
             Event::MainEventsCleared => {
-                self.update_status_bar();
                 self.display.gl_window().window().request_redraw();
             }
 

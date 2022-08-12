@@ -41,11 +41,7 @@ fn main() {
     let mut term = window::TerminalWindow::new(display);
 
     #[cfg(feature = "multiplex")]
-    let mut term = {
-        let mut mux = multiplexer::Multiplexer::new(display);
-        mux.allocate_new_window();
-        mux
-    };
+    let mut term = multiplexer::Multiplexer::new(display);
 
     event_loop.run(move |event, _, control_flow| {
         if let Some(event) = event.to_static() {
