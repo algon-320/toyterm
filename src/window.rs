@@ -67,8 +67,8 @@ impl TerminalView {
         let program_cell = {
             use glium::program::{Program, ProgramCreationInput};
             let input = ProgramCreationInput::SourceCode {
-                vertex_shader: include_str!("cell.vert"),
-                fragment_shader: include_str!("cell.frag"),
+                vertex_shader: include_str!("shaders/cell.vert"),
+                fragment_shader: include_str!("shaders/cell.frag"),
                 geometry_shader: None,
                 tessellation_control_shader: None,
                 tessellation_evaluation_shader: None,
@@ -82,8 +82,8 @@ impl TerminalView {
         let program_img = {
             use glium::program::{Program, ProgramCreationInput};
             let input = ProgramCreationInput::SourceCode {
-                vertex_shader: include_str!("image.vert"),
-                fragment_shader: include_str!("image.frag"),
+                vertex_shader: include_str!("shaders/image.vert"),
+                fragment_shader: include_str!("shaders/image.frag"),
                 geometry_shader: None,
                 tessellation_control_shader: None,
                 tessellation_evaluation_shader: None,
