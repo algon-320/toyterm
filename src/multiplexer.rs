@@ -791,6 +791,8 @@ impl Multiplexer {
                 if self.wins.is_empty() {
                     *control_flow = ControlFlow::Exit;
                 }
+
+                self.update_status_bar();
             } else {
                 if let Some(new_layout) = self.current().close() {
                     self.wins[self.select] = Some(*new_layout);
