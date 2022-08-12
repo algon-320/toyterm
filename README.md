@@ -72,6 +72,9 @@ If feature `multiplex` is enalbed:
 |Ctrl + `a`, `c` |Create a new window|
 |Ctrl + `a`, `n` |Switch to next window|
 |Ctrl + `a`, `p` |Switch to prev window|
+|Ctrl + `a`, `%` |Split current pane vertically|
+|Ctrl + `a`, `"` |Split current pane horizontally|
+|Ctrl + `a`, Up/Down/Left/Right |Focus up/down/left/right pane|
 |Ctrl + `a`, Ctrl + `a` |Send `\x01` (Ctrl + `a`)|
 
 ## Control Functions
