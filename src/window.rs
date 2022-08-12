@@ -1098,7 +1098,9 @@ fn build_font_set() -> FontSet {
 
         match std::fs::read(path) {
             Ok(data) => {
-                let font = Font::new(&data);
+                // TODO: add config
+                let face_idx = 0;
+                let font = Font::new(&data, face_idx, config.font_size);
                 fonts.add(style, font);
             }
 
@@ -1110,13 +1112,25 @@ fn build_font_set() -> FontSet {
 
     // Add embedded fonts
     {
-        let regular_font = Font::new(include_bytes!("../fonts/Mplus1Code-Regular.ttf"));
+        let regular_font = Font::new(
+            include_bytes!("../fonts/Mplus1Code-Regular.ttf"),
+            0,
+            config.font_size,
+        );
         fonts.add(FontStyle::Regular, regular_font);
 
-        let bold_font = Font::new(include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"));
+        let bold_font = Font::new(
+            include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"),
+            0,
+            config.font_size,
+        );
         fonts.add(FontStyle::Bold, bold_font);
 
-        let faint_font = Font::new(include_bytes!("../fonts/Mplus1Code-Thin.ttf"));
+        let faint_font = Font::new(
+            include_bytes!("../fonts/Mplus1Code-Thin.ttf"),
+            0,
+            config.font_size,
+        );
         fonts.add(FontStyle::Faint, faint_font);
     }
 

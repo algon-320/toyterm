@@ -13,11 +13,9 @@ pub struct Font {
 }
 
 impl Font {
-    pub fn new(ttf_data: &[u8]) -> Self {
-        let font_size = crate::TOYTERM_CONFIG.font_size;
-
+    pub fn new(ttf_data: &[u8], index: isize, font_size: u32) -> Self {
         let freetype = freetype::Library::init().expect("FreeType init");
-        let face = freetype.new_memory_face(ttf_data.to_vec(), 0).unwrap();
+        let face = freetype.new_memory_face(ttf_data.to_vec(), index).unwrap();
         face.set_pixel_sizes(0, font_size).unwrap();
 
         Self {
@@ -27,39 +25,34 @@ impl Font {
         }
     }
 
-    pub fn metrics(&self, character: char) -> Option<GlyphMetrics> {
-        let idx = self.face.get_char_index(character as usize);
-        if idx == 0 {
-            None
-        } else {
+    pub fn metrics(&self, ch: char) -> Option<GlyphMetrics> {
+        if let idx @ 1.. = self.face.get_char_index(ch as usize) {
             self.face.load_glyph(idx, LoadFlag::DEFAULT).expect("load");
             Some(self.face.glyph().metrics())
+        } else {
+            None
         }
     }
 
-    pub fn render(&self, character: char) -> Option<(RawImage2d<u8>, GlyphMetrics)> {
-        let idx = self.face.get_char_index(character as usize);
-        if idx == 0 {
-            None
-        } else {
-            self.face
-                .load_glyph(idx, LoadFlag::RENDER | LoadFlag::TARGET_LIGHT)
-                .expect("load");
+    pub fn render(&self, ch: char) -> Option<(RawImage2d<u8>, GlyphMetrics)> {
+        if let idx @ 1.. = self.face.get_char_index(ch as usize) {
+            let flags = LoadFlag::RENDER | LoadFlag::TARGET_LIGHT;
+            self.face.load_glyph(idx, flags).expect("render");
             let glyph = self.face.glyph();
 
             let bitmap = glyph.bitmap();
             let metrics = glyph.metrics();
 
-            let raw_image = {
-                RawImage2d {
-                    data: bitmap.buffer().to_vec().into(),
-                    width: bitmap.width() as u32,
-                    height: bitmap.rows() as u32,
-                    format: glium::texture::ClientFormat::U8,
-                }
+            let raw_image = RawImage2d {
+                data: bitmap.buffer().to_vec().into(),
+                width: bitmap.width() as u32,
+                height: bitmap.rows() as u32,
+                format: glium::texture::ClientFormat::U8,
             };
 
             Some((raw_image, metrics))
+        } else {
+            None
         }
     }
 
@@ -96,26 +89,16 @@ impl FontSet {
     }
 
     pub fn add(&mut self, style: FontStyle, font: Font) {
-        let fallbacks = self.fonts.entry(style).or_insert_with(Vec::new);
-        fallbacks.push(font);
+        let list = self.fonts.entry(style).or_insert_with(Vec::new);
+        list.push(font);
     }
 
-    pub fn metrics(&self, character: char, style: FontStyle) -> Option<GlyphMetrics> {
-        self.fonts
-            .get(&style)?
-            .iter()
-            .find_map(|f| f.metrics(character))
+    pub fn metrics(&self, ch: char, style: FontStyle) -> Option<GlyphMetrics> {
+        self.fonts.get(&style)?.iter().find_map(|f| f.metrics(ch))
     }
 
-    pub fn render(
-        &self,
-        character: char,
-        style: FontStyle,
-    ) -> Option<(RawImage2d<u8>, GlyphMetrics)> {
-        self.fonts
-            .get(&style)?
-            .iter()
-            .find_map(|f| f.render(character))
+    pub fn render(&self, ch: char, style: FontStyle) -> Option<(RawImage2d<u8>, GlyphMetrics)> {
+        self.fonts.get(&style)?.iter().find_map(|f| f.render(ch))
     }
 
     pub fn increase_size(&mut self, inc: i32) {
