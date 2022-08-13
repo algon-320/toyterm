@@ -744,6 +744,20 @@ impl TerminalWindow {
         self.terminal.request_resize(buff_size, self.view.cell_size);
     }
 
+    pub fn focus_changed(&mut self, gain: bool) {
+        self.focused = gain;
+
+        // Update cursor
+        if let Some((_, _, _, focused)) = self.view.contents.cursor.as_mut() {
+            *focused = self.focused;
+            self.view.updated = true;
+        }
+
+        if gain {
+            self.refresh_cursor_icon();
+        }
+    }
+
     pub fn on_event(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
         match event {
             Event::WindowEvent { event, .. } => match event {
@@ -751,19 +765,7 @@ impl TerminalWindow {
                     *control_flow = ControlFlow::Exit;
                 }
 
-                &WindowEvent::Focused(gain) => {
-                    self.focused = gain;
-
-                    // Update cursor
-                    if let Some((_, _, _, focused)) = self.view.contents.cursor.as_mut() {
-                        *focused = self.focused;
-                        self.view.updated = true;
-                    }
-
-                    if gain {
-                        self.refresh_cursor_icon();
-                    }
-                }
+                &WindowEvent::Focused(gain) => self.focus_changed(gain),
 
                 &WindowEvent::Resized(new_size) => {
                     self.resize_window(new_size);
