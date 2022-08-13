@@ -23,6 +23,8 @@ enum Command {
     SplitVertical,
     SplitHorizontal,
     AddNewTab,
+    SetMaximze,
+    ResetMaximze,
 }
 
 enum Layout {
@@ -50,6 +52,7 @@ struct BinaryLayout {
     x: Option<Box<Layout>>,
     y: Option<Box<Layout>>,
     mouse_cursor_pos: CursorPosition,
+    maximized: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -75,6 +78,14 @@ impl BinaryLayout {
 
     fn split_viewport(&self) -> (Viewport, Viewport) {
         let viewport = self.viewport;
+
+        if self.maximized {
+            return if self.focus_x {
+                (viewport, Viewport::default())
+            } else {
+                (Viewport::default(), viewport)
+            };
+        }
 
         match self.split {
             Split::Horizontal => {
@@ -153,6 +164,14 @@ impl BinaryLayout {
     }
 
     fn split_event<'e>(&mut self, event: &'e Event) -> (Option<&'e Event>, Option<&'e Event>) {
+        if self.maximized {
+            return if self.focus_x {
+                (Some(event), None)
+            } else {
+                (None, Some(event))
+            };
+        }
+
         match event {
             Event::WindowEvent { event: wev, .. } => match wev {
                 WindowEvent::ModifiersChanged(..)
@@ -199,6 +218,16 @@ impl BinaryLayout {
                     consumed = true;
                 }
                 consumed
+            }
+            Command::SetMaximze => {
+                self.focused_mut().process_command(cmd);
+                self.maximized = true;
+                true
+            }
+            Command::ResetMaximze => {
+                self.focused_mut().process_command(cmd);
+                self.maximized = false;
+                true
             }
             _ => self.focused_mut().process_command(cmd),
         }
@@ -271,6 +300,7 @@ impl Layout {
             x: Some(x),
             y: Some(y),
             mouse_cursor_pos: CursorPosition::default(),
+            maximized: false,
         });
         layout.set_viewport(viewport);
         layout
@@ -295,8 +325,12 @@ impl Layout {
         match self {
             Self::Single(layout) => layout.get_mut().draw(surface),
             Self::Binary(layout) => {
-                layout.x_mut().draw(surface);
-                layout.y_mut().draw(surface);
+                if layout.maximized {
+                    layout.focused_mut().draw(surface);
+                } else {
+                    layout.x_mut().draw(surface);
+                    layout.y_mut().draw(surface);
+                }
             }
             Self::Tabbed(layout) => {
                 layout.focused_mut().draw(surface);
@@ -312,9 +346,13 @@ impl Layout {
             }
             Self::Binary(layout) => {
                 layout.viewport = viewport;
-                let (vp_x, vp_y) = layout.split_viewport();
-                layout.x_mut().set_viewport(vp_x);
-                layout.y_mut().set_viewport(vp_y);
+                if layout.maximized {
+                    layout.focused_mut().set_viewport(viewport);
+                } else {
+                    let (vp_x, vp_y) = layout.split_viewport();
+                    layout.x_mut().set_viewport(vp_x);
+                    layout.y_mut().set_viewport(vp_y);
+                }
             }
             Self::Tabbed(layout) => {
                 layout.viewport = viewport;
@@ -528,6 +566,10 @@ impl Multiplexer {
             log::debug!("command: {:?}", cmd);
             self.main_layout.process_command(cmd);
             self.update_status_bar();
+
+            if let Command::SetMaximze | Command::ResetMaximze = cmd {
+                self.refresh_layout();
+            }
             return;
         }
 
@@ -586,6 +628,7 @@ impl Multiplexer {
 struct Controller {
     modifiers: ModifiersState,
     consume: bool,
+    maximized: bool,
 }
 
 impl Controller {
@@ -632,6 +675,14 @@ impl Controller {
                 'p' => Some(Command::FocusPrevTab),
                 '%' => Some(Command::SplitVertical),
                 '"' => Some(Command::SplitHorizontal),
+                'z' => {
+                    self.maximized ^= true;
+                    if self.maximized {
+                        Some(Command::SetMaximze)
+                    } else {
+                        Some(Command::ResetMaximze)
+                    }
+                }
                 _ => Some(Command::Nop),
             }
         }
