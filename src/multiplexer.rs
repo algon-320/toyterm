@@ -4,7 +4,6 @@ use glutin::{
     event::{ElementState, VirtualKeyCode, WindowEvent},
     event_loop::ControlFlow,
 };
-use std::borrow::Cow;
 
 use crate::terminal::{Cell, Color, Line};
 use crate::window::{TerminalView, TerminalWindow, Viewport};
@@ -85,38 +84,28 @@ impl BinLayout {
         }
     }
 
-    fn split_event<'e>(
-        &mut self,
-        event: &'e Event,
-    ) -> (Option<Cow<'e, Event>>, Option<Cow<'e, Event>>) {
+    fn split_event<'e>(&mut self, event: &'e Event) -> (Option<&'e Event>, Option<&'e Event>) {
         match event {
             Event::WindowEvent { event: wev, .. } => match wev {
-                WindowEvent::ModifiersChanged(..) => {
-                    return (Some(Cow::Borrowed(event)), Some(Cow::Borrowed(event)));
+                WindowEvent::ModifiersChanged(..)
+                | WindowEvent::CursorMoved { .. }
+                | WindowEvent::MouseInput { .. } => {
+                    return (Some(event), Some(event));
                 }
-
-                WindowEvent::CursorMoved { .. } => {
-                    return (Some(Cow::Borrowed(event)), Some(Cow::Borrowed(event)));
-                }
-
-                WindowEvent::MouseInput { .. } => {
-                    return (Some(Cow::Borrowed(event)), Some(Cow::Borrowed(event)));
-                }
-
                 _ => {}
             },
 
             Event::MainEventsCleared => {
-                return (Some(Cow::Borrowed(event)), Some(Cow::Borrowed(event)));
+                return (Some(event), Some(event));
             }
 
             _ => {}
         }
 
         if self.focus_x {
-            (Some(Cow::Borrowed(event)), None)
+            (Some(event), None)
         } else {
-            (None, Some(Cow::Borrowed(event)))
+            (None, Some(event))
         }
     }
 }
@@ -186,7 +175,7 @@ impl Layout {
             Self::Binary(layout) => {
                 let (ev_x, ev_y) = layout.split_event(event);
 
-                if let Some(event) = &ev_x {
+                if let Some(event) = ev_x {
                     let mut cf = ControlFlow::default();
                     layout.x_mut().on_event(event, &mut cf);
                     if cf == ControlFlow::Exit {
@@ -194,7 +183,7 @@ impl Layout {
                     }
                 }
 
-                if let Some(event) = &ev_y {
+                if let Some(event) = ev_y {
                     let mut cf = ControlFlow::default();
                     layout.y_mut().on_event(event, &mut cf);
                     if cf == ControlFlow::Exit {
