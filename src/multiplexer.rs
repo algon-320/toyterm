@@ -1,22 +1,19 @@
 use glium::{glutin, Display};
 use glutin::{
-    dpi::{PhysicalPosition, PhysicalSize},
-    event::{ElementState, VirtualKeyCode, WindowEvent},
+    dpi::PhysicalPosition,
+    event::{ElementState, ModifiersState, VirtualKeyCode, WindowEvent},
     event_loop::ControlFlow,
 };
 
 use crate::terminal::{Cell, Color, Line};
 use crate::window::{TerminalView, TerminalWindow, Viewport};
 
-const PREFIX_KEY: char = '\x01'; // Ctrl + A
-const VSPLIT: char = '"';
-const HSPLIT: char = '%';
-
 type Event = glutin::event::Event<'static, ()>;
 type CursorPosition = PhysicalPosition<f64>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Command {
+    Nop,
     FocusUp,
     FocusDown,
     FocusLeft,
@@ -80,7 +77,7 @@ impl BinaryLayout {
         let viewport = self.viewport;
 
         match self.split {
-            Split::Vertical => {
+            Split::Horizontal => {
                 let u_height = (viewport.h as f64 * self.ratio).round() as u32;
                 let d_height = viewport.h - u_height;
 
@@ -94,7 +91,7 @@ impl BinaryLayout {
                 (up, down)
             }
 
-            Split::Horizontal => {
+            Split::Vertical => {
                 let l_width = (viewport.w as f64 * self.ratio).round() as u32;
                 let r_width = viewport.w - l_width;
 
@@ -187,10 +184,10 @@ impl BinaryLayout {
                 let (x_focused, y_focused) = (self.focus_x, !self.focus_x);
 
                 let changeable = match cmd {
-                    Command::FocusDown => split == Split::Vertical && x_focused,
-                    Command::FocusUp => split == Split::Vertical && y_focused,
-                    Command::FocusRight => split == Split::Horizontal && x_focused,
-                    Command::FocusLeft => split == Split::Horizontal && y_focused,
+                    Command::FocusDown => split == Split::Horizontal && x_focused,
+                    Command::FocusUp => split == Split::Horizontal && y_focused,
+                    Command::FocusRight => split == Split::Vertical && x_focused,
+                    Command::FocusLeft => split == Split::Vertical && y_focused,
                     _ => unreachable!(),
                 };
 
@@ -312,10 +309,6 @@ impl Layout {
             Self::Single(layout) => {
                 let win = layout.get_mut();
                 win.set_viewport(viewport);
-                win.resize_window(PhysicalSize {
-                    width: viewport.w,
-                    height: viewport.h,
-                });
             }
             Self::Binary(layout) => {
                 layout.viewport = viewport;
@@ -433,7 +426,7 @@ pub struct Multiplexer {
     viewport: Viewport,
     status_view: TerminalView,
     main_layout: Layout,
-    consume: bool,
+    controller: Controller,
 }
 
 impl Multiplexer {
@@ -459,7 +452,7 @@ impl Multiplexer {
             viewport,
             status_view,
             main_layout,
-            consume: false,
+            controller: Controller::default(),
         };
 
         mux.refresh_layout();
@@ -531,6 +524,13 @@ impl Multiplexer {
             return;
         }
 
+        if let Some(cmd) = self.controller.on_event(event) {
+            log::debug!("command: {:?}", cmd);
+            self.main_layout.process_command(cmd);
+            self.update_status_bar();
+            return;
+        }
+
         match &event {
             Event::WindowEvent { event: wev, .. } => match wev {
                 WindowEvent::CloseRequested => {
@@ -549,119 +549,6 @@ impl Multiplexer {
                     return;
                 }
 
-                WindowEvent::ReceivedCharacter(PREFIX_KEY) if !self.consume => {
-                    self.consume = true;
-                    return;
-                }
-
-                WindowEvent::ReceivedCharacter(PREFIX_KEY) if self.consume => {
-                    self.consume = false;
-                }
-
-                WindowEvent::ReceivedCharacter('\x1B') if self.consume => {
-                    // Esc
-                    self.consume = false;
-                    return;
-                }
-
-                // Create a new window
-                WindowEvent::ReceivedCharacter('c') if self.consume => {
-                    log::debug!("create a new window");
-                    self.main_layout.process_command(Command::AddNewTab);
-                    self.update_status_bar();
-
-                    self.consume = false;
-                    return;
-                }
-
-                // Next
-                WindowEvent::ReceivedCharacter('n') if self.consume => {
-                    log::debug!("next window");
-                    let cmd = Command::FocusNextTab;
-                    self.main_layout.process_command(cmd);
-                    self.update_status_bar();
-
-                    self.consume = false;
-                    return;
-                }
-                // Prev
-                WindowEvent::ReceivedCharacter('p') if self.consume => {
-                    log::debug!("prev window");
-                    let cmd = Command::FocusPrevTab;
-                    self.main_layout.process_command(cmd);
-                    self.update_status_bar();
-
-                    self.consume = false;
-                    return;
-                }
-
-                &WindowEvent::ReceivedCharacter(split_char @ (VSPLIT | HSPLIT)) if self.consume => {
-                    let split_cmd = match split_char {
-                        VSPLIT => {
-                            log::debug!("vertical split");
-                            Command::SplitVertical
-                        }
-                        HSPLIT => {
-                            log::debug!("horizontal split");
-                            Command::SplitHorizontal
-                        }
-                        _ => unreachable!(),
-                    };
-
-                    self.main_layout.process_command(split_cmd);
-
-                    self.consume = false;
-                    return;
-                }
-
-                // Just ignore other characters
-                WindowEvent::ReceivedCharacter(_) if self.consume => {
-                    self.consume = false;
-                    return;
-                }
-
-                WindowEvent::KeyboardInput { input, .. }
-                    if input.state == ElementState::Pressed && self.consume =>
-                {
-                    if let Some(key) = input.virtual_keycode {
-                        match key {
-                            VirtualKeyCode::Up => {
-                                self.main_layout.process_command(Command::FocusUp);
-                            }
-                            VirtualKeyCode::Down => {
-                                self.main_layout.process_command(Command::FocusDown);
-                            }
-                            VirtualKeyCode::Left => {
-                                self.main_layout.process_command(Command::FocusLeft);
-                            }
-                            VirtualKeyCode::Right => {
-                                self.main_layout.process_command(Command::FocusRight);
-                            }
-                            _ => {}
-                        }
-
-                        match key {
-                            VirtualKeyCode::LShift
-                            | VirtualKeyCode::RShift
-                            | VirtualKeyCode::LControl
-                            | VirtualKeyCode::RControl
-                            | VirtualKeyCode::LAlt
-                            | VirtualKeyCode::RAlt => {}
-
-                            VirtualKeyCode::A
-                            | VirtualKeyCode::C
-                            | VirtualKeyCode::N
-                            | VirtualKeyCode::P => {
-                                return;
-                            }
-
-                            _ => {
-                                self.consume = false;
-                                return;
-                            }
-                        }
-                    }
-                }
                 _ => {}
             },
 
@@ -691,6 +578,82 @@ impl Multiplexer {
                 self.refresh_layout();
                 self.update_status_bar();
             }
+        }
+    }
+}
+
+#[derive(Default)]
+struct Controller {
+    modifiers: ModifiersState,
+    consume: bool,
+}
+
+impl Controller {
+    fn on_event(&mut self, event: &Event) -> Option<Command> {
+        if let Event::WindowEvent { event: wev, .. } = event {
+            match wev {
+                &WindowEvent::ModifiersChanged(new_states) => {
+                    self.modifiers = new_states;
+                }
+
+                &WindowEvent::ReceivedCharacter(ch) => {
+                    return self.on_character(ch);
+                }
+
+                WindowEvent::KeyboardInput { input, .. }
+                    if input.state == ElementState::Pressed =>
+                {
+                    if let Some(key) = input.virtual_keycode {
+                        return self.on_key_press(key);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        None
+    }
+
+    fn on_character(&mut self, ch: char) -> Option<Command> {
+        if !self.consume {
+            if ch == '\x01' {
+                self.consume = true;
+                Some(Command::Nop)
+            } else {
+                None
+            }
+        } else {
+            self.consume = false;
+            match ch {
+                '\x01' => None,
+                '\x1b' => Some(Command::Nop),
+                'c' => Some(Command::AddNewTab),
+                'n' => Some(Command::FocusNextTab),
+                'p' => Some(Command::FocusPrevTab),
+                '%' => Some(Command::SplitVertical),
+                '"' => Some(Command::SplitHorizontal),
+                _ => Some(Command::Nop),
+            }
+        }
+    }
+
+    fn on_key_press(&mut self, keycode: VirtualKeyCode) -> Option<Command> {
+        use ModifiersState as Mod;
+        const EMPTY: u32 = Mod::empty().bits();
+
+        if self.consume {
+            let cmd = match (self.modifiers.bits(), keycode) {
+                (EMPTY, VirtualKeyCode::Up) => Command::FocusUp,
+                (EMPTY, VirtualKeyCode::Down) => Command::FocusDown,
+                (EMPTY, VirtualKeyCode::Left) => Command::FocusLeft,
+                (EMPTY, VirtualKeyCode::Right) => Command::FocusRight,
+                _ => return None,
+            };
+
+            self.consume = false;
+            Some(cmd)
+        } else {
+            None
         }
     }
 }
