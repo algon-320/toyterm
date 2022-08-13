@@ -18,6 +18,7 @@ type CursorPosition = PhysicalPosition<f64>;
 enum Layout {
     Single(Box<TerminalWindow>),
     Binary(BinLayout),
+    Tabbed(TabLayout),
 }
 
 struct BinLayout {
@@ -110,6 +111,18 @@ impl BinLayout {
     }
 }
 
+struct TabLayout {
+    viewport: Viewport,
+    focus: usize,
+    tabs: Vec<Option<Box<Layout>>>,
+}
+
+impl TabLayout {
+    fn focused_mut(&mut self) -> &mut Layout {
+        self.tabs[self.focus].as_mut().unwrap()
+    }
+}
+
 impl Layout {
     fn new_single(win: Box<TerminalWindow>) -> Self {
         Self::Single(win)
@@ -128,6 +141,16 @@ impl Layout {
         layout
     }
 
+    fn new_tabbed(viewport: Viewport, first_tab: Box<Layout>) -> Self {
+        let mut layout = Self::Tabbed(TabLayout {
+            viewport,
+            focus: 0,
+            tabs: vec![Some(first_tab)],
+        });
+        layout.set_viewport(viewport);
+        layout
+    }
+
     fn is_single(&self) -> bool {
         matches!(self, Layout::Single(_))
     }
@@ -139,6 +162,9 @@ impl Layout {
                 layout.x_mut().draw(surface);
                 layout.y_mut().draw(surface);
             }
+            Self::Tabbed(layout) => {
+                layout.focused_mut().draw(surface);
+            }
         }
     }
 
@@ -146,6 +172,7 @@ impl Layout {
         match self {
             Self::Single(win) => win.viewport(),
             Self::Binary(layout) => layout.viewport,
+            Self::Tabbed(layout) => layout.viewport,
         }
     }
 
@@ -163,6 +190,12 @@ impl Layout {
                 let (vp_x, vp_y) = layout.split_viewport();
                 layout.x_mut().set_viewport(vp_x);
                 layout.y_mut().set_viewport(vp_y);
+            }
+            Self::Tabbed(layout) => {
+                layout.viewport = viewport;
+                for t in layout.tabs.iter_mut().flatten() {
+                    t.set_viewport(viewport);
+                }
             }
         }
     }
@@ -191,23 +224,33 @@ impl Layout {
                     }
                 }
             }
+            Self::Tabbed(layout) => {
+                layout.focused_mut().on_event(event, control_flow);
+            }
         }
     }
 
     fn detach(&mut self) -> Box<Layout> {
         match self {
-            Self::Single(_) => panic!(),
+            Self::Single(_) => unreachable!(),
             Self::Binary(layout) => {
-                if layout.focus_x {
-                    match layout.x_mut() {
-                        Self::Single(_) => layout.x.take().unwrap(),
-                        Self::Binary(_) => layout.x_mut().detach(),
+                let focused = layout.focused_mut();
+                if focused.is_single() {
+                    if layout.focus_x {
+                        layout.x.take().unwrap()
+                    } else {
+                        layout.y.take().unwrap()
                     }
                 } else {
-                    match layout.y_mut() {
-                        Self::Single(_) => layout.y.take().unwrap(),
-                        Self::Binary(_) => layout.y_mut().detach(),
-                    }
+                    focused.detach()
+                }
+            }
+            Self::Tabbed(layout) => {
+                let focused = layout.focused_mut();
+                if focused.is_single() {
+                    layout.tabs[layout.focus].take().unwrap()
+                } else {
+                    focused.detach()
                 }
             }
         }
@@ -215,7 +258,7 @@ impl Layout {
 
     fn attach(&mut self, l: Box<Layout>) {
         match self {
-            Self::Single(_) => panic!(),
+            Self::Single(_) => unreachable!(),
             Self::Binary(layout) => {
                 if layout.focus_x {
                     match layout.x.as_mut() {
@@ -229,34 +272,55 @@ impl Layout {
                     }
                 }
             }
+            Self::Tabbed(layout) => {
+                if let Some(focused) = layout.tabs[layout.focus].as_mut() {
+                    focused.attach(l);
+                } else {
+                    layout.tabs[layout.focus] = Some(l);
+                }
+            }
         }
     }
 
     pub fn close(&mut self) -> Option<Box<Layout>> {
         match self {
-            Self::Single(_) => None,
+            Self::Single(_) => unreachable!(),
             Self::Binary(layout) => {
                 if layout.focus_x {
-                    match layout.x_mut() {
-                        Self::Single(_) => layout.y.take(),
-                        Self::Binary(_) => {
-                            if let Some(new_x) = layout.x_mut().close() {
-                                layout.x = Some(new_x);
-                            }
-                            None
+                    let x = layout.x_mut();
+                    if x.is_single() {
+                        layout.y.take()
+                    } else {
+                        if let Some(new_x) = x.close() {
+                            layout.x = Some(new_x);
                         }
+                        None
                     }
                 } else {
-                    match layout.y_mut() {
-                        Self::Single(_) => layout.x.take(),
-                        Self::Binary(_) => {
-                            if let Some(new_y) = layout.y_mut().close() {
-                                layout.y = Some(new_y);
-                            }
-                            None
+                    let y = layout.y_mut();
+                    if y.is_single() {
+                        layout.x.take()
+                    } else {
+                        if let Some(new_y) = y.close() {
+                            layout.y = Some(new_y);
                         }
+                        None
                     }
                 }
+            }
+            Self::Tabbed(layout) => {
+                let focused = layout.focused_mut();
+                if focused.is_single() {
+                    layout.tabs.remove(layout.focus);
+                    if layout.focus >= layout.tabs.len() {
+                        layout.focus = 0;
+                    }
+                } else {
+                    if let Some(new) = focused.close() {
+                        layout.tabs[layout.focus] = Some(new);
+                    }
+                }
+                None
             }
         }
     }
@@ -265,6 +329,7 @@ impl Layout {
         match self {
             Self::Single(win) => win,
             Self::Binary(layout) => layout.focused_mut().focused_window_mut(),
+            Self::Tabbed(layout) => layout.focused_mut().focused_window_mut(),
         }
     }
 
@@ -280,6 +345,7 @@ impl Layout {
                     FocusDirection::Up => split == Split::Vertical && y_focused,
                     FocusDirection::Right => split == Split::Horizontal && x_focused,
                     FocusDirection::Left => split == Split::Horizontal && y_focused,
+                    _ => false,
                 };
 
                 if changeable {
@@ -291,6 +357,19 @@ impl Layout {
                     layout.focused_mut().focus_change(focus)
                 }
             }
+            Self::Tabbed(layout) => match focus {
+                FocusDirection::TabNext => {
+                    layout.focus += 1;
+                    layout.focus %= layout.tabs.len();
+                    true
+                }
+                FocusDirection::TabPrev => {
+                    layout.focus = layout.tabs.len() + layout.focus - 1;
+                    layout.focus %= layout.tabs.len();
+                    true
+                }
+                _ => layout.focused_mut().focus_change(focus),
+            },
         }
     }
 
@@ -308,6 +387,10 @@ impl Layout {
                     layout.y_mut().focus_change_mouse(p);
                 }
             }
+            Self::Tabbed(layout) => {
+                // TODO: mouse support
+                layout.focused_mut().focus_change_mouse(p)
+            }
         }
     }
 }
@@ -318,15 +401,16 @@ enum FocusDirection {
     Down,
     Left,
     Right,
+    TabNext,
+    TabPrev,
 }
 
 pub struct Multiplexer {
     display: Display,
     viewport: Viewport,
-    select: usize,
-    wins: Vec<Option<Layout>>,
-    consume: bool,
     status_view: TerminalView,
+    main_layout: Layout,
+    consume: bool,
     mouse_cursor_pos: CursorPosition,
 }
 
@@ -343,34 +427,47 @@ impl Multiplexer {
 
         let status_view = TerminalView::with_viewport(display.clone(), viewport);
 
+        let main_layout = {
+            let mut window_viewport = viewport;
+            window_viewport.y += status_view.cell_size.h;
+            window_viewport.h -= status_view.cell_size.h;
+
+            let window = TerminalWindow::with_viewport(display.clone(), window_viewport);
+            let single = Layout::new_single(Box::new(window));
+            Layout::new_tabbed(viewport, single.into())
+        };
+
         let mut mux = Multiplexer {
             display,
             viewport,
-            select: 0,
-            wins: Vec::new(),
-            consume: false,
             status_view,
+            main_layout,
+            consume: false,
             mouse_cursor_pos: CursorPosition::default(),
         };
-
-        mux.select = mux.allocate_new_window();
         mux.update_status_bar();
-
         mux
     }
 
-    pub fn allocate_new_window(&mut self) -> usize {
+    fn tab_layout(&mut self) -> &mut TabLayout {
+        match &mut self.main_layout {
+            Layout::Tabbed(layout) => layout,
+            _ => unreachable!(),
+        }
+    }
+
+    fn allocate_new_window(&mut self) {
         let mut window_viewport = self.viewport;
         window_viewport.y += self.status_bar_height();
         window_viewport.h -= self.status_bar_height();
 
-        log::info!("new terminal window added");
-        let new = TerminalWindow::with_viewport(self.display.clone(), window_viewport);
+        log::info!("adding new terminal window");
+        let window = TerminalWindow::with_viewport(self.display.clone(), window_viewport);
+        let single = Layout::new_single(Box::new(window));
 
-        let num = self.wins.len();
-        self.wins.push(Some(Layout::new_single(Box::new(new))));
-
-        num
+        let layout = self.tab_layout();
+        layout.tabs.push(Some(Box::new(single)));
+        layout.focus = layout.tabs.len() - 1;
     }
 
     // Recalculate viewport recursively for each window/pane
@@ -381,9 +478,7 @@ impl Multiplexer {
         window_viewport.y += self.status_bar_height();
         window_viewport.h -= self.status_bar_height();
 
-        for win in self.wins.iter_mut().flatten() {
-            win.set_viewport(window_viewport);
-        }
+        self.main_layout.set_viewport(window_viewport);
     }
 
     fn status_bar_height(&self) -> u32 {
@@ -393,14 +488,18 @@ impl Multiplexer {
     fn update_status_bar(&mut self) {
         self.status_view.bg_color = Color::BrightGreen;
 
-        let line: Line = (0..self.wins.len())
+        let tab_layout = self.tab_layout();
+        let num_tabs = tab_layout.tabs.len();
+        let focus = tab_layout.focus;
+
+        let line: Line = (0..num_tabs)
             .flat_map(|i| {
                 let mut cells: Vec<Cell> = Vec::new();
 
                 let num = format!("{} ", i);
                 for ch in num.chars() {
                     let mut cell = Cell::new_ascii(ch);
-                    cell.attr.fg = if i == self.select {
+                    cell.attr.fg = if i == focus {
                         Color::Yellow
                     } else {
                         Color::BrightBlue
@@ -422,10 +521,6 @@ impl Multiplexer {
         self.status_view.updated = true;
     }
 
-    fn current(&mut self) -> &mut Layout {
-        self.wins[self.select].as_mut().unwrap()
-    }
-
     fn notify_focus_gain(&mut self) {
         let window_id = self.display.gl_window().window().id();
         let event = Event::WindowEvent {
@@ -433,7 +528,7 @@ impl Multiplexer {
             event: WindowEvent::Focused(true),
         };
         let mut cf = ControlFlow::default();
-        self.current()
+        self.main_layout
             .focused_window_mut()
             .on_event(&event, &mut cf);
         // FIXME: check cf
@@ -446,14 +541,14 @@ impl Multiplexer {
             event: WindowEvent::Focused(false),
         };
         let mut cf = ControlFlow::default();
-        self.current()
+        self.main_layout
             .focused_window_mut()
             .on_event(&event, &mut cf);
         // FIXME: check cf
     }
 
     pub fn on_event(&mut self, event: &Event, control_flow: &mut ControlFlow) {
-        if self.wins.is_empty() {
+        if self.tab_layout().tabs.is_empty() {
             *control_flow = ControlFlow::Exit;
             return;
         }
@@ -462,15 +557,6 @@ impl Multiplexer {
             Event::WindowEvent { event: wev, .. } => match wev {
                 WindowEvent::CloseRequested => {
                     *control_flow = ControlFlow::Exit;
-                    return;
-                }
-
-                WindowEvent::ModifiersChanged(..) => {
-                    for win in self.wins.iter_mut().flatten() {
-                        let mut cf = ControlFlow::default();
-                        win.on_event(event, &mut cf);
-                        // FIXME: handle ControlFlow::Exit
-                    }
                     return;
                 }
 
@@ -487,20 +573,14 @@ impl Multiplexer {
 
                 WindowEvent::CursorMoved { position, .. } => {
                     self.mouse_cursor_pos = *position;
-
-                    let mut cf = ControlFlow::default();
-                    self.current().on_event(event, &mut cf);
-                    // FIXME: handle ControlFlow::Exit
-                    return;
                 }
 
                 WindowEvent::MouseInput {
                     state: ElementState::Pressed,
                     ..
                 } => {
-                    let p = self.mouse_cursor_pos;
                     self.notify_focus_lost();
-                    self.current().focus_change_mouse(p);
+                    self.main_layout.focus_change_mouse(self.mouse_cursor_pos);
                     self.notify_focus_gain();
                 }
 
@@ -522,7 +602,7 @@ impl Multiplexer {
                 // Create a new window
                 WindowEvent::ReceivedCharacter('c') if self.consume => {
                     log::debug!("create a new window");
-                    self.select = self.allocate_new_window();
+                    self.allocate_new_window();
                     self.update_status_bar();
 
                     self.consume = false;
@@ -533,8 +613,7 @@ impl Multiplexer {
                 WindowEvent::ReceivedCharacter('n') if self.consume => {
                     log::debug!("next window");
                     self.notify_focus_lost();
-                    self.select += 1;
-                    self.select %= self.wins.len();
+                    self.main_layout.focus_change(FocusDirection::TabNext);
                     self.notify_focus_gain();
                     self.update_status_bar();
 
@@ -545,8 +624,7 @@ impl Multiplexer {
                 WindowEvent::ReceivedCharacter('p') if self.consume => {
                     log::debug!("prev window");
                     self.notify_focus_lost();
-                    self.select = self.wins.len() + self.select - 1;
-                    self.select %= self.wins.len();
+                    self.main_layout.focus_change(FocusDirection::TabPrev);
                     self.notify_focus_gain();
                     self.update_status_bar();
 
@@ -554,7 +632,6 @@ impl Multiplexer {
                     return;
                 }
 
-                // Vertical Split
                 &WindowEvent::ReceivedCharacter(split_char @ (VSPLIT | HSPLIT)) if self.consume => {
                     let split = match split_char {
                         VSPLIT => {
@@ -569,32 +646,16 @@ impl Multiplexer {
                     };
 
                     self.notify_focus_lost();
-
-                    if self.current().is_single() {
-                        let old_win = match self.wins[self.select].take() {
-                            Some(single @ Layout::Single(_)) => Box::new(single),
-                            _ => unreachable!(),
-                        };
+                    {
+                        let old_win = self.main_layout.detach();
                         let viewport = old_win.viewport();
 
                         let new_win = TerminalWindow::new(self.display.clone());
-                        let new_win = Box::new(Layout::new_single(Box::new(new_win)));
+                        let single = Layout::new_single(Box::new(new_win));
 
-                        let layout = Layout::new_binary(split, viewport, old_win, new_win);
-
-                        self.wins[self.select] = Some(layout);
-                    } else {
-                        let old_win = self.current().detach();
-                        let viewport = old_win.viewport();
-
-                        let new_win = TerminalWindow::new(self.display.clone());
-                        let new_win = Box::new(Layout::new_single(Box::new(new_win)));
-
-                        let layout = Layout::new_binary(split, viewport, old_win, new_win);
-
-                        self.current().attach(Box::new(layout));
+                        let bin = Layout::new_binary(split, viewport, old_win, single.into());
+                        self.main_layout.attach(bin.into());
                     }
-
                     self.notify_focus_gain();
 
                     self.consume = false;
@@ -614,22 +675,22 @@ impl Multiplexer {
                         match key {
                             VirtualKeyCode::Up => {
                                 self.notify_focus_lost();
-                                self.current().focus_change(FocusDirection::Up);
+                                self.main_layout.focus_change(FocusDirection::Up);
                                 self.notify_focus_gain();
                             }
                             VirtualKeyCode::Down => {
                                 self.notify_focus_lost();
-                                self.current().focus_change(FocusDirection::Down);
+                                self.main_layout.focus_change(FocusDirection::Down);
                                 self.notify_focus_gain();
                             }
                             VirtualKeyCode::Left => {
                                 self.notify_focus_lost();
-                                self.current().focus_change(FocusDirection::Left);
+                                self.main_layout.focus_change(FocusDirection::Left);
                                 self.notify_focus_gain();
                             }
                             VirtualKeyCode::Right => {
                                 self.notify_focus_lost();
-                                self.current().focus_change(FocusDirection::Right);
+                                self.main_layout.focus_change(FocusDirection::Right);
                                 self.notify_focus_gain();
                             }
                             _ => {}
@@ -662,10 +723,8 @@ impl Multiplexer {
 
             Event::RedrawRequested(_) => {
                 let mut surface = self.display.draw();
-
                 self.status_view.draw(&mut surface);
-                self.current().draw(&mut surface);
-
+                self.main_layout.draw(&mut surface);
                 surface.finish().expect("finish");
                 return;
             }
@@ -679,31 +738,18 @@ impl Multiplexer {
 
         // Forward to the selected window
         let mut cf = ControlFlow::default();
-        self.current().on_event(event, &mut cf);
+        self.main_layout.on_event(event, &mut cf);
 
         if cf == ControlFlow::Exit {
             self.notify_focus_lost();
-
-            // remove selected window
-            if self.current().is_single() {
-                self.wins.remove(self.select);
-                if self.select == self.wins.len() {
-                    self.select = 0;
-                }
-
-                if self.wins.is_empty() {
-                    *control_flow = ControlFlow::Exit;
-                }
-
-                self.update_status_bar();
+            self.main_layout.close();
+            if self.tab_layout().tabs.is_empty() {
+                *control_flow = ControlFlow::Exit;
             } else {
-                if let Some(new_layout) = self.current().close() {
-                    self.wins[self.select] = Some(*new_layout);
-                }
+                self.notify_focus_gain();
+                self.update_status_bar();
+                self.refresh_layout();
             }
-
-            self.notify_focus_gain();
-            self.refresh_layout();
         }
     }
 }
