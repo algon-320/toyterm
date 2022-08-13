@@ -14,7 +14,7 @@ use crate::terminal::{
     CellSize, Color, CursorStyle, Line, Mode, PositionedImage, Terminal, TerminalSize,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Viewport {
     pub x: u32,
     pub y: u32,
