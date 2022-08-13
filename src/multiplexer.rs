@@ -7,7 +7,7 @@ use glutin::{
 use std::borrow::Cow;
 
 use crate::terminal::{Cell, Color, Line};
-use crate::window::{TerminalView, TerminalWindow};
+use crate::window::{TerminalView, TerminalWindow, Viewport};
 
 const PREFIX_KEY: char = '\x01'; // Ctrl + A
 const VSPLIT: char = '"';
@@ -15,7 +15,6 @@ const HSPLIT: char = '%';
 
 type Event = glutin::event::Event<'static, ()>;
 type CursorPosition = PhysicalPosition<f64>;
-type Viewport = glium::Rect;
 
 enum Layout {
     Single(Box<TerminalWindow>),
@@ -25,6 +24,7 @@ enum Layout {
 struct BinLayout {
     split: Split,
     viewport: Viewport,
+    ratio: f64,
     focus_x: bool,
     x: Option<Box<Layout>>,
     y: Option<Box<Layout>>,
@@ -56,41 +56,29 @@ impl BinLayout {
 
         match self.split {
             Split::Vertical => {
-                let u_height = viewport.height / 2;
-                let d_height = viewport.height - u_height;
+                let u_height = (viewport.h as f64 * self.ratio).round() as u32;
+                let d_height = viewport.h - u_height;
 
-                let up = Viewport {
-                    left: viewport.left,
-                    bottom: viewport.bottom + d_height,
-                    width: viewport.width,
-                    height: u_height,
-                };
-                let down = Viewport {
-                    left: viewport.left,
-                    bottom: viewport.bottom,
-                    width: viewport.width,
-                    height: d_height - 1,
-                };
+                let mut up = viewport;
+                up.h = u_height - 1;
+
+                let mut down = viewport;
+                down.y = viewport.y + u_height;
+                down.h = d_height - 1;
 
                 (up, down)
             }
 
             Split::Horizontal => {
-                let l_width = viewport.width / 2;
-                let r_width = viewport.width - l_width;
+                let l_width = (viewport.w as f64 * self.ratio).round() as u32;
+                let r_width = viewport.w - l_width;
 
-                let left = Viewport {
-                    left: viewport.left,
-                    bottom: viewport.bottom,
-                    width: l_width - 1,
-                    height: viewport.height,
-                };
-                let right = Viewport {
-                    left: viewport.left + l_width,
-                    bottom: viewport.bottom,
-                    width: r_width,
-                    height: viewport.height,
-                };
+                let mut left = viewport;
+                left.w = l_width - 1;
+
+                let mut right = viewport;
+                right.x = viewport.x + l_width;
+                right.w = r_width;
 
                 (left, right)
             }
@@ -102,51 +90,17 @@ impl BinLayout {
         event: &'e Event,
     ) -> (Option<Cow<'e, Event>>, Option<Cow<'e, Event>>) {
         match event {
-            Event::WindowEvent {
-                event: wev,
-                window_id,
-            } => match wev {
+            Event::WindowEvent { event: wev, .. } => match wev {
                 WindowEvent::ModifiersChanged(..) => {
                     return (Some(Cow::Borrowed(event)), Some(Cow::Borrowed(event)));
                 }
 
-                #[allow(deprecated)]
-                &WindowEvent::CursorMoved {
-                    device_id,
-                    position,
-                    modifiers,
-                } => {
-                    let (vp_x, vp_y) = self.split_viewport();
-                    let (mut ev_x, mut ev_y) = (None, None);
+                WindowEvent::CursorMoved { .. } => {
+                    return (Some(Cow::Borrowed(event)), Some(Cow::Borrowed(event)));
+                }
 
-                    if self.contains(vp_x, position) {
-                        ev_x = Some(Cow::Borrowed(event));
-                    }
-
-                    if self.contains(vp_y, position) {
-                        let mut modified_pos = position;
-                        match self.split {
-                            Split::Vertical => {
-                                modified_pos.y -= vp_x.height as f64;
-                            }
-                            Split::Horizontal => {
-                                modified_pos.x -= vp_x.width as f64;
-                            }
-                        }
-
-                        let modified = Event::WindowEvent {
-                            event: WindowEvent::CursorMoved {
-                                device_id,
-                                position: modified_pos,
-                                modifiers,
-                            },
-                            window_id: *window_id,
-                        };
-
-                        ev_y = Some(Cow::Owned(modified));
-                    }
-
-                    return (ev_x, ev_y);
+                WindowEvent::MouseInput { .. } => {
+                    return (Some(Cow::Borrowed(event)), Some(Cow::Borrowed(event)));
                 }
 
                 _ => {}
@@ -165,17 +119,6 @@ impl BinLayout {
             (None, Some(Cow::Borrowed(event)))
         }
     }
-
-    fn contains(&self, vp: Viewport, point: CursorPosition) -> bool {
-        let base = self.viewport;
-
-        let l = vp.left as f64 - base.left as f64;
-        let r = (vp.left + vp.width) as f64 - base.left as f64;
-        let t = (base.bottom + base.height) as f64 - (vp.bottom + vp.height) as f64;
-        let b = (base.bottom + base.height) as f64 - vp.bottom as f64;
-
-        l <= point.x && point.x < r && t <= point.y && point.y < b
-    }
 }
 
 impl Layout {
@@ -187,6 +130,7 @@ impl Layout {
         let mut layout = Self::Binary(BinLayout {
             split,
             viewport,
+            ratio: 0.50,
             focus_x: false,
             x: Some(x),
             y: Some(y),
@@ -221,8 +165,8 @@ impl Layout {
             Self::Single(win) => {
                 win.set_viewport(viewport);
                 win.resize_window(PhysicalSize {
-                    width: viewport.width,
-                    height: viewport.height,
+                    width: viewport.w,
+                    height: viewport.h,
                 });
             }
             Self::Binary(layout) => {
@@ -366,24 +310,13 @@ impl Layout {
             Self::Single(_) => {}
             Self::Binary(layout) => {
                 let (vp_x, vp_y) = layout.split_viewport();
-                if layout.contains(vp_x, p) {
+                if vp_x.contains(p) {
                     layout.focus_x = true;
                     layout.x_mut().focus_change_mouse(p);
                 }
-                if layout.contains(vp_y, p) {
+                if vp_y.contains(p) {
                     layout.focus_x = false;
-
-                    let mut modified_pos = p;
-                    match layout.split {
-                        Split::Vertical => {
-                            modified_pos.y -= vp_x.height as f64;
-                        }
-                        Split::Horizontal => {
-                            modified_pos.x -= vp_x.width as f64;
-                        }
-                    }
-
-                    layout.y_mut().focus_change_mouse(modified_pos);
+                    layout.y_mut().focus_change_mouse(p);
                 }
             }
         }
@@ -413,10 +346,10 @@ impl Multiplexer {
         let size = display.gl_window().window().inner_size();
 
         let viewport = Viewport {
-            left: 0,
-            bottom: 0,
-            width: size.width,
-            height: size.height,
+            x: 0,
+            y: 0,
+            w: size.width,
+            h: size.height,
         };
 
         let status_view = TerminalView::with_viewport(display.clone(), viewport);
@@ -439,7 +372,8 @@ impl Multiplexer {
 
     pub fn allocate_new_window(&mut self) -> usize {
         let mut window_viewport = self.viewport;
-        window_viewport.height -= self.status_bar_height();
+        window_viewport.y += self.status_bar_height();
+        window_viewport.h -= self.status_bar_height();
 
         log::info!("new terminal window added");
         let new = TerminalWindow::with_viewport(self.display.clone(), window_viewport);
@@ -455,7 +389,8 @@ impl Multiplexer {
         self.status_view.set_viewport(self.viewport);
 
         let mut window_viewport = self.viewport;
-        window_viewport.height -= self.status_bar_height();
+        window_viewport.y += self.status_bar_height();
+        window_viewport.h -= self.status_bar_height();
 
         for win in self.wins.iter_mut().flatten() {
             win.set_viewport(window_viewport);
@@ -535,10 +470,7 @@ impl Multiplexer {
         }
 
         match &event {
-            Event::WindowEvent {
-                event: win_event,
-                window_id,
-            } => match win_event {
+            Event::WindowEvent { event: wev, .. } => match wev {
                 WindowEvent::CloseRequested => {
                     *control_flow = ControlFlow::Exit;
                     return;
@@ -555,38 +487,20 @@ impl Multiplexer {
 
                 WindowEvent::Resized(new_size) => {
                     self.viewport = Viewport {
-                        left: 0,
-                        bottom: 0,
-                        width: new_size.width,
-                        height: new_size.height,
+                        x: 0,
+                        y: 0,
+                        w: new_size.width,
+                        h: new_size.height,
                     };
                     self.refresh_layout();
                     return;
                 }
 
-                #[allow(deprecated)]
-                WindowEvent::CursorMoved {
-                    position,
-                    device_id,
-                    modifiers,
-                } => {
+                WindowEvent::CursorMoved { position, .. } => {
                     self.mouse_cursor_pos = *position;
 
-                    let mut modified_pos = *position;
-                    modified_pos.y -= self.status_bar_height() as f64;
-
-                    let modified_event = Event::WindowEvent {
-                        window_id: *window_id,
-                        event: WindowEvent::CursorMoved {
-                            position: modified_pos,
-                            device_id: *device_id,
-                            modifiers: *modifiers,
-                        },
-                    };
-
-                    // Forward to the selected window
                     let mut cf = ControlFlow::default();
-                    self.current().on_event(&modified_event, &mut cf);
+                    self.current().on_event(event, &mut cf);
                     // FIXME: handle ControlFlow::Exit
                     return;
                 }
@@ -595,9 +509,7 @@ impl Multiplexer {
                     state: ElementState::Pressed,
                     ..
                 } => {
-                    let mut p = self.mouse_cursor_pos;
-                    p.y -= self.status_bar_height() as f64;
-
+                    let p = self.mouse_cursor_pos;
                     self.notify_focus_lost();
                     self.current().focus_change_mouse(p);
                     self.notify_focus_gain();

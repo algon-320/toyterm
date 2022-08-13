@@ -14,6 +14,35 @@ use crate::terminal::{
     CellSize, Color, CursorStyle, Line, Mode, PositionedImage, Terminal, TerminalSize,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Viewport {
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
+impl Viewport {
+    #[allow(unused)]
+    pub fn contains(&self, p: PhysicalPosition<f64>) -> bool {
+        let l = self.x as f64;
+        let r = (self.x + self.w) as f64;
+        let t = self.y as f64;
+        let b = (self.y + self.h) as f64;
+        l <= p.x && p.x < r && t <= p.y && p.y < b
+    }
+
+    fn to_glium_rect(self, inner_size: PhysicalSize<u32>) -> glium::Rect {
+        let bottom = inner_size.height as i64 - (self.y + self.h) as i64;
+        glium::Rect {
+            left: self.x,
+            bottom: max(bottom, 0) as u32,
+            width: self.w,
+            height: self.h,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Contents {
     pub lines: Vec<Line>,
@@ -23,6 +52,7 @@ pub struct Contents {
 }
 
 pub struct TerminalView {
+    viewport: Viewport,
     fonts: FontSet,
     cache: GlyphCache,
     pub cell_size: CellSize,
@@ -49,7 +79,7 @@ struct DrawQuery<V: glium::vertex::Vertex> {
 }
 
 impl TerminalView {
-    pub fn with_viewport(display: Display, viewport: glium::Rect) -> Self {
+    pub fn with_viewport(display: Display, viewport: Viewport) -> Self {
         let fonts = build_font_set();
 
         let (cell_size, cell_max_over) = calculate_cell_size(&fonts);
@@ -57,9 +87,11 @@ impl TerminalView {
         // Rasterize ASCII characters and cache them as a texture
         let cache = GlyphCache::build_ascii_visible(&display, &fonts, cell_size);
 
+        let inner_size = display.gl_window().window().inner_size();
+
         let draw_params = glium::DrawParameters {
             blend: glium::Blend::alpha_blending(),
-            viewport: Some(viewport),
+            viewport: Some(viewport.to_glium_rect(inner_size)),
             ..glium::DrawParameters::default()
         };
 
@@ -95,6 +127,7 @@ impl TerminalView {
         };
 
         TerminalView {
+            viewport,
             fonts,
             cache,
             cell_size,
@@ -116,14 +149,18 @@ impl TerminalView {
         }
     }
 
-    pub fn viewport(&self) -> glium::Rect {
-        self.draw_params.viewport.unwrap()
+    pub fn viewport(&self) -> Viewport {
+        self.viewport
     }
 
     #[allow(unused)]
-    pub fn set_viewport(&mut self, new_viewport: glium::Rect) {
+    pub fn set_viewport(&mut self, new_viewport: Viewport) {
         log::debug!("viewport changed: {:?}", new_viewport);
-        self.draw_params.viewport = Some(new_viewport);
+        self.viewport = new_viewport;
+
+        let inner_size = self.display.gl_window().window().inner_size();
+        self.draw_params.viewport = Some(new_viewport.to_glium_rect(inner_size));
+
         self.updated = true;
     }
 
@@ -438,21 +475,21 @@ impl TerminalWindow {
     #[allow(unused)]
     pub fn new(display: Display) -> Self {
         let size = display.gl_window().window().inner_size();
-        let full = glium::Rect {
-            left: 0,
-            bottom: 0,
-            width: size.width,
-            height: size.height,
+        let full = Viewport {
+            x: 0,
+            y: 0,
+            w: size.width,
+            h: size.height,
         };
         Self::with_viewport(display, full)
     }
 
-    pub fn with_viewport(display: Display, viewport: glium::Rect) -> Self {
+    pub fn with_viewport(display: Display, viewport: Viewport) -> Self {
         let view = TerminalView::with_viewport(display.clone(), viewport);
 
         let size = TerminalSize {
-            rows: (viewport.height / view.cell_size.h) as usize,
-            cols: (viewport.width / view.cell_size.w) as usize,
+            rows: (viewport.h / view.cell_size.h) as usize,
+            cols: (viewport.w / view.cell_size.w) as usize,
         };
         let terminal = Terminal::new(size, view.cell_size);
 
@@ -653,6 +690,9 @@ impl TerminalWindow {
                 self.view.contents.selection_range = new_selection_range;
                 self.view.updated = true;
             }
+        } else if self.view.contents.selection_range.is_some() {
+            self.view.contents.selection_range = None;
+            self.view.updated = true;
         }
 
         false
@@ -663,12 +703,12 @@ impl TerminalWindow {
     }
 
     #[allow(unused)]
-    pub fn viewport(&self) -> glium::Rect {
+    pub fn viewport(&self) -> Viewport {
         self.view.viewport()
     }
 
     #[allow(unused)]
-    pub fn set_viewport(&mut self, new_viewport: glium::Rect) {
+    pub fn set_viewport(&mut self, new_viewport: Viewport) {
         self.view.set_viewport(new_viewport);
     }
 
@@ -681,8 +721,8 @@ impl TerminalWindow {
 
         // update viewport
         let mut viewport = self.view.viewport();
-        viewport.width = new_size.width;
-        viewport.height = new_size.height;
+        viewport.w = new_size.width;
+        viewport.h = new_size.height;
         self.view.set_viewport(viewport);
 
         self.resize_buffer();
@@ -698,8 +738,8 @@ impl TerminalWindow {
         self.mouse.released_pos = None;
 
         let viewport = self.view.viewport();
-        let rows = (viewport.height / self.view.cell_size.h) as usize;
-        let cols = (viewport.width / self.view.cell_size.w) as usize;
+        let rows = (viewport.h / self.view.cell_size.h) as usize;
+        let cols = (viewport.w / self.view.cell_size.w) as usize;
         let buff_size = TerminalSize { rows, cols };
         self.terminal.request_resize(buff_size, self.view.cell_size);
     }
@@ -765,7 +805,10 @@ impl TerminalWindow {
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
-                    self.mouse.cursor_pos = (position.x, position.y);
+                    let viewport = self.viewport();
+                    let x = position.x - viewport.x as f64;
+                    let y = position.y - viewport.y as f64;
+                    self.mouse.cursor_pos = (x, y);
                 }
 
                 WindowEvent::MouseInput { state, button, .. } => {
@@ -790,9 +833,9 @@ impl TerminalWindow {
                         |   if self.modifiers.alt()   { 0b00001000 } else { 0 }
                         |   if self.modifiers.ctrl()  { 0b00010000 } else { 0 };
 
-                        let pos = self.mouse.cursor_pos;
-                        let col = pos.0.round() as u32 / self.view.cell_size.w + 1;
-                        let row = pos.1.round() as u32 / self.view.cell_size.h + 1;
+                        let (x, y) = self.mouse.cursor_pos;
+                        let col = x.round() as u32 / self.view.cell_size.w + 1;
+                        let row = y.round() as u32 / self.view.cell_size.h + 1;
 
                         if self.mode.sgr_ext_mouse_track {
                             self.sgr_ext_mouse_report(button + mods, col, row, state);
@@ -812,14 +855,12 @@ impl TerminalWindow {
                                 log::debug!("clicked {} times", self.mouse.click_count);
 
                                 let (x, y) = self.mouse.cursor_pos;
-                                let viewport = self.view.viewport();
-                                let is_inner = 0.0 <= x
-                                    && x < viewport.width as f64
-                                    && 0.0 <= y
-                                    && y < viewport.height as f64;
 
-                                if is_inner {
-                                    self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
+                                let viewport = self.viewport();
+                                let (w, h) = (viewport.w as f64, viewport.h as f64);
+
+                                if 0.0 <= x && x < w && 0.0 <= y && y < h {
+                                    self.mouse.pressed_pos = Some((x, y));
                                 } else {
                                     self.mouse.pressed_pos = None;
                                 }
@@ -1239,14 +1280,12 @@ struct GlRect {
 }
 
 impl PixelRect {
-    fn to_gl(self, viewport: glium::Rect) -> GlRect {
-        let window_width = viewport.width;
-        let window_height = viewport.height;
+    fn to_gl(self, vp: Viewport) -> GlRect {
         GlRect {
-            x: (self.x as f32 / window_width as f32) * 2.0 - 1.0,
-            y: -(self.y as f32 / window_height as f32) * 2.0 + 1.0,
-            w: (self.w as f32 / window_width as f32) * 2.0,
-            h: (self.h as f32 / window_height as f32) * 2.0,
+            x: (self.x as f32 / vp.w as f32) * 2.0 - 1.0,
+            y: -(self.y as f32 / vp.h as f32) * 2.0 + 1.0,
+            w: (self.w as f32 / vp.w as f32) * 2.0,
+            h: (self.h as f32 / vp.h as f32) * 2.0,
         }
     }
 }
