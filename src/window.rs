@@ -153,7 +153,6 @@ impl TerminalView {
         self.viewport
     }
 
-    #[allow(unused)]
     pub fn set_viewport(&mut self, new_viewport: Viewport) {
         log::debug!("viewport changed: {:?}", new_viewport);
         self.viewport = new_viewport;
@@ -702,29 +701,13 @@ impl TerminalWindow {
         self.view.draw(surface);
     }
 
-    #[allow(unused)]
     pub fn viewport(&self) -> Viewport {
         self.view.viewport()
     }
 
-    #[allow(unused)]
     pub fn set_viewport(&mut self, new_viewport: Viewport) {
+        log::debug!("viewport changed: {:?}", new_viewport);
         self.view.set_viewport(new_viewport);
-    }
-
-    pub fn resize_window(&mut self, new_size: PhysicalSize<u32>) {
-        log::debug!(
-            "window resized: {}x{} (px)",
-            new_size.width,
-            new_size.height
-        );
-
-        // update viewport
-        let mut viewport = self.view.viewport();
-        viewport.w = new_size.width;
-        viewport.h = new_size.height;
-        self.view.set_viewport(viewport);
-
         self.resize_buffer();
     }
 
@@ -768,7 +751,10 @@ impl TerminalWindow {
                 &WindowEvent::Focused(gain) => self.focus_changed(gain),
 
                 &WindowEvent::Resized(new_size) => {
-                    self.resize_window(new_size);
+                    let mut viewport = self.viewport();
+                    viewport.w = new_size.width;
+                    viewport.h = new_size.height;
+                    self.set_viewport(viewport);
                 }
 
                 &WindowEvent::ModifiersChanged(new_states) => {
