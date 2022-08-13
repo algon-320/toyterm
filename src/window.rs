@@ -812,6 +812,19 @@ impl TerminalWindow {
                 }
 
                 WindowEvent::MouseInput { state, button, .. } => {
+                    let is_inner = {
+                        let viewport = self.viewport();
+                        let (w, h) = (viewport.w as f64, viewport.h as f64);
+                        let (x, y) = self.mouse.cursor_pos;
+                        0.0 <= x && x < w && 0.0 <= y && y < h
+                    };
+
+                    if !is_inner {
+                        self.mouse.pressed_pos = None;
+                        self.mouse.released_pos = None;
+                        return;
+                    }
+
                     if self.mode.mouse_track {
                         let button = match state {
                             ElementState::Released if !self.mode.sgr_ext_mouse_track => 3,
@@ -850,20 +863,12 @@ impl TerminalWindow {
                                 if self.mouse.last_clicked.elapsed() > CLICK_INTERVAL {
                                     self.mouse.click_count = 0;
                                 }
+
                                 self.mouse.click_count += 1;
                                 self.mouse.last_clicked = std::time::Instant::now();
                                 log::debug!("clicked {} times", self.mouse.click_count);
 
-                                let (x, y) = self.mouse.cursor_pos;
-
-                                let viewport = self.viewport();
-                                let (w, h) = (viewport.w as f64, viewport.h as f64);
-
-                                if 0.0 <= x && x < w && 0.0 <= y && y < h {
-                                    self.mouse.pressed_pos = Some((x, y));
-                                } else {
-                                    self.mouse.pressed_pos = None;
-                                }
+                                self.mouse.pressed_pos = Some(self.mouse.cursor_pos);
                                 self.mouse.released_pos = None;
                             }
                             ElementState::Released => {
