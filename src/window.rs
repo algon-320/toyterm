@@ -524,7 +524,7 @@ impl TerminalWindow {
     }
 
     // Change cursor icon according to the current mouse_track mode
-    fn refresh_cursor_icon(&mut self) {
+    pub fn refresh_cursor_icon(&mut self) {
         let icon = if self.mode.mouse_track {
             glutin::window::CursorIcon::Arrow
         } else {
@@ -723,7 +723,10 @@ impl TerminalWindow {
         let viewport = self.view.viewport();
         let rows = (viewport.h / self.view.cell_size.h) as usize;
         let cols = (viewport.w / self.view.cell_size.w) as usize;
-        let buff_size = TerminalSize { rows, cols };
+        let buff_size = TerminalSize {
+            rows: rows.max(1),
+            cols: cols.max(1),
+        };
         self.terminal.request_resize(buff_size, self.view.cell_size);
     }
 

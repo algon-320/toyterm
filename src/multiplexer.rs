@@ -3,6 +3,7 @@ use glutin::{
     dpi::PhysicalPosition,
     event::{ElementState, ModifiersState, VirtualKeyCode, WindowEvent},
     event_loop::ControlFlow,
+    window::CursorIcon,
 };
 
 use crate::terminal::{Cell, Color, Line};
@@ -45,18 +46,20 @@ impl SingleLayout {
 }
 
 struct BinaryLayout {
-    split: Split,
+    display: Display,
+    partition: Partition,
     viewport: Viewport,
     ratio: f64,
     focus_x: bool,
     x: Option<Box<Layout>>,
     y: Option<Box<Layout>>,
     mouse_cursor_pos: CursorPosition,
+    grabbing: bool,
     maximized: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Split {
+enum Partition {
     Horizontal,
     Vertical,
 }
@@ -76,6 +79,8 @@ impl BinaryLayout {
         }
     }
 
+    const GAP: u32 = 2;
+
     fn split_viewport(&self) -> (Viewport, Viewport) {
         let viewport = self.viewport;
 
@@ -87,57 +92,175 @@ impl BinaryLayout {
             };
         }
 
-        match self.split {
-            Split::Horizontal => {
-                let u_height = (viewport.h as f64 * self.ratio).round() as u32;
-                let d_height = viewport.h - u_height;
+        match self.partition {
+            Partition::Horizontal => {
+                let mid = (viewport.h as f64 * self.ratio).round() as u32;
 
                 let mut up = viewport;
-                up.h = u_height - 1;
+                up.y = viewport.y;
+                up.h = mid - Self::GAP;
 
                 let mut down = viewport;
-                down.y = viewport.y + u_height;
-                down.h = d_height - 1;
+                down.y = viewport.y + mid + Self::GAP;
+                down.h = viewport.h - mid - Self::GAP;
+
+                // +------+ <-- viewport.y
+                // |  up  |
+                // +======+ <-- viewport.y + mid - GAP
+                // |------| <-- viewport.y + mid
+                // +======+ <-- viewport.y + mid + GAP
+                // | down |
+                // +------+ <-- viewport.y + viewport.h
 
                 (up, down)
             }
 
-            Split::Vertical => {
-                let l_width = (viewport.w as f64 * self.ratio).round() as u32;
-                let r_width = viewport.w - l_width;
+            Partition::Vertical => {
+                let mid = (viewport.w as f64 * self.ratio).round() as u32;
 
                 let mut left = viewport;
-                left.w = l_width - 1;
+                left.x = viewport.x;
+                left.w = mid - Self::GAP;
 
                 let mut right = viewport;
-                right.x = viewport.x + l_width;
-                right.w = r_width;
+                right.x = viewport.x + mid + Self::GAP;
+                right.w = viewport.w - mid - Self::GAP;
+
+                // +-------------------- viewport.x
+                // |      +------------- viewport.x + mid - GAP
+                // |      |+------------ viewport.x + mid
+                // |      ||+----------- viewport.x + mid + GAP
+                // |      |||       +--- viewport.x + viewport.w
+                // v      vvv       v
+                // +------+-+-------+
+                // | left ||| right |
+                // +------+-+-------+
 
                 (left, right)
             }
         }
     }
 
+    fn cursor_on_partition(&self) -> bool {
+        let x = self.mouse_cursor_pos.x.round() as i32;
+        let y = self.mouse_cursor_pos.y.round() as i32;
+        let viewport = self.viewport;
+
+        let gap = Self::GAP as i32;
+
+        match self.partition {
+            Partition::Horizontal => {
+                let mid = viewport.y as i32 + (viewport.h as f64 * self.ratio).round() as i32;
+                let hit_y = mid - gap <= y && y < mid + gap;
+
+                let left = viewport.x as i32;
+                let right = (viewport.x + viewport.w) as i32;
+                let hit_x = left - gap * 2 <= x && x < right + gap * 2;
+
+                hit_x && hit_y
+            }
+
+            Partition::Vertical => {
+                let mid = viewport.x as i32 + (viewport.w as f64 * self.ratio).round() as i32;
+                let hit_x = mid - gap <= x && x < mid + gap;
+
+                let top = viewport.y as i32;
+                let bottom = (viewport.y + viewport.h) as i32;
+                let hit_y = top - gap * 2 <= y && y < bottom + gap * 2;
+
+                hit_x && hit_y
+            }
+        }
+    }
+
+    fn update_ratio(&mut self) {
+        debug_assert!(self.grabbing);
+        let CursorPosition { x, y } = self.mouse_cursor_pos;
+        let viewport = self.viewport;
+
+        let min_r = (Self::GAP * 2) as f64 / (viewport.h as f64);
+
+        match self.partition {
+            Partition::Horizontal => {
+                let mid = y - viewport.y as f64;
+                let r = mid / (viewport.h as f64);
+                self.ratio = r.clamp(min_r, 1.0 - min_r);
+            }
+
+            Partition::Vertical => {
+                let mid = x - viewport.x as f64;
+                let r = mid / (viewport.w as f64);
+                self.ratio = r.clamp(min_r, 1.0 - min_r);
+            }
+        }
+
+        let (vp_x, vp_y) = self.split_viewport();
+        self.x_mut().set_viewport(vp_x);
+        self.y_mut().set_viewport(vp_y);
+    }
+
     fn on_event(&mut self, event: &Event, control_flow: &mut ControlFlow) {
         if let Event::WindowEvent { event: wev, .. } = event {
             match wev {
                 WindowEvent::CursorMoved { position, .. } => {
+                    let on_partition_before = self.cursor_on_partition();
                     self.mouse_cursor_pos = *position;
+                    let on_partition_after = self.cursor_on_partition();
+
+                    if !self.grabbing && on_partition_before != on_partition_after {
+                        if on_partition_after {
+                            let icon = match self.partition {
+                                Partition::Vertical => CursorIcon::EwResize,
+                                Partition::Horizontal => CursorIcon::NsResize,
+                            };
+                            self.display.gl_window().window().set_cursor_icon(icon);
+                        } else {
+                            // Reload normal icon
+                            self.focused_mut()
+                                .focused_window_mut()
+                                .refresh_cursor_icon();
+                        }
+                    }
+
+                    if self.grabbing {
+                        self.update_ratio();
+                    }
                 }
                 WindowEvent::MouseInput {
                     state: ElementState::Pressed,
                     ..
                 } => {
-                    let (vp_x, vp_y) = self.split_viewport();
-                    if !self.focus_x && vp_x.contains(self.mouse_cursor_pos) {
-                        self.focused_mut().focused_window_mut().focus_changed(false);
-                        self.focus_x = true;
-                        self.focused_mut().focused_window_mut().focus_changed(true);
+                    if self.cursor_on_partition() {
+                        self.grabbing = true;
+                        self.display
+                            .gl_window()
+                            .window()
+                            .set_cursor_icon(CursorIcon::Grabbing);
+                    } else {
+                        let (vp_x, vp_y) = self.split_viewport();
+                        if !self.focus_x && vp_x.contains(self.mouse_cursor_pos) {
+                            self.focused_mut().focused_window_mut().focus_changed(false);
+                            self.focus_x = true;
+                            self.focused_mut().focused_window_mut().focus_changed(true);
+                        }
+                        if self.focus_x && vp_y.contains(self.mouse_cursor_pos) {
+                            self.focused_mut().focused_window_mut().focus_changed(false);
+                            self.focus_x = false;
+                            self.focused_mut().focused_window_mut().focus_changed(true);
+                        }
                     }
-                    if self.focus_x && vp_y.contains(self.mouse_cursor_pos) {
-                        self.focused_mut().focused_window_mut().focus_changed(false);
-                        self.focus_x = false;
-                        self.focused_mut().focused_window_mut().focus_changed(true);
+                }
+                WindowEvent::MouseInput {
+                    state: ElementState::Released,
+                    ..
+                } => {
+                    if self.grabbing {
+                        self.grabbing = false;
+
+                        // Reload normal icon
+                        self.focused_mut()
+                            .focused_window_mut()
+                            .refresh_cursor_icon();
                     }
                 }
                 _ => {}
@@ -199,14 +322,13 @@ impl BinaryLayout {
     fn process_command(&mut self, cmd: Command) -> bool {
         match cmd {
             Command::FocusUp | Command::FocusDown | Command::FocusLeft | Command::FocusRight => {
-                let split = self.split;
                 let (x_focused, y_focused) = (self.focus_x, !self.focus_x);
 
                 let changeable = match cmd {
-                    Command::FocusDown => split == Split::Horizontal && x_focused,
-                    Command::FocusUp => split == Split::Horizontal && y_focused,
-                    Command::FocusRight => split == Split::Vertical && x_focused,
-                    Command::FocusLeft => split == Split::Vertical && y_focused,
+                    Command::FocusDown => self.partition == Partition::Horizontal && x_focused,
+                    Command::FocusUp => self.partition == Partition::Horizontal && y_focused,
+                    Command::FocusRight => self.partition == Partition::Vertical && x_focused,
+                    Command::FocusLeft => self.partition == Partition::Vertical && y_focused,
                     _ => unreachable!(),
                 };
 
@@ -291,15 +413,23 @@ impl Layout {
         })
     }
 
-    fn new_binary(split: Split, viewport: Viewport, x: Box<Layout>, y: Box<Layout>) -> Self {
+    fn new_binary(
+        display: Display,
+        partition: Partition,
+        viewport: Viewport,
+        x: Box<Layout>,
+        y: Box<Layout>,
+    ) -> Self {
         let mut layout = Self::Binary(BinaryLayout {
-            split,
+            display,
+            partition,
             viewport,
             ratio: 0.50,
             focus_x: false,
             x: Some(x),
             y: Some(y),
             mouse_cursor_pos: CursorPosition::default(),
+            grabbing: false,
             maximized: false,
         });
         layout.set_viewport(viewport);
@@ -432,9 +562,9 @@ impl Layout {
     fn process_command(&mut self, cmd: Command) -> bool {
         match self {
             Self::Single(old) => {
-                let split = match cmd {
-                    Command::SplitVertical => Split::Vertical,
-                    Command::SplitHorizontal => Split::Horizontal,
+                let partition = match cmd {
+                    Command::SplitVertical => Partition::Vertical,
+                    Command::SplitHorizontal => Partition::Horizontal,
                     _ => return false,
                 };
 
@@ -445,12 +575,12 @@ impl Layout {
                 let viewport = old_window.viewport();
 
                 let mut x = Layout::new_single(display.clone(), old_window);
-                let mut y = Layout::new_single(display, new_window);
+                let mut y = Layout::new_single(display.clone(), new_window);
 
                 x.focused_window_mut().focus_changed(false);
                 y.focused_window_mut().focus_changed(true);
 
-                *self = Layout::new_binary(split, viewport, x.into(), y.into());
+                *self = Layout::new_binary(display, partition, viewport, x.into(), y.into());
                 true
             }
             Self::Binary(layout) => layout.process_command(cmd),
