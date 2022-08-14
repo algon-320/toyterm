@@ -694,6 +694,20 @@ impl Multiplexer {
 
         if let Some(cmd) = self.controller.on_event(event) {
             log::debug!("command: {:?}", cmd);
+
+            // FIXME
+            if let Command::FocusUp
+            | Command::FocusDown
+            | Command::FocusLeft
+            | Command::FocusRight
+            | Command::SplitVertical
+            | Command::SplitHorizontal = cmd
+            {
+                self.controller.maximized = false;
+                self.main_layout.process_command(Command::ResetMaximize);
+                self.refresh_layout();
+            }
+
             self.main_layout.process_command(cmd);
             self.update_status_bar();
 
@@ -747,6 +761,10 @@ impl Multiplexer {
             if self.tab_layout().tabs.is_empty() {
                 *control_flow = ControlFlow::Exit;
             } else {
+                // FIXME
+                self.controller.maximized = false;
+                self.main_layout.process_command(Command::ResetMaximize);
+
                 self.refresh_layout();
                 self.update_status_bar();
             }
