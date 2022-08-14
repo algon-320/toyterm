@@ -178,16 +178,16 @@ impl BinaryLayout {
         let CursorPosition { x, y } = self.mouse_cursor_pos;
         let viewport = self.viewport;
 
-        let min_r = (Self::GAP * 2) as f64 / (viewport.h as f64);
-
         match self.partition {
             Partition::Horizontal => {
+                let min_r = (Self::GAP * 2) as f64 / (viewport.h as f64);
                 let mid = y - viewport.y as f64;
                 let r = mid / (viewport.h as f64);
                 self.ratio = r.clamp(min_r, 1.0 - min_r);
             }
 
             Partition::Vertical => {
+                let min_r = (Self::GAP * 2) as f64 / (viewport.w as f64);
                 let mid = x - viewport.x as f64;
                 let r = mid / (viewport.w as f64);
                 self.ratio = r.clamp(min_r, 1.0 - min_r);
