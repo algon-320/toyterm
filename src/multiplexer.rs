@@ -24,8 +24,8 @@ enum Command {
     SplitVertical,
     SplitHorizontal,
     AddNewTab,
-    SetMaximze,
-    ResetMaximze,
+    SetMaximize,
+    ResetMaximize,
 }
 
 enum Layout {
@@ -341,12 +341,12 @@ impl BinaryLayout {
                 }
                 consumed
             }
-            Command::SetMaximze => {
+            Command::SetMaximize => {
                 self.focused_mut().process_command(cmd);
                 self.maximized = true;
                 true
             }
-            Command::ResetMaximze => {
+            Command::ResetMaximize => {
                 self.focused_mut().process_command(cmd);
                 self.maximized = false;
                 true
@@ -697,7 +697,7 @@ impl Multiplexer {
             self.main_layout.process_command(cmd);
             self.update_status_bar();
 
-            if let Command::SetMaximze | Command::ResetMaximze = cmd {
+            if let Command::SetMaximize | Command::ResetMaximize = cmd {
                 self.refresh_layout();
             }
             return;
@@ -808,9 +808,9 @@ impl Controller {
                 'z' => {
                     self.maximized ^= true;
                     if self.maximized {
-                        Some(Command::SetMaximze)
+                        Some(Command::SetMaximize)
                     } else {
-                        Some(Command::ResetMaximze)
+                        Some(Command::ResetMaximize)
                     }
                 }
                 _ => Some(Command::Nop),
