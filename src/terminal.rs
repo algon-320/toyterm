@@ -547,6 +547,23 @@ impl Terminal {
         self.control_req.send(Command::Resize { buff_sz, cell_sz });
         self.control_res.recv();
     }
+
+    #[cfg(feature = "multiplex")]
+    pub fn get_pgid(&self) -> nix::unistd::Pid {
+        fn get_term_pgid(pty_master: &OwnedFd) -> Result<nix::unistd::Pid> {
+            let mut pgid_buf = nix::unistd::Pid::from_raw(0);
+            nix::ioctl_read_bad!(tiocgpgrp, nix::libc::TIOCGPGRP, nix::unistd::Pid);
+            unsafe {
+                tiocgpgrp(
+                    pty_master.as_raw_fd(),
+                    &mut pgid_buf as *mut nix::unistd::Pid,
+                )
+            }?;
+            Ok(pgid_buf)
+        }
+
+        get_term_pgid(&self.pty).expect("get_term_pgid")
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

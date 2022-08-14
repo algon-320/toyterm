@@ -653,18 +653,40 @@ impl Multiplexer {
     fn update_status_bar(&mut self) {
         self.status_view.bg_color = Color::BrightGreen;
 
-        let tab_layout = self.tab_layout();
-        let num_tabs = tab_layout.tabs.len();
-        let focus = tab_layout.focus;
+        struct Tab {
+            i: usize,
+            focus: bool,
+            name: String,
+        }
 
-        let line: Line = (0..num_tabs)
-            .flat_map(|i| {
+        let tab_layout = self.tab_layout();
+        let focused_tab = tab_layout.focus;
+
+        let tabs = tab_layout
+            .tabs
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, l)| Some((i, l.as_mut()?)))
+            .map(|(i, l)| Tab {
+                i,
+                focus: i == focused_tab,
+                name: l
+                    .focused_window_mut()
+                    .get_foreground_process_name()
+                    .rsplit("/")
+                    .next()
+                    .unwrap()
+                    .to_owned(),
+            });
+
+        let line: Line = tabs
+            .flat_map(|tab| {
                 let mut cells: Vec<Cell> = Vec::new();
 
-                let num = format!("{} ", i);
-                for ch in num.chars() {
+                let text = format!("{}:{} ", tab.i, tab.name);
+                for ch in text.chars() {
                     let mut cell = Cell::new_ascii(ch);
-                    cell.attr.fg = if i == focus {
+                    cell.attr.fg = if tab.focus {
                         Color::Yellow
                     } else {
                         Color::BrightBlue

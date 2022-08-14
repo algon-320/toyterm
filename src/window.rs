@@ -1136,6 +1136,14 @@ impl TerminalWindow {
         self.terminal
             .pty_write(format!("\x1b[<{button};{col};{row}{m}").as_bytes());
     }
+
+    #[cfg(feature = "multiplex")]
+    pub fn get_foreground_process_name(&self) -> String {
+        let pgid = self.terminal.get_pgid();
+        let cmdline = std::fs::read(format!("/proc/{pgid}/cmdline")).unwrap();
+        let argv0 = cmdline.split(|b| *b == b'\0').next().unwrap();
+        String::from_utf8_lossy(argv0).into()
+    }
 }
 
 fn build_font_set() -> FontSet {
