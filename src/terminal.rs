@@ -47,21 +47,6 @@ pub struct CellSize {
     pub h: u32,
 }
 
-fn set_term_window_size(pty_master: &OwnedFd, size: TerminalSize) -> Result<()> {
-    let winsize = nix::pty::Winsize {
-        ws_row: size.rows as u16,
-        ws_col: size.cols as u16,
-        // TODO
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
-
-    nix::ioctl_write_ptr_bad!(tiocswinsz, nix::libc::TIOCSWINSZ, nix::pty::Winsize);
-    unsafe { tiocswinsz(pty_master.as_raw_fd(), &winsize as *const nix::pty::Winsize) }?;
-
-    Ok(())
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct Cell {
     pub ch: char,
@@ -650,6 +635,21 @@ struct Engine {
 }
 
 impl Engine {
+    fn set_term_window_size(pty_master: &OwnedFd, size: TerminalSize) -> Result<()> {
+        let winsize = nix::pty::Winsize {
+            ws_row: size.rows as u16,
+            ws_col: size.cols as u16,
+            // TODO
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+
+        nix::ioctl_write_ptr_bad!(tiocswinsz, nix::libc::TIOCSWINSZ, nix::pty::Winsize);
+        unsafe { tiocswinsz(pty_master.as_raw_fd(), &winsize as *const nix::pty::Winsize) }?;
+
+        Ok(())
+    }
+
     fn new(
         pty: OwnedFd,
         control_req: pipe_channel::Receiver<Command>,
@@ -657,7 +657,7 @@ impl Engine {
         sz: TerminalSize,
         cell_sz: CellSize,
     ) -> Self {
-        set_term_window_size(&pty, sz).unwrap();
+        Self::set_term_window_size(&pty, sz).unwrap();
 
         // Initialize tabulation stops
         let mut tabstops = Vec::new();
@@ -699,7 +699,7 @@ impl Engine {
     fn resize(&mut self, sz: TerminalSize, cell_sz: CellSize) {
         log::debug!("resize to {}x{} (cell)", sz.rows, sz.cols);
 
-        set_term_window_size(&self.pty, sz).unwrap();
+        Self::set_term_window_size(&self.pty, sz).unwrap();
 
         self.sz = sz;
         self.cell_sz = cell_sz;
