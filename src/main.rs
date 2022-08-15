@@ -1,5 +1,4 @@
 mod cache;
-mod clipboard;
 mod config;
 mod control_function;
 mod font;

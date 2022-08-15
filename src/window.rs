@@ -9,7 +9,6 @@ use std::cmp::{max, min};
 use std::rc::Rc;
 
 use crate::cache::{GlyphCache, GlyphRegion};
-use crate::clipboard::X11Clipboard;
 use crate::font::{Font, FontSet, FontStyle};
 use crate::terminal::{
     CellSize, Color, CursorStyle, Line, Mode, PositionedImage, Terminal, TerminalSize,
@@ -450,7 +449,7 @@ impl TerminalView {
 pub struct TerminalWindow {
     display: Display,
     terminal: Terminal,
-    clipboard: X11Clipboard,
+    clipboard: arboard::Clipboard,
 
     view: TerminalView,
     mode: Mode,
@@ -502,8 +501,6 @@ impl TerminalWindow {
             Terminal::new(size, cell_size, child_cwd)
         };
 
-        let clipboard = X11Clipboard::new();
-
         // Use I-beam mouse cursor
         display
             .gl_window()
@@ -513,7 +510,7 @@ impl TerminalWindow {
         TerminalWindow {
             display,
             terminal,
-            clipboard,
+            clipboard: arboard::Clipboard::new().expect("clipboard"),
 
             view,
             mode: Mode::default(),
@@ -1107,11 +1104,11 @@ impl TerminalWindow {
         }
 
         log::info!("copy: {:?}", text);
-        let _ = self.clipboard.store(&text);
+        let _ = self.clipboard.set_text(text);
     }
 
     fn paste_clipboard(&mut self) {
-        match self.clipboard.load() {
+        match self.clipboard.get_text() {
             Ok(text) => {
                 log::debug!("paste: {:?}", text);
                 if self.mode.bracketed_paste {
