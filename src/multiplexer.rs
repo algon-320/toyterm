@@ -5,6 +5,8 @@ use glutin::{
     event_loop::ControlFlow,
     window::CursorIcon,
 };
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 use crate::terminal::{Cell, Color};
 use crate::window::{TerminalView, TerminalWindow, Viewport};
@@ -26,39 +28,54 @@ enum Command {
     AddNewTab,
     SetMaximize,
     ResetMaximize,
+
+    SaveLayout,
+    RestoreLayout,
 }
 
+#[derive(Serialize, Deserialize)]
 enum Layout {
     Single(SingleLayout),
     Binary(BinaryLayout),
     Tabbed(TabbedLayout),
 }
 
+#[derive(Serialize, Deserialize)]
 struct SingleLayout {
-    display: Display,
+    #[serde(skip)]
     window: Option<Box<TerminalWindow>>,
+    cwd: PathBuf,
 }
 
 impl SingleLayout {
     fn get_mut(&mut self) -> &mut TerminalWindow {
         self.window.as_mut().unwrap()
     }
+
+    fn update_cwd(&mut self) {
+        let cwd = self.get_mut().get_foreground_process_cwd();
+        self.cwd = cwd;
+    }
 }
 
+#[derive(Serialize, Deserialize)]
 struct BinaryLayout {
-    display: Display,
     partition: Partition,
     viewport: Viewport,
     ratio: f64,
     focus_x: bool,
     x: Option<Box<Layout>>,
     y: Option<Box<Layout>>,
-    mouse_cursor_pos: CursorPosition,
-    grabbing: bool,
+
+    #[serde(skip)]
     maximized: bool,
+    #[serde(skip)]
+    mouse_cursor_pos: CursorPosition,
+    #[serde(skip)]
+    grabbing: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum Partition {
     Horizontal,
     Vertical,
@@ -199,7 +216,7 @@ impl BinaryLayout {
         self.y_mut().set_viewport(vp_y);
     }
 
-    fn on_event(&mut self, event: &Event, control_flow: &mut ControlFlow) {
+    fn on_event(&mut self, display: &Display, event: &Event, control_flow: &mut ControlFlow) {
         if let Event::WindowEvent { event: wev, .. } = event {
             match wev {
                 WindowEvent::CursorMoved { position, .. } => {
@@ -213,7 +230,7 @@ impl BinaryLayout {
                                 Partition::Vertical => CursorIcon::EwResize,
                                 Partition::Horizontal => CursorIcon::NsResize,
                             };
-                            self.display.gl_window().window().set_cursor_icon(icon);
+                            display.gl_window().window().set_cursor_icon(icon);
                         } else {
                             // Reload normal icon
                             self.focused_mut()
@@ -232,7 +249,7 @@ impl BinaryLayout {
                 } => {
                     if self.cursor_on_partition() {
                         self.grabbing = true;
-                        self.display
+                        display
                             .gl_window()
                             .window()
                             .set_cursor_icon(CursorIcon::Grabbing);
@@ -271,7 +288,7 @@ impl BinaryLayout {
 
         if let Some(event) = ev_x {
             let mut cf = ControlFlow::default();
-            self.x_mut().on_event(event, &mut cf);
+            self.x_mut().on_event(display, event, &mut cf);
             if cf == ControlFlow::Exit {
                 *control_flow = ControlFlow::Exit;
             }
@@ -279,7 +296,7 @@ impl BinaryLayout {
 
         if let Some(event) = ev_y {
             let mut cf = ControlFlow::default();
-            self.y_mut().on_event(event, &mut cf);
+            self.y_mut().on_event(display, event, &mut cf);
             if cf == ControlFlow::Exit {
                 *control_flow = ControlFlow::Exit;
             }
@@ -319,7 +336,7 @@ impl BinaryLayout {
         }
     }
 
-    fn process_command(&mut self, cmd: Command) -> bool {
+    fn process_command(&mut self, display: &Display, cmd: Command) -> bool {
         match cmd {
             Command::FocusUp | Command::FocusDown | Command::FocusLeft | Command::FocusRight => {
                 let (x_focused, y_focused) = (self.focus_x, !self.focus_x);
@@ -332,7 +349,7 @@ impl BinaryLayout {
                     _ => unreachable!(),
                 };
 
-                let mut consumed = self.focused_mut().process_command(cmd);
+                let mut consumed = self.focused_mut().process_command(display, cmd);
                 if !consumed && changeable {
                     self.focused_mut().focused_window_mut().focus_changed(false);
                     self.focus_x ^= true;
@@ -342,22 +359,29 @@ impl BinaryLayout {
                 consumed
             }
             Command::SetMaximize => {
-                self.focused_mut().process_command(cmd);
+                self.focused_mut().process_command(display, cmd);
                 self.maximized = true;
                 true
             }
             Command::ResetMaximize => {
-                self.focused_mut().process_command(cmd);
+                self.focused_mut().process_command(display, cmd);
                 self.maximized = false;
                 true
             }
-            _ => self.focused_mut().process_command(cmd),
+
+            Command::SaveLayout | Command::RestoreLayout => {
+                self.x_mut().process_command(display, cmd);
+                self.y_mut().process_command(display, cmd);
+                true
+            }
+
+            _ => self.focused_mut().process_command(display, cmd),
         }
     }
 }
 
+#[derive(Serialize, Deserialize)]
 struct TabbedLayout {
-    display: Display,
     viewport: Viewport,
     focus: usize,
     tabs: Vec<Option<Box<Layout>>>,
@@ -368,17 +392,17 @@ impl TabbedLayout {
         self.tabs[self.focus].as_mut().unwrap()
     }
 
-    fn on_event(&mut self, event: &Event, control_flow: &mut ControlFlow) {
-        self.focused_mut().on_event(event, control_flow);
+    fn on_event(&mut self, display: &Display, event: &Event, control_flow: &mut ControlFlow) {
+        self.focused_mut().on_event(display, event, control_flow);
     }
 
-    fn process_command(&mut self, cmd: Command) -> bool {
+    fn process_command(&mut self, display: &Display, cmd: Command) -> bool {
         match cmd {
             Command::AddNewTab => {
                 self.focused_mut().focused_window_mut().focus_changed(false);
 
-                let window = TerminalWindow::with_viewport(self.display.clone(), self.viewport);
-                let single = Layout::new_single(self.display.clone(), window.into());
+                let window = TerminalWindow::with_viewport(display.clone(), self.viewport, None);
+                let single = Layout::new_single(window.into());
 
                 self.tabs.push(Some(single.into()));
                 self.focus = self.tabs.len() - 1;
@@ -400,28 +424,34 @@ impl TabbedLayout {
                 true
             }
 
-            _ => self.focused_mut().process_command(cmd),
+            Command::SaveLayout | Command::RestoreLayout => {
+                for tab in self.tabs.iter_mut().flatten() {
+                    tab.process_command(display, cmd);
+                }
+                true
+            }
+
+            _ => self.focused_mut().process_command(display, cmd),
         }
     }
 }
 
 impl Layout {
-    fn new_single(display: Display, win: Box<TerminalWindow>) -> Self {
+    fn new_single(win: Box<TerminalWindow>) -> Self {
+        let cwd = win.get_foreground_process_cwd();
         Self::Single(SingleLayout {
-            display,
             window: Some(win),
+            cwd,
         })
     }
 
     fn new_binary(
-        display: Display,
         partition: Partition,
         viewport: Viewport,
         x: Box<Layout>,
         y: Box<Layout>,
     ) -> Self {
         let mut layout = Self::Binary(BinaryLayout {
-            display,
             partition,
             viewport,
             ratio: 0.50,
@@ -436,9 +466,8 @@ impl Layout {
         layout
     }
 
-    fn new_tabbed(display: Display, viewport: Viewport, first_tab: Box<Layout>) -> Self {
+    fn new_tabbed(viewport: Viewport, first_tab: Box<Layout>) -> Self {
         let mut layout = Self::Tabbed(TabbedLayout {
-            display,
             viewport,
             focus: 0,
             tabs: vec![Some(first_tab)],
@@ -493,11 +522,31 @@ impl Layout {
         }
     }
 
-    fn on_event(&mut self, event: &Event, control_flow: &mut ControlFlow) {
+    fn update_focus(&mut self, focus: bool) {
+        match self {
+            Self::Single(layout) => {
+                layout.get_mut().focus_changed(focus);
+            }
+            Self::Binary(layout) => {
+                let focus_x = layout.focus_x;
+                layout.x_mut().update_focus(focus && focus_x);
+                layout.y_mut().update_focus(focus && !focus_x);
+            }
+            Self::Tabbed(layout) => {
+                for (i, tab) in layout.tabs.iter_mut().enumerate() {
+                    if let Some(tab) = tab {
+                        tab.update_focus(focus && i == layout.focus);
+                    }
+                }
+            }
+        }
+    }
+
+    fn on_event(&mut self, display: &Display, event: &Event, control_flow: &mut ControlFlow) {
         match self {
             Self::Single(layout) => layout.get_mut().on_event(event, control_flow),
-            Self::Binary(layout) => layout.on_event(event, control_flow),
-            Self::Tabbed(layout) => layout.on_event(event, control_flow),
+            Self::Binary(layout) => layout.on_event(display, event, control_flow),
+            Self::Tabbed(layout) => layout.on_event(display, event, control_flow),
         }
     }
 
@@ -559,32 +608,54 @@ impl Layout {
         }
     }
 
-    fn process_command(&mut self, cmd: Command) -> bool {
+    fn process_command(&mut self, display: &Display, cmd: Command) -> bool {
         match self {
-            Self::Single(old) => {
-                let partition = match cmd {
-                    Command::SplitVertical => Partition::Vertical,
-                    Command::SplitHorizontal => Partition::Horizontal,
-                    _ => return false,
-                };
+            Self::Single(layout) => match cmd {
+                Command::SplitVertical | Command::SplitHorizontal => {
+                    let partition = match cmd {
+                        Command::SplitVertical => Partition::Vertical,
+                        Command::SplitHorizontal => Partition::Horizontal,
+                        _ => unreachable!(),
+                    };
 
-                let display = old.display.clone();
-                let old_window = old.window.take().unwrap();
-                let new_window = Box::new(TerminalWindow::new(display.clone()));
+                    layout.update_cwd();
+                    let old_cwd = layout.cwd.clone();
+                    let old_window = layout.window.take().unwrap();
 
-                let viewport = old_window.viewport();
+                    let new_window = {
+                        let cwd = Some(old_cwd.as_ref()); // derive from current pane
+                        Box::new(TerminalWindow::new(display.clone(), cwd))
+                    };
 
-                let mut x = Layout::new_single(display.clone(), old_window);
-                let mut y = Layout::new_single(display.clone(), new_window);
+                    let viewport = old_window.viewport();
 
-                x.focused_window_mut().focus_changed(false);
-                y.focused_window_mut().focus_changed(true);
+                    let mut y = Layout::new_single(new_window);
+                    let mut x = Layout::new_single(old_window);
 
-                *self = Layout::new_binary(display, partition, viewport, x.into(), y.into());
-                true
-            }
-            Self::Binary(layout) => layout.process_command(cmd),
-            Self::Tabbed(layout) => layout.process_command(cmd),
+                    x.focused_window_mut().focus_changed(false);
+                    y.focused_window_mut().focus_changed(true);
+
+                    *self = Layout::new_binary(partition, viewport, x.into(), y.into());
+                    true
+                }
+
+                Command::SaveLayout => {
+                    layout.update_cwd();
+                    true
+                }
+                Command::RestoreLayout => {
+                    debug_assert!(layout.window.is_none());
+                    let new_window =
+                        Box::new(TerminalWindow::new(display.clone(), Some(&layout.cwd)));
+                    layout.window = Some(new_window);
+                    true
+                }
+
+                _ => false,
+            },
+
+            Self::Binary(layout) => layout.process_command(display, cmd),
+            Self::Tabbed(layout) => layout.process_command(display, cmd),
         }
     }
 }
@@ -611,9 +682,9 @@ impl Multiplexer {
         let status_view = TerminalView::with_viewport(display.clone(), viewport);
 
         let main_layout = {
-            let window = TerminalWindow::new(display.clone());
-            let single = Layout::new_single(display.clone(), Box::new(window));
-            Layout::new_tabbed(display.clone(), viewport, single.into())
+            let window = TerminalWindow::new(display.clone(), None);
+            let single = Layout::new_single(Box::new(window));
+            Layout::new_tabbed(viewport, single.into())
         };
 
         let mut mux = Multiplexer {
@@ -746,6 +817,48 @@ impl Multiplexer {
         if let Some(cmd) = self.controller.on_event(event) {
             log::debug!("command: {:?}", cmd);
 
+            fn find_layout_file() -> Option<PathBuf> {
+                let xdg_config_home = std::env::var_os("XDG_CONFIG_HOME")
+                    .map(PathBuf::from)
+                    .or_else(|| {
+                        // fallback to "$HOME/.config"
+                        let home = std::env::var_os("HOME")?;
+                        let mut p = PathBuf::from(home);
+                        p.push(".config");
+                        Some(p)
+                    })?;
+
+                let mut layout_path = xdg_config_home;
+                layout_path.push("toyterm");
+                layout_path.push("layout.json");
+                Some(layout_path)
+            }
+
+            if let Command::SaveLayout = cmd {
+                self.main_layout
+                    .process_command(&self.display, Command::SaveLayout);
+                self.refresh_layout();
+
+                let bytes = serde_json::to_vec(&self.main_layout).unwrap();
+                std::fs::write(find_layout_file().unwrap(), &bytes).unwrap();
+                return;
+            }
+
+            if let Command::RestoreLayout = cmd {
+                let bytes = std::fs::read(find_layout_file().unwrap()).unwrap();
+                self.main_layout = serde_json::from_slice(&bytes).unwrap();
+
+                self.main_layout
+                    .process_command(&self.display, Command::RestoreLayout);
+                self.main_layout.update_focus(true);
+
+                self.refresh_layout();
+                self.update_status_bar();
+
+                self.controller.maximized = false;
+                return;
+            }
+
             // FIXME
             if let Command::FocusUp
             | Command::FocusDown
@@ -755,11 +868,12 @@ impl Multiplexer {
             | Command::SplitHorizontal = cmd
             {
                 self.controller.maximized = false;
-                self.main_layout.process_command(Command::ResetMaximize);
+                self.main_layout
+                    .process_command(&self.display, Command::ResetMaximize);
                 self.refresh_layout();
             }
 
-            self.main_layout.process_command(cmd);
+            self.main_layout.process_command(&self.display, cmd);
             self.update_status_bar();
 
             if let Command::SetMaximize | Command::ResetMaximize = cmd {
@@ -810,7 +924,7 @@ impl Multiplexer {
         }
 
         let mut cf = ControlFlow::default();
-        self.main_layout.on_event(event, &mut cf);
+        self.main_layout.on_event(&self.display, event, &mut cf);
 
         if cf == ControlFlow::Exit {
             self.main_layout.close();
@@ -819,7 +933,8 @@ impl Multiplexer {
             } else {
                 // FIXME
                 self.controller.maximized = false;
-                self.main_layout.process_command(Command::ResetMaximize);
+                self.main_layout
+                    .process_command(&self.display, Command::ResetMaximize);
 
                 self.refresh_layout();
                 self.update_status_bar();
@@ -879,6 +994,8 @@ impl Controller {
                 'p' => Some(Command::FocusPrevTab),
                 '%' => Some(Command::SplitVertical),
                 '"' => Some(Command::SplitHorizontal),
+                's' => Some(Command::SaveLayout),
+                'r' => Some(Command::RestoreLayout),
                 'z' => {
                     self.maximized ^= true;
                     if self.maximized {

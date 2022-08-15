@@ -38,7 +38,7 @@ fn main() {
     };
 
     #[cfg(not(feature = "multiplex"))]
-    let mut term = window::TerminalWindow::new(display);
+    let mut term = window::TerminalWindow::new(display, None);
 
     #[cfg(feature = "multiplex")]
     let mut term = multiplexer::Multiplexer::new(display);

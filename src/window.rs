@@ -4,6 +4,7 @@ use glutin::{
     event::{ElementState, Event, ModifiersState, MouseButton, VirtualKeyCode, WindowEvent},
     event_loop::ControlFlow,
 };
+use serde::{Deserialize, Serialize};
 use std::cmp::{max, min};
 use std::rc::Rc;
 
@@ -14,7 +15,7 @@ use crate::terminal::{
     CellSize, Color, CursorStyle, Line, Mode, PositionedImage, Terminal, TerminalSize,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Viewport {
     pub x: u32,
     pub y: u32,
@@ -472,7 +473,7 @@ struct MouseState {
 
 impl TerminalWindow {
     #[allow(unused)]
-    pub fn new(display: Display) -> Self {
+    pub fn new(display: Display, cwd: Option<&std::path::Path>) -> Self {
         let size = display.gl_window().window().inner_size();
         let full = Viewport {
             x: 0,
@@ -480,17 +481,26 @@ impl TerminalWindow {
             w: size.width,
             h: size.height,
         };
-        Self::with_viewport(display, full)
+        Self::with_viewport(display, full, cwd)
     }
 
-    pub fn with_viewport(display: Display, viewport: Viewport) -> Self {
+    pub fn with_viewport(
+        display: Display,
+        viewport: Viewport,
+        cwd: Option<&std::path::Path>,
+    ) -> Self {
         let view = TerminalView::with_viewport(display.clone(), viewport);
 
-        let size = TerminalSize {
-            rows: (viewport.h / view.cell_size.h) as usize,
-            cols: (viewport.w / view.cell_size.w) as usize,
+        let terminal = {
+            let size = TerminalSize {
+                rows: (viewport.h / view.cell_size.h) as usize,
+                cols: (viewport.w / view.cell_size.w) as usize,
+            };
+            let cell_size = view.cell_size;
+            let parent_cwd = std::env::current_dir().expect("cwd");
+            let child_cwd = cwd.unwrap_or(&parent_cwd);
+            Terminal::new(size, cell_size, child_cwd)
         };
-        let terminal = Terminal::new(size, view.cell_size);
 
         let clipboard = X11Clipboard::new();
 
@@ -1151,6 +1161,13 @@ impl TerminalWindow {
                 "(unknown)".to_owned()
             }
         }
+    }
+
+    #[cfg(feature = "multiplex")]
+    pub fn get_foreground_process_cwd(&self) -> std::path::PathBuf {
+        let pgid = self.terminal.get_pgid();
+        let cwd = std::fs::read_link(format!("/proc/{pgid}/cwd")).unwrap();
+        cwd
     }
 }
 

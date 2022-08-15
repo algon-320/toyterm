@@ -512,8 +512,8 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    pub fn new(size: TerminalSize, cell_size: CellSize) -> Self {
-        let (pty, child_pid) = init_pty().unwrap();
+    pub fn new(size: TerminalSize, cell_size: CellSize, cwd: &std::path::Path) -> Self {
+        let (pty, child_pid) = init_pty(cwd).unwrap();
 
         let (control_req_tx, control_req_rx) = pipe_channel::channel();
         let (control_res_tx, control_res_rx) = pipe_channel::channel();
@@ -1619,7 +1619,7 @@ fn buffer_scroll_up_if_needed(buf: &mut Buffer, cursor: Cursor, cell_sz: CellSiz
 
 /// Opens PTY device and spawn a shell
 /// `init_pty` returns a pair (PTY master, PID of shell)
-fn init_pty() -> Result<(OwnedFd, Pid)> {
+fn init_pty(cwd: &std::path::Path) -> Result<(OwnedFd, Pid)> {
     use nix::unistd::ForkResult;
 
     // Safety: single threaded here
@@ -1628,6 +1628,7 @@ fn init_pty() -> Result<(OwnedFd, Pid)> {
     match res.fork_result {
         // Shell side
         ForkResult::Child => {
+            std::env::set_current_dir(cwd).expect("chdir");
             exec_shell()?;
             unreachable!();
         }
