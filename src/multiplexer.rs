@@ -6,7 +6,7 @@ use glutin::{
     window::CursorIcon,
 };
 
-use crate::terminal::{Cell, Color, Line};
+use crate::terminal::{Cell, Color};
 use crate::window::{TerminalView, TerminalWindow, Viewport};
 
 type Event = glutin::event::Event<'static, ()>;
@@ -593,6 +593,7 @@ pub struct Multiplexer {
     display: Display,
     viewport: Viewport,
     status_view: TerminalView,
+    last_updated: std::time::Instant,
     main_layout: Layout,
     controller: Controller,
 }
@@ -619,6 +620,7 @@ impl Multiplexer {
             display,
             viewport,
             status_view,
+            last_updated: std::time::Instant::now(),
             main_layout,
             controller: Controller::default(),
         };
@@ -651,7 +653,18 @@ impl Multiplexer {
     }
 
     fn update_status_bar(&mut self) {
-        self.status_view.bg_color = Color::BrightGreen;
+        const FOCUSED_FG: Color = Color::Yellow;
+        const NORMAL_FG: Color = Color::BrightBlue;
+        const BG: Color = Color::BrightGreen;
+
+        fn default_cell() -> Cell {
+            let mut cell = Cell::new_ascii(' ');
+            cell.attr.fg = NORMAL_FG;
+            cell.attr.bg = BG;
+            cell
+        }
+
+        self.status_view.bg_color = BG;
 
         struct Tab {
             i: usize,
@@ -659,53 +672,69 @@ impl Multiplexer {
             name: String,
         }
 
+        impl Tab {
+            fn display(&self) -> Vec<Cell> {
+                let text = format!("{}:{} ", self.i, self.name);
+                text.chars()
+                    .map(|ch| {
+                        let mut cell = default_cell();
+                        cell.ch = ch;
+                        if self.focus {
+                            cell.attr.fg = FOCUSED_FG;
+                        }
+                        cell
+                    })
+                    .collect()
+            }
+        }
+
+        let cols = (self.viewport.w / self.status_view.cell_size.w) as usize;
+        let mut cells = Vec::new();
+
         let tab_layout = self.tab_layout();
         let focused_tab = tab_layout.focus;
+        for (i, layout) in tab_layout.tabs.iter_mut().enumerate() {
+            if let Some(layout) = layout {
+                let win = layout.focused_window_mut();
+                let name = win.get_foreground_process_name();
+                let last_part = name.rsplit("/").next().unwrap().to_owned();
 
-        let tabs = tab_layout
-            .tabs
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, l)| Some((i, l.as_mut()?)))
-            .map(|(i, l)| Tab {
-                i,
-                focus: i == focused_tab,
-                name: l
-                    .focused_window_mut()
-                    .get_foreground_process_name()
-                    .rsplit("/")
-                    .next()
-                    .unwrap()
-                    .to_owned(),
-            });
+                let tab = Tab {
+                    i,
+                    focus: i == focused_tab,
+                    name: last_part,
+                };
 
-        let line: Line = tabs
-            .flat_map(|tab| {
-                let mut cells: Vec<Cell> = Vec::new();
+                cells.extend(tab.display());
+            }
+        }
 
-                let text = format!("{}:{} ", tab.i, tab.name);
-                for ch in text.chars() {
-                    let mut cell = Cell::new_ascii(ch);
-                    cell.attr.fg = if tab.focus {
-                        Color::Yellow
-                    } else {
-                        Color::BrightBlue
-                    };
-                    cell.attr.bg = Color::BrightGreen;
-                    cells.push(cell);
+        cells.resize(cols, default_cell());
+
+        // display date/time
+        {
+            use chrono::{DateTime, Local};
+            let now: DateTime<Local> = Local::now();
+
+            let text = format!("{}", now.format("%Y/%m/%d %H:%M"));
+            let start = cols.saturating_sub(text.len());
+            for (i, ch) in text.chars().enumerate() {
+                if let Some(cell) = cells.get_mut(start + i) {
+                    cell.ch = ch;
+                    cell.attr.fg = NORMAL_FG;
                 }
-
-                cells
-            })
-            .collect();
+            }
+        }
 
         let contents = &mut self.status_view.contents;
-        contents.lines = vec![line];
+        contents.lines = vec![cells.into_iter().collect()];
         contents.images = Vec::new();
         contents.cursor = None;
         contents.selection_range = None;
 
         self.status_view.updated = true;
+
+        self.last_updated = std::time::Instant::now();
     }
 
     pub fn on_event(&mut self, event: &Event, control_flow: &mut ControlFlow) {
@@ -754,6 +783,7 @@ impl Multiplexer {
                         h: new_size.height,
                     };
                     self.refresh_layout();
+                    self.update_status_bar();
                     return;
                 }
 
@@ -769,6 +799,10 @@ impl Multiplexer {
             }
 
             Event::MainEventsCleared => {
+                if self.last_updated.elapsed().as_secs() >= 5 {
+                    self.update_status_bar();
+                }
+
                 self.display.gl_window().window().request_redraw();
             }
 
