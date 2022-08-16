@@ -1,3 +1,4 @@
+use nix::unistd::Pid;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::io::Result;
@@ -549,16 +550,11 @@ impl Terminal {
     }
 
     #[cfg(feature = "multiplex")]
-    pub fn get_pgid(&self) -> nix::unistd::Pid {
-        fn get_term_pgid(pty_master: &OwnedFd) -> Result<nix::unistd::Pid> {
-            let mut pgid_buf = nix::unistd::Pid::from_raw(0);
-            nix::ioctl_read_bad!(tiocgpgrp, nix::libc::TIOCGPGRP, nix::unistd::Pid);
-            unsafe {
-                tiocgpgrp(
-                    pty_master.as_raw_fd(),
-                    &mut pgid_buf as *mut nix::unistd::Pid,
-                )
-            }?;
+    pub fn get_pgid(&self) -> Pid {
+        fn get_term_pgid(pty_master: &OwnedFd) -> Result<Pid> {
+            let mut pgid_buf = Pid::from_raw(0);
+            nix::ioctl_read_bad!(tiocgpgrp, nix::libc::TIOCGPGRP, Pid);
+            unsafe { tiocgpgrp(pty_master.as_raw_fd(), &mut pgid_buf as *mut Pid) }?;
             Ok(pgid_buf)
         }
 
@@ -1615,7 +1611,7 @@ fn buffer_scroll_up_if_needed(buf: &mut Buffer, cursor: Cursor, cell_sz: CellSiz
 
 /// Opens PTY device and spawn a shell
 /// `init_pty` returns a pair (PTY master, PID of shell)
-fn init_pty() -> Result<(OwnedFd, nix::unistd::Pid)> {
+fn init_pty() -> Result<(OwnedFd, Pid)> {
     use nix::unistd::ForkResult;
 
     // Safety: single threaded here
