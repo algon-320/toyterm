@@ -1140,9 +1140,17 @@ impl TerminalWindow {
     #[cfg(feature = "multiplex")]
     pub fn get_foreground_process_name(&self) -> String {
         let pgid = self.terminal.get_pgid();
-        let cmdline = std::fs::read(format!("/proc/{pgid}/cmdline")).unwrap();
-        let argv0 = cmdline.split(|b| *b == b'\0').next().unwrap();
-        String::from_utf8_lossy(argv0).into()
+        match std::fs::read(format!("/proc/{pgid}/cmdline")) {
+            Ok(cmdline) => {
+                let argv0 = cmdline.split(|b| *b == b'\0').next().unwrap();
+                String::from_utf8_lossy(argv0).into()
+            }
+            Err(err) => {
+                // A process group doesn't need to have a leader (PID=PGID).
+                log::debug!("Failed to read /proc/{pgid}/cmdline: {}", err);
+                "(unknown)".to_owned()
+            }
+        }
     }
 }
 
