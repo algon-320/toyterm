@@ -513,12 +513,13 @@ pub struct Terminal {
 
 impl Terminal {
     pub fn new(size: TerminalSize, cell_size: CellSize) -> Self {
-        let (pty, _child_pid) = init_pty().unwrap();
+        let (pty, child_pid) = init_pty().unwrap();
 
         let (control_req_tx, control_req_rx) = pipe_channel::channel();
         let (control_res_tx, control_res_rx) = pipe_channel::channel();
 
         let engine = Engine::new(
+            child_pid,
             pty.try_clone().expect("dup"),
             control_req_rx,
             control_res_tx,
@@ -633,6 +634,7 @@ impl Cursor {
 }
 
 struct Engine {
+    pid: Pid,
     pty: OwnedFd,
     control_req: pipe_channel::Receiver<Command>,
     control_res: pipe_channel::Sender<i32>,
@@ -664,6 +666,7 @@ impl Engine {
     }
 
     fn new(
+        pid: Pid,
         pty: OwnedFd,
         control_req: pipe_channel::Receiver<Command>,
         control_res: pipe_channel::Sender<i32>,
@@ -690,6 +693,7 @@ impl Engine {
         };
 
         Self {
+            pid,
             pty,
             control_req,
             control_res,
@@ -816,6 +820,10 @@ impl Engine {
 
         let mut buf = self.buffer.lock().unwrap();
         buf.closed = true;
+
+        use nix::sys::signal::{kill, Signal};
+        let _ = kill(self.pid, Signal::SIGHUP);
+        let _ = nix::sys::wait::waitpid(self.pid, None);
     }
 
     fn process(&mut self, input: &str) {
