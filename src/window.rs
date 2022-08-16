@@ -1163,8 +1163,16 @@ impl TerminalWindow {
     #[cfg(feature = "multiplex")]
     pub fn get_foreground_process_cwd(&self) -> std::path::PathBuf {
         let pgid = self.terminal.get_pgid();
-        let cwd = std::fs::read_link(format!("/proc/{pgid}/cwd")).unwrap();
-        cwd
+        match std::fs::read_link(format!("/proc/{pgid}/cwd")) {
+            Ok(cwd) => cwd,
+            Err(err) => {
+                // A process group doesn't need to have a leader (PID=PGID).
+                log::debug!("Failed to read_link /proc/{pgid}/cwd: {}", err);
+
+                // FIXME
+                std::env::current_dir().unwrap()
+            }
+        }
     }
 }
 
