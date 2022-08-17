@@ -667,6 +667,7 @@ pub struct Multiplexer {
     last_updated: std::time::Instant,
     main_layout: Layout,
     controller: Controller,
+    finished: bool,
 }
 
 impl Multiplexer {
@@ -694,6 +695,7 @@ impl Multiplexer {
             last_updated: std::time::Instant::now(),
             main_layout,
             controller: Controller::default(),
+            finished: false,
         };
 
         mux.refresh_layout();
@@ -768,7 +770,7 @@ impl Multiplexer {
             if let Some(layout) = layout {
                 let win = layout.focused_window_mut();
                 let name = win.get_foreground_process_name();
-                let last_part = name.rsplit("/").next().unwrap().to_owned();
+                let last_part = name.rsplit('/').next().unwrap().to_owned();
 
                 let tab = Tab {
                     i,
@@ -809,76 +811,13 @@ impl Multiplexer {
     }
 
     pub fn on_event(&mut self, event: &Event, control_flow: &mut ControlFlow) {
-        if self.tab_layout().tabs.is_empty() {
+        if self.finished {
             *control_flow = ControlFlow::Exit;
             return;
         }
 
         if let Some(cmd) = self.controller.on_event(event) {
-            log::debug!("command: {:?}", cmd);
-
-            fn find_layout_file() -> Option<PathBuf> {
-                let xdg_config_home = std::env::var_os("XDG_CONFIG_HOME")
-                    .map(PathBuf::from)
-                    .or_else(|| {
-                        // fallback to "$HOME/.config"
-                        let home = std::env::var_os("HOME")?;
-                        let mut p = PathBuf::from(home);
-                        p.push(".config");
-                        Some(p)
-                    })?;
-
-                let mut layout_path = xdg_config_home;
-                layout_path.push("toyterm");
-                layout_path.push("layout.json");
-                Some(layout_path)
-            }
-
-            if let Command::SaveLayout = cmd {
-                self.main_layout
-                    .process_command(&self.display, Command::SaveLayout);
-                self.refresh_layout();
-
-                let bytes = serde_json::to_vec(&self.main_layout).unwrap();
-                std::fs::write(find_layout_file().unwrap(), &bytes).unwrap();
-                return;
-            }
-
-            if let Command::RestoreLayout = cmd {
-                let bytes = std::fs::read(find_layout_file().unwrap()).unwrap();
-                self.main_layout = serde_json::from_slice(&bytes).unwrap();
-
-                self.main_layout
-                    .process_command(&self.display, Command::RestoreLayout);
-                self.main_layout.update_focus(true);
-
-                self.refresh_layout();
-                self.update_status_bar();
-
-                self.controller.maximized = false;
-                return;
-            }
-
-            // FIXME
-            if let Command::FocusUp
-            | Command::FocusDown
-            | Command::FocusLeft
-            | Command::FocusRight
-            | Command::SplitVertical
-            | Command::SplitHorizontal = cmd
-            {
-                self.controller.maximized = false;
-                self.main_layout
-                    .process_command(&self.display, Command::ResetMaximize);
-                self.refresh_layout();
-            }
-
-            self.main_layout.process_command(&self.display, cmd);
-            self.update_status_bar();
-
-            if let Command::SetMaximize | Command::ResetMaximize = cmd {
-                self.refresh_layout();
-            }
+            self.process_command(cmd);
             return;
         }
 
@@ -930,6 +869,7 @@ impl Multiplexer {
             self.main_layout.close();
             if self.tab_layout().tabs.is_empty() {
                 *control_flow = ControlFlow::Exit;
+                self.finished = true;
             } else {
                 // FIXME
                 self.controller.maximized = false;
@@ -941,6 +881,105 @@ impl Multiplexer {
             }
         }
     }
+
+    fn process_command(&mut self, cmd: Command) {
+        log::debug!("command: {:?}", cmd);
+        match cmd {
+            Command::Nop => {}
+
+            Command::SaveLayout => {
+                self.main_layout
+                    .process_command(&self.display, Command::SaveLayout);
+                self.refresh_layout();
+
+                let path = find_layout_file();
+                let bytes = serde_json::to_vec(&self.main_layout).expect("serialize");
+                match std::fs::write(&path, &bytes) {
+                    Ok(_) => {
+                        log::info!("layout saved in {}", path.display());
+                    }
+                    Err(err) => {
+                        log::error!("Failed to save layout in {}: {err}", path.display());
+                    }
+                }
+            }
+
+            Command::RestoreLayout => {
+                let path = find_layout_file();
+                let restore_result = std::fs::read(&path).and_then(|bytes| {
+                    serde_json::from_slice(&bytes).map_err(|err| {
+                        use std::io::{Error, ErrorKind};
+                        Error::new(ErrorKind::Other, format!("layout file corrupted: {err}"))
+                    })
+                });
+
+                let saved_layout = match restore_result {
+                    Ok(saved_layout) => saved_layout,
+                    Err(err) => {
+                        log::error!("Failed to restore layout from {}: {err}", path.display());
+                        return;
+                    }
+                };
+
+                self.main_layout = saved_layout;
+                self.main_layout
+                    .process_command(&self.display, Command::RestoreLayout);
+                self.main_layout.update_focus(true);
+
+                self.refresh_layout();
+                self.update_status_bar();
+
+                self.controller.maximized = false;
+
+                log::info!("layout restored from {}", path.display());
+            }
+
+            Command::SetMaximize | Command::ResetMaximize => {
+                self.main_layout.process_command(&self.display, cmd);
+                self.refresh_layout();
+            }
+
+            Command::FocusUp
+            | Command::FocusDown
+            | Command::FocusLeft
+            | Command::FocusRight
+            | Command::SplitVertical
+            | Command::SplitHorizontal => {
+                self.controller.maximized = false;
+                self.main_layout
+                    .process_command(&self.display, Command::ResetMaximize);
+                self.refresh_layout();
+
+                self.main_layout.process_command(&self.display, cmd);
+            }
+
+            Command::FocusNextTab | Command::FocusPrevTab | Command::AddNewTab => {
+                self.main_layout.process_command(&self.display, cmd);
+                self.update_status_bar();
+            }
+        }
+    }
+}
+
+fn find_layout_file() -> PathBuf {
+    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            // fallback to "$HOME/.config"
+            let home = std::env::var_os("HOME")?;
+            let mut p = PathBuf::from(home);
+            p.push(".config");
+            Some(p)
+        })
+        .unwrap_or_else(|| {
+            // otherwise use "/tmp"
+            std::env::temp_dir()
+        });
+
+    let mut layout_path = config_home;
+    layout_path.push("toyterm");
+    layout_path.push("layout.json");
+    layout_path
 }
 
 #[derive(Default)]

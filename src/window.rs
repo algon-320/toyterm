@@ -930,17 +930,9 @@ impl TerminalWindow {
             }
 
             Event::RedrawRequested(_) => {
-                #[cfg(feature = "multiplex")]
-                {
-                    unreachable!();
-                }
-
-                #[cfg(not(feature = "multiplex"))]
-                {
-                    let mut surface = self.display.draw();
-                    self.draw(&mut surface);
-                    surface.finish().expect("finish");
-                }
+                let mut surface = self.display.draw();
+                self.draw(&mut surface);
+                surface.finish().expect("finish");
             }
 
             _ => {}
@@ -1143,8 +1135,10 @@ impl TerminalWindow {
         self.terminal
             .pty_write(format!("\x1b[<{button};{col};{row}{m}").as_bytes());
     }
+}
 
-    #[cfg(feature = "multiplex")]
+#[cfg(feature = "multiplex")]
+impl TerminalWindow {
     pub fn get_foreground_process_name(&self) -> String {
         let pgid = self.terminal.get_pgid();
         match std::fs::read(format!("/proc/{pgid}/cmdline")) {
@@ -1160,7 +1154,6 @@ impl TerminalWindow {
         }
     }
 
-    #[cfg(feature = "multiplex")]
     pub fn get_foreground_process_cwd(&self) -> std::path::PathBuf {
         let pgid = self.terminal.get_pgid();
         match std::fs::read_link(format!("/proc/{pgid}/cwd")) {

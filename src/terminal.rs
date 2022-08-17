@@ -552,14 +552,10 @@ impl Terminal {
 
     #[cfg(feature = "multiplex")]
     pub fn get_pgid(&self) -> Pid {
-        fn get_term_pgid(pty_master: &OwnedFd) -> Result<Pid> {
-            let mut pgid_buf = Pid::from_raw(0);
-            nix::ioctl_read_bad!(tiocgpgrp, nix::libc::TIOCGPGRP, Pid);
-            unsafe { tiocgpgrp(pty_master.as_raw_fd(), &mut pgid_buf as *mut Pid) }?;
-            Ok(pgid_buf)
-        }
-
-        get_term_pgid(&self.pty).expect("get_term_pgid")
+        let mut pgid_buf = Pid::from_raw(0);
+        nix::ioctl_read_bad!(tiocgpgrp, nix::libc::TIOCGPGRP, Pid);
+        unsafe { tiocgpgrp(self.pty.as_raw_fd(), &mut pgid_buf as *mut Pid).expect("TIOCGPGRP") };
+        pgid_buf
     }
 }
 
