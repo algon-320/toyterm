@@ -75,6 +75,8 @@ If feature `multiplex` is enalbed:
 |Ctrl + `a`, `%` |Split current pane vertically|
 |Ctrl + `a`, `"` |Split current pane horizontally|
 |Ctrl + `a`, `z` |Maximize current pane|
+|Ctrl + `a`, `s` |Save current layout|
+|Ctrl + `a`, `r` |Restore saved layout|
 |Ctrl + `a`, Up/Down/Left/Right |Focus up/down/left/right pane|
 |Ctrl + `a`, Ctrl + `a` |Send `\x01` (Ctrl + `a`)|
 
