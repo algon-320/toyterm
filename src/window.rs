@@ -165,7 +165,12 @@ impl TerminalView {
 
     pub fn increase_font_size(&mut self, size_diff: i32) {
         log::debug!("increase font size: {} (diff)", size_diff);
-        self.fonts.increase_size(size_diff);
+
+        {
+            let size = self.fonts.fontsize();
+            let new_size = (size as i32 + size_diff).max(1) as u32;
+            self.fonts.set_fontsize(new_size);
+        }
 
         let (new_cell_size, new_cell_max_over) = calculate_cell_size(&self.fonts);
         self.cell_size = new_cell_size;
@@ -1183,7 +1188,7 @@ impl TerminalWindow {
 fn build_font_set() -> FontSet {
     let config = &crate::TOYTERM_CONFIG;
 
-    let mut fonts = FontSet::empty();
+    let mut fonts = FontSet::new(config.font_size);
 
     use std::iter::repeat;
     let regular_iter = repeat(FontStyle::Regular).zip(config.fonts_regular.iter());
@@ -1202,7 +1207,7 @@ fn build_font_set() -> FontSet {
             Ok(data) => {
                 // TODO: add config
                 let face_idx = 0;
-                let font = Font::new(&data, face_idx, config.font_size);
+                let font = Font::new(&data, face_idx);
                 fonts.add(style, font);
             }
 
@@ -1214,25 +1219,13 @@ fn build_font_set() -> FontSet {
 
     // Add embedded fonts
     {
-        let regular_font = Font::new(
-            include_bytes!("../fonts/Mplus1Code-Regular.ttf"),
-            0,
-            config.font_size,
-        );
+        let regular_font = Font::new(include_bytes!("../fonts/Mplus1Code-Regular.ttf"), 0);
         fonts.add(FontStyle::Regular, regular_font);
 
-        let bold_font = Font::new(
-            include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"),
-            0,
-            config.font_size,
-        );
+        let bold_font = Font::new(include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"), 0);
         fonts.add(FontStyle::Bold, bold_font);
 
-        let faint_font = Font::new(
-            include_bytes!("../fonts/Mplus1Code-Thin.ttf"),
-            0,
-            config.font_size,
-        );
+        let faint_font = Font::new(include_bytes!("../fonts/Mplus1Code-Thin.ttf"), 0);
         fonts.add(FontStyle::Faint, faint_font);
     }
 

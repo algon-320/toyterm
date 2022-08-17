@@ -9,23 +9,23 @@ use glium::texture::RawImage2d;
 pub struct Font {
     _freetype: Library,
     face: Face,
-    size: u32,
 }
 
 impl Font {
-    pub fn new(ttf_data: &[u8], index: isize, font_size: u32) -> Self {
+    pub fn new(ttf_data: &[u8], index: isize) -> Self {
         let freetype = freetype::Library::init().expect("FreeType init");
         let face = freetype.new_memory_face(ttf_data.to_vec(), index).unwrap();
-        face.set_pixel_sizes(0, font_size).unwrap();
-
         Self {
             _freetype: freetype,
             face,
-            size: font_size,
         }
     }
 
-    pub fn metrics(&self, ch: char) -> Option<GlyphMetrics> {
+    fn set_fontsize(&mut self, size: u32) {
+        self.face.set_pixel_sizes(0, size).unwrap();
+    }
+
+    fn metrics(&self, ch: char) -> Option<GlyphMetrics> {
         if let idx @ 1.. = self.face.get_char_index(ch as usize) {
             self.face.load_glyph(idx, LoadFlag::DEFAULT).expect("load");
             Some(self.face.glyph().metrics())
@@ -34,7 +34,7 @@ impl Font {
         }
     }
 
-    pub fn render(&self, ch: char) -> Option<(RawImage2d<u8>, GlyphMetrics)> {
+    fn render(&self, ch: char) -> Option<(RawImage2d<u8>, GlyphMetrics)> {
         if let idx @ 1.. = self.face.get_char_index(ch as usize) {
             let flags = LoadFlag::RENDER | LoadFlag::TARGET_LIGHT;
             self.face.load_glyph(idx, flags).expect("render");
@@ -55,12 +55,6 @@ impl Font {
             None
         }
     }
-
-    pub fn increase_size(&mut self, inc: i32) {
-        let new_size = self.size as i32 + inc;
-        self.size = new_size.clamp(1, i32::MAX) as u32;
-        self.face.set_pixel_sizes(0, self.size).unwrap();
-    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -79,16 +73,19 @@ impl FontStyle {
 
 pub struct FontSet {
     fonts: HashMap<FontStyle, Vec<Font>>,
+    font_size: u32,
 }
 
 impl FontSet {
-    pub fn empty() -> Self {
+    pub fn new(font_size: u32) -> Self {
         FontSet {
             fonts: HashMap::new(),
+            font_size,
         }
     }
 
-    pub fn add(&mut self, style: FontStyle, font: Font) {
+    pub fn add(&mut self, style: FontStyle, mut font: Font) {
+        font.set_fontsize(self.font_size);
         let list = self.fonts.entry(style).or_insert_with(Vec::new);
         list.push(font);
     }
@@ -101,10 +98,15 @@ impl FontSet {
         self.fonts.get(&style)?.iter().find_map(|f| f.render(ch))
     }
 
-    pub fn increase_size(&mut self, inc: i32) {
-        for fs in self.fonts.values_mut() {
-            for f in fs {
-                f.increase_size(inc);
+    pub fn fontsize(&self) -> u32 {
+        self.font_size
+    }
+
+    pub fn set_fontsize(&mut self, new_size: u32) {
+        self.font_size = new_size;
+        for list in self.fonts.values_mut() {
+            for f in list.iter_mut() {
+                f.set_fontsize(new_size);
             }
         }
     }
