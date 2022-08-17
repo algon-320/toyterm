@@ -144,6 +144,7 @@ Currently toyterm supports the following functions.
 
 - SelectCursorStyle:
     - Block: `\e[2 q`
+    - Underline: `\e[4 q`
     - Bar: `\e[6 q`
 
 ## Device Control Function

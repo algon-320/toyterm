@@ -34,6 +34,7 @@ fn overwrap(outer: &PositionedImage, inner: &PositionedImage) -> bool {
 pub enum CursorStyle {
     #[default]
     Block,
+    Underline,
     Bar,
 }
 
@@ -1265,6 +1266,7 @@ impl Engine {
 
                 SelectCursorStyle(ps) => match ps {
                     2 => buf.cursor_style = CursorStyle::Block,
+                    4 => buf.cursor_style = CursorStyle::Underline,
                     6 => buf.cursor_style = CursorStyle::Bar,
                     _ => {
                         log::warn!("unknown cursor shape: {}", ps);

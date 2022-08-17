@@ -361,12 +361,23 @@ impl TerminalView {
             baseline += cell_size.h;
         }
 
-        if let Some((row, col, CursorStyle::Bar, true)) = self.contents.cursor {
-            let rect = PixelRect {
-                x: ((col as u32) * cell_size.w) as i32,
-                y: ((row as u32) * cell_size.h) as i32,
-                w: 4,
-                h: cell_size.h,
+        if let Some((row, col, style @ (CursorStyle::Underline | CursorStyle::Bar), true)) =
+            self.contents.cursor
+        {
+            let rect = if style == CursorStyle::Underline {
+                PixelRect {
+                    x: col as i32 * cell_size.w as i32,
+                    y: (row + 1) as i32 * cell_size.h as i32 - 4,
+                    w: cell_size.w,
+                    h: 4,
+                }
+            } else {
+                PixelRect {
+                    x: col as i32 * cell_size.w as i32,
+                    y: row as i32 * cell_size.h as i32,
+                    w: 4,
+                    h: cell_size.h,
+                }
             };
 
             let fg = Color::Black;
