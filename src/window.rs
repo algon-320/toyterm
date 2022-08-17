@@ -87,44 +87,44 @@ impl TerminalView {
         // Rasterize ASCII characters and cache them as a texture
         let cache = GlyphCache::build_ascii_visible(&display, &fonts, cell_size);
 
-        let inner_size = display.gl_window().window().inner_size();
-
         let draw_params = glium::DrawParameters {
             blend: glium::Blend::alpha_blending(),
-            viewport: Some(viewport.to_glium_rect(inner_size)),
+            viewport: {
+                let inner_size = display.gl_window().window().inner_size();
+                Some(viewport.to_glium_rect(inner_size))
+            },
             ..glium::DrawParameters::default()
         };
 
-        // Initialize shaders
-        let program_cell = {
+        fn new_program(display: &Display, vert: &str, frag: &str) -> glium::Program {
             use glium::program::{Program, ProgramCreationInput};
-            let input = ProgramCreationInput::SourceCode {
-                vertex_shader: include_str!("shaders/cell.vert"),
-                fragment_shader: include_str!("shaders/cell.frag"),
-                geometry_shader: None,
-                tessellation_control_shader: None,
-                tessellation_evaluation_shader: None,
-                transform_feedback_varyings: None,
-                outputs_srgb: true,
-                uses_point_size: false,
-            };
-            Program::new(&display, input).unwrap()
-        };
+            Program::new(
+                display,
+                ProgramCreationInput::SourceCode {
+                    vertex_shader: vert,
+                    fragment_shader: frag,
+                    geometry_shader: None,
+                    tessellation_control_shader: None,
+                    tessellation_evaluation_shader: None,
+                    transform_feedback_varyings: None,
+                    outputs_srgb: true,
+                    uses_point_size: false,
+                },
+            )
+            .unwrap()
+        }
 
-        let program_img = {
-            use glium::program::{Program, ProgramCreationInput};
-            let input = ProgramCreationInput::SourceCode {
-                vertex_shader: include_str!("shaders/image.vert"),
-                fragment_shader: include_str!("shaders/image.frag"),
-                geometry_shader: None,
-                tessellation_control_shader: None,
-                tessellation_evaluation_shader: None,
-                transform_feedback_varyings: None,
-                outputs_srgb: true,
-                uses_point_size: false,
-            };
-            Program::new(&display, input).unwrap()
-        };
+        let program_cell = new_program(
+            &display,
+            include_str!("shaders/cell.vert"),
+            include_str!("shaders/cell.frag"),
+        );
+
+        let program_img = new_program(
+            &display,
+            include_str!("shaders/image.vert"),
+            include_str!("shaders/image.frag"),
+        );
 
         TerminalView {
             viewport,
