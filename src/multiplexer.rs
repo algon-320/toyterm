@@ -945,10 +945,12 @@ impl Multiplexer {
             | Command::FocusRight
             | Command::SplitVertical
             | Command::SplitHorizontal => {
-                self.controller.maximized = false;
-                self.main_layout
-                    .process_command(&self.display, Command::ResetMaximize);
-                self.refresh_layout();
+                if self.controller.maximized {
+                    self.controller.maximized = false;
+                    self.main_layout
+                        .process_command(&self.display, Command::ResetMaximize);
+                    self.refresh_layout();
+                }
 
                 self.main_layout.process_command(&self.display, cmd);
             }
