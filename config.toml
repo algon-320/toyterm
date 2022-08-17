@@ -21,6 +21,7 @@
 # ]
 #
 # font_size = 32
+# status_bar_font_size = 32
 
 # Colors in RRGGBBAA format
 # (Note that colors with AA = 00 are reserved for internal usage.)

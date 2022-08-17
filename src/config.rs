@@ -10,6 +10,9 @@ pub struct Config {
     pub fonts_faint: Vec<PathBuf>,
     pub font_size: u32,
 
+    #[cfg(feature = "multiplex")]
+    pub status_bar_font_size: u32,
+
     // RRGGBBAA
     pub color_black: u32,
     pub color_red: u32,
@@ -46,6 +49,9 @@ impl Default for Config {
             fonts_bold: vec![PathBuf::new()],
             fonts_faint: vec![PathBuf::new()],
             font_size: 32,
+
+            #[cfg(feature = "multiplex")]
+            status_bar_font_size: 32,
 
             color_black: 0x000000FF,
             color_red: 0xFF0000FF,

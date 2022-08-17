@@ -79,8 +79,8 @@ struct DrawQuery<V: glium::vertex::Vertex> {
 }
 
 impl TerminalView {
-    pub fn with_viewport(display: Display, viewport: Viewport) -> Self {
-        let fonts = build_font_set();
+    pub fn with_viewport(display: Display, viewport: Viewport, font_size: u32) -> Self {
+        let fonts = build_font_set(font_size);
 
         let (cell_size, cell_max_over) = calculate_cell_size(&fonts);
 
@@ -504,7 +504,8 @@ impl TerminalWindow {
         viewport: Viewport,
         cwd: Option<&std::path::Path>,
     ) -> Self {
-        let view = TerminalView::with_viewport(display.clone(), viewport);
+        let font_size = crate::TOYTERM_CONFIG.font_size;
+        let view = TerminalView::with_viewport(display.clone(), viewport, font_size);
 
         let terminal = {
             let size = TerminalSize {
@@ -1185,10 +1186,10 @@ impl TerminalWindow {
     }
 }
 
-fn build_font_set() -> FontSet {
+fn build_font_set(font_size: u32) -> FontSet {
     let config = &crate::TOYTERM_CONFIG;
 
-    let mut fonts = FontSet::new(config.font_size);
+    let mut fonts = FontSet::new(font_size);
 
     use std::iter::repeat;
     let regular_iter = repeat(FontStyle::Regular).zip(config.fonts_regular.iter());
