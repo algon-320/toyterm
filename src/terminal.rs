@@ -1,3 +1,4 @@
+use nix::errno::Errno;
 use nix::unistd::Pid;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
@@ -757,10 +758,12 @@ impl Engine {
 
         loop {
             log::trace!("polling");
-            let ready_count = poll(&mut fds, -1).expect("poll");
-
-            if ready_count == 0 {
-                continue;
+            if let Err(err) = poll(&mut fds, -1) {
+                if let Errno::EINTR | Errno::EAGAIN = err {
+                    continue;
+                }
+                log::error!("poll failed: {err}");
+                break;
             }
 
             let pty_revents = fds[0].revents();
