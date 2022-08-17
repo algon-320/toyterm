@@ -2,7 +2,7 @@
 
 toyterm is a toy terminal emulator for Linux.
 
-![screenshot01.png](docs/screenshot01.png)
+![screenshot02.png](docs/screenshot02.png)
 
 ## Features/Limitations
 
