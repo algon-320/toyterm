@@ -606,8 +606,7 @@ impl TerminalWindow {
                 std::mem::swap(&mut contents.lines, &mut lines);
 
                 contents.images = buf
-                    .images
-                    .iter()
+                    .images()
                     .cloned()
                     .map(|mut img| {
                         img.row -= self.history_head;

@@ -369,10 +369,11 @@ pub struct Buffer {
     lines: VecDeque<Line>,
     history: VecDeque<Line>,
     alt_lines: VecDeque<Line>,
+    images: Vec<PositionedImage>,
+    alt_images: Vec<PositionedImage>,
 
     pub size: TerminalSize,
     pub history_size: usize,
-    pub images: Vec<PositionedImage>,
     pub cursor: (usize, usize),
     pub cursor_style: CursorStyle,
     pub mode: Mode,
@@ -401,10 +402,11 @@ impl Buffer {
             lines,
             history,
             alt_lines,
+            images: Vec::new(),
+            alt_images: Vec::new(),
 
             size: sz,
             history_size: 0,
-            images: Vec::new(),
             cursor: (0, 0),
             cursor_style: CursorStyle::Block,
             mode: Mode::default(),
@@ -438,6 +440,10 @@ impl Buffer {
             let bot = min(bot, buff_len) as usize;
             self.history.range(top..).chain(self.lines.range(..bot))
         }
+    }
+
+    pub fn images(&self) -> impl Iterator<Item = &PositionedImage> + '_ {
+        self.images.iter()
     }
 
     fn resize(&mut self, sz: TerminalSize) {
@@ -494,6 +500,7 @@ impl Buffer {
 
     fn swap_screen_buffers(&mut self) {
         std::mem::swap(&mut self.lines, &mut self.alt_lines);
+        std::mem::swap(&mut self.images, &mut self.alt_images);
     }
 }
 
@@ -1303,10 +1310,12 @@ impl Engine {
                                 self.saved_cursor = self.cursor;
                                 self.saved_attr = self.attr;
 
-                                // swtich to the alternate screen buffer
+                                // clear the alternative buffers
                                 for line in buf.alt_lines.iter_mut() {
                                     line.erase_all();
                                 }
+                                buf.alt_images.clear();
+
                                 buf.swap_screen_buffers();
                             }
 
