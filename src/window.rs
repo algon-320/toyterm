@@ -565,24 +565,24 @@ impl TerminalWindow {
         let mouse_track_mode_changed: bool;
         let terminal_size: TerminalSize;
         {
-            // hold the lock while copying buffer states
-            let mut buf = self.terminal.buffer.lock().unwrap();
+            // hold the lock while copying states
+            let mut state = self.terminal.state.lock().unwrap();
 
-            if buf.closed {
+            if state.closed {
                 return true;
             }
 
-            mouse_track_mode_changed = self.mode.mouse_track != buf.mode.mouse_track;
-            self.mode = buf.mode;
+            mouse_track_mode_changed = self.mode.mouse_track != state.mode.mouse_track;
+            self.mode = state.mode;
 
-            if self.history_head < -(buf.history_size as isize) {
-                self.history_head = -(buf.history_size as isize);
+            if self.history_head < -(state.history_size as isize) {
+                self.history_head = -(state.history_size as isize);
             }
 
-            contents_updated = buf.updated || self.last_history_head != self.history_head;
+            contents_updated = state.updated || self.last_history_head != self.history_head;
             self.last_history_head = self.history_head;
 
-            terminal_size = buf.size;
+            terminal_size = state.size;
 
             if contents_updated {
                 let contents = &mut self.view.contents;
@@ -594,18 +594,18 @@ impl TerminalWindow {
 
                     if lines.len() == terminal_size.rows {
                         // Copy lines w/o heap allocation
-                        for (src, dst) in buf.range(top, bot).zip(lines.iter_mut()) {
+                        for (src, dst) in state.range(top, bot).zip(lines.iter_mut()) {
                             dst.copy_from(src);
                         }
                     } else {
                         // Copy lines w/ heap allocation
                         lines.clear();
-                        lines.extend(buf.range(top, bot).cloned());
+                        lines.extend(state.range(top, bot).cloned());
                     }
                 }
                 std::mem::swap(&mut contents.lines, &mut lines);
 
-                contents.images = buf
+                contents.images = state
                     .images()
                     .cloned()
                     .map(|mut img| {
@@ -614,8 +614,8 @@ impl TerminalWindow {
                     })
                     .collect();
 
-                if self.history_head >= 0 && buf.mode.cursor_visible {
-                    let (row, col, style) = buf.cursor();
+                if self.history_head >= 0 && state.mode.cursor_visible {
+                    let (row, col, style) = state.cursor();
                     contents.cursor = Some((row, col, style, self.focused));
 
                     self.display
@@ -632,7 +632,7 @@ impl TerminalWindow {
                 self.view.updated = true;
             }
 
-            buf.updated = false;
+            state.updated = false;
         }
 
         if mouse_track_mode_changed {
@@ -1042,8 +1042,8 @@ impl TerminalWindow {
 
             (CTRL_SHIFT, VirtualKeyCode::L) => {
                 self.history_head = 0;
-                let mut buf = self.terminal.buffer.lock().unwrap();
-                buf.clear_history();
+                let mut state = self.terminal.state.lock().unwrap();
+                state.clear_history();
             }
 
             (_, keycode) => {

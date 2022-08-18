@@ -357,7 +357,7 @@ impl Default for Mode {
 }
 
 #[derive(Debug, Clone)]
-pub struct Buffer {
+pub struct State {
     history: VecDeque<Line>,
     lines: VecDeque<Line>,
     alt_lines: VecDeque<Line>,
@@ -373,7 +373,7 @@ pub struct Buffer {
     pub closed: bool,
 }
 
-impl Buffer {
+impl State {
     const HISTORY_CAPACITY: usize = 10000;
 
     pub fn new(sz: TerminalSize) -> Self {
@@ -522,7 +522,7 @@ pub struct Terminal {
     pty: OwnedFd,
     control_req: pipe_channel::Sender<Command>,
     control_res: pipe_channel::Receiver<i32>,
-    pub buffer: Arc<Mutex<Buffer>>,
+    pub state: Arc<Mutex<State>>,
 }
 
 impl Terminal {
@@ -540,14 +540,14 @@ impl Terminal {
             size,
             cell_size,
         );
-        let buffer = engine.buffer();
+        let state = engine.state();
         std::thread::spawn(move || engine.start());
 
         Terminal {
             pty,
             control_req: control_req_tx,
             control_res: control_res_rx,
-            buffer,
+            state,
         }
     }
 
@@ -659,7 +659,7 @@ struct Engine {
     control_res: pipe_channel::Sender<i32>,
     sz: TerminalSize,
     cell_sz: CellSize,
-    buffer: Arc<Mutex<Buffer>>,
+    state: Arc<Mutex<State>>,
     parser: control_function::Parser,
     tabstops: Vec<usize>,
     attr: GraphicAttribute,
@@ -693,7 +693,7 @@ impl Engine {
     ) -> Self {
         Self::set_term_window_size(&pty, sz).unwrap();
 
-        let buffer = Arc::new(Mutex::new(Buffer::new(sz)));
+        let state = Arc::new(Mutex::new(State::new(sz)));
 
         // Initialize tabulation stops
         let mut tabstops = Vec::new();
@@ -715,7 +715,7 @@ impl Engine {
             control_res,
             sz,
             cell_sz,
-            buffer,
+            state,
             parser: control_function::Parser::default(),
             tabstops,
             attr: GraphicAttribute::default(),
@@ -724,8 +724,8 @@ impl Engine {
         }
     }
 
-    fn buffer(&self) -> Arc<Mutex<Buffer>> {
-        self.buffer.clone()
+    fn state(&self) -> Arc<Mutex<State>> {
+        self.state.clone()
     }
 
     fn resize(&mut self, sz: TerminalSize, cell_sz: CellSize) {
@@ -748,10 +748,10 @@ impl Engine {
         self.saved_cursor.sz = sz;
         self.saved_cursor = self.saved_cursor.exact(row, col);
 
-        let mut buf = self.buffer.lock().unwrap();
-        buf.resize(sz);
+        let mut state = self.state.lock().unwrap();
+        state.resize(sz);
 
-        debug_assert_eq!(self.sz, buf.size);
+        debug_assert_eq!(self.sz, state.size);
         debug_assert_eq!(self.sz, self.saved_cursor.sz);
     }
 
@@ -829,8 +829,8 @@ impl Engine {
             }
         }
 
-        let mut buf = self.buffer.lock().unwrap();
-        buf.closed = true;
+        let mut state = self.state.lock().unwrap();
+        state.closed = true;
 
         use nix::sys::signal::{kill, Signal};
         let _ = kill(self.pid, Signal::SIGHUP);
@@ -839,9 +839,9 @@ impl Engine {
 
     fn process(&mut self, input: &str) {
         log::trace!("process: {:?}", input);
-        let mut buf = self.buffer.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
 
-        buf.updated = true;
+        state.updated = true;
 
         for ch in input.chars() {
             let func = match self.parser.feed(ch) {
@@ -866,20 +866,20 @@ impl Engine {
                 }
 
                 LF | VT | FF => {
-                    buffer_scroll_up_if_needed(&mut buf, self.cell_sz);
-                    buf.cursor = buf.cursor.next_row();
+                    buffer_scroll_up_if_needed(&mut state, self.cell_sz);
+                    state.cursor = state.cursor.next_row();
                 }
 
                 CR => {
-                    buf.cursor = buf.cursor.first_col();
+                    state.cursor = state.cursor.first_col();
                 }
 
                 BS => {
-                    buf.cursor = buf.cursor.prev_col();
+                    state.cursor = state.cursor.prev_col();
                 }
 
                 HT => {
-                    let (row, col) = buf.cursor.pos();
+                    let (row, col) = state.cursor.pos();
 
                     // If the cursor is already at the end, do nothing
                     if col == self.sz.cols - 1 {
@@ -901,10 +901,10 @@ impl Engine {
                         backlink: 0,
                         attr: self.attr,
                     };
-                    buf.lines[row].put(col, tab);
+                    state.lines[row].put(col, tab);
 
                     for _ in 0..advance {
-                        buf.cursor = buf.cursor.next_col();
+                        state.cursor = state.cursor.next_col();
                     }
                 }
 
@@ -914,10 +914,10 @@ impl Engine {
                         pn = 1
                     }
 
-                    let (row, _) = buf.cursor.pos();
+                    let (row, _) = state.cursor.pos();
                     let up = min(pn, row);
                     for _ in 0..up {
-                        buf.cursor = buf.cursor.prev_row();
+                        state.cursor = state.cursor.prev_row();
                     }
                 }
 
@@ -927,10 +927,10 @@ impl Engine {
                         pn = 1
                     }
 
-                    let (row, _) = buf.cursor.pos();
+                    let (row, _) = state.cursor.pos();
                     let down = min(pn, self.sz.rows - 1 - row);
                     for _ in 0..down {
-                        buf.cursor = buf.cursor.next_row();
+                        state.cursor = state.cursor.next_row();
                     }
                 }
 
@@ -940,10 +940,10 @@ impl Engine {
                         pn = 1
                     }
 
-                    let (_, col) = buf.cursor.pos();
+                    let (_, col) = state.cursor.pos();
                     let right = min(pn, self.sz.cols - 1 - col);
                     for _ in 0..right {
-                        buf.cursor = buf.cursor.next_col();
+                        state.cursor = state.cursor.next_col();
                     }
                 }
 
@@ -953,10 +953,10 @@ impl Engine {
                         pn = 1
                     }
 
-                    let (_, col) = buf.cursor.pos();
+                    let (_, col) = state.cursor.pos();
                     let left = min(pn, col);
                     for _ in 0..left {
-                        buf.cursor = buf.cursor.prev_col();
+                        state.cursor = state.cursor.prev_col();
                     }
                 }
 
@@ -971,7 +971,7 @@ impl Engine {
                         pn2 -= 1;
                     }
 
-                    buf.cursor = buf.cursor.exact(pn1, pn2);
+                    state.cursor = state.cursor.exact(pn1, pn2);
                 }
 
                 CHA(pn) => {
@@ -980,8 +980,8 @@ impl Engine {
                         pn -= 1;
                     }
 
-                    let (row, _) = buf.cursor.pos();
-                    buf.cursor = buf.cursor.exact(row, pn);
+                    let (row, _) = state.cursor.pos();
+                    state.cursor = state.cursor.exact(row, pn);
                 }
 
                 VPA(pn) => {
@@ -990,9 +990,9 @@ impl Engine {
                         pn -= 1;
                     }
 
-                    let (_, col) = buf.cursor.pos();
+                    let (_, col) = state.cursor.pos();
                     let row = min(pn, self.sz.rows - 1);
-                    buf.cursor = buf.cursor.exact(row, col);
+                    state.cursor = state.cursor.exact(row, col);
                 }
 
                 ECH(pn) => {
@@ -1001,48 +1001,48 @@ impl Engine {
                         pn = 1;
                     }
 
-                    let (row, col) = buf.cursor.pos();
-                    buf.lines[row].erase(col..col + pn);
+                    let (row, col) = state.cursor.pos();
+                    state.lines[row].erase(col..col + pn);
                 }
 
                 ED(ps) => match ps {
                     0 => {
                         // clear from the the cursor position to the end (inclusive)
-                        let (row, col) = buf.cursor.pos();
-                        buf.lines[row].erase(col..);
-                        for line in buf.lines.range_mut(row + 1..) {
+                        let (row, col) = state.cursor.pos();
+                        state.lines[row].erase(col..);
+                        for line in state.lines.range_mut(row + 1..) {
                             line.erase_all();
                         }
 
                         // Remove sixel graphics
                         let cell_hpx = self.cell_sz.h;
-                        buf.images.retain(|img| {
+                        state.images.retain(|img| {
                             let v_cells = ((img.height as u32 + cell_hpx - 1) / cell_hpx) as isize;
                             let bottom_row = img.row + v_cells;
                             bottom_row <= row as isize
                         });
-                        log::debug!("{} images retained", buf.images.len());
+                        log::debug!("{} images retained", state.images.len());
                     }
                     1 => {
                         // clear from the beginning to the cursor position (inclusive)
-                        let (row, col) = buf.cursor.pos();
-                        for line in buf.lines.range_mut(0..row) {
+                        let (row, col) = state.cursor.pos();
+                        for line in state.lines.range_mut(0..row) {
                             line.erase_all();
                         }
-                        buf.lines[row].erase(0..=col);
+                        state.lines[row].erase(0..=col);
 
                         // Remove sixel graphics
-                        buf.images.retain(|img| img.row >= row as isize);
-                        log::debug!("{} images retained", buf.images.len());
+                        state.images.retain(|img| img.row >= row as isize);
+                        log::debug!("{} images retained", state.images.len());
                     }
                     2 => {
                         // clear all positions
-                        for line in buf.lines.iter_mut() {
+                        for line in state.lines.iter_mut() {
                             line.erase_all();
                         }
 
                         // Remove sixel graphics
-                        buf.images.clear();
+                        state.images.clear();
                     }
                     _ => unreachable!(),
                 },
@@ -1050,18 +1050,18 @@ impl Engine {
                 EL(ps) => match ps {
                     0 => {
                         // clear from the cursor position to the line end (inclusive)
-                        let (row, col) = buf.cursor.pos();
-                        buf.lines[row].erase(col..);
+                        let (row, col) = state.cursor.pos();
+                        state.lines[row].erase(col..);
                     }
                     1 => {
                         // clear from the line beginning to the cursor position (inclusive)
-                        let (row, col) = buf.cursor.pos();
-                        buf.lines[row].erase(0..=col);
+                        let (row, col) = state.cursor.pos();
+                        state.lines[row].erase(0..=col);
                     }
                     2 => {
                         // clear line
-                        let row = buf.cursor.row;
-                        buf.lines[row].erase_all();
+                        let row = state.cursor.row;
+                        state.lines[row].erase_all();
                     }
                     _ => unreachable!(),
                 },
@@ -1073,7 +1073,7 @@ impl Engine {
                         FdIo(&self.pty).write_all(b"\x1b[0\x6E").unwrap();
                     }
                     6 => {
-                        let (row, col) = buf.cursor.pos();
+                        let (row, col) = state.cursor.pos();
 
                         // a report of the active position
                         use std::io::Write as _;
@@ -1090,8 +1090,8 @@ impl Engine {
                         pn = 1;
                     }
 
-                    let (row, col) = buf.cursor.pos();
-                    let line = &mut buf.lines[row];
+                    let (row, col) = state.cursor.pos();
+                    let line = &mut state.lines[row];
 
                     let src = col;
                     let dst = min(src + pn, self.sz.cols);
@@ -1107,8 +1107,8 @@ impl Engine {
                         pn = 1;
                     }
 
-                    let (row, col) = buf.cursor.pos();
-                    let line = &mut buf.lines[row];
+                    let (row, col) = state.cursor.pos();
+                    let line = &mut state.lines[row];
 
                     let src = min(col + pn, self.sz.cols);
                     let dst = col;
@@ -1124,16 +1124,16 @@ impl Engine {
                         pn = 1;
                     }
 
-                    let (row, _) = buf.cursor.pos();
+                    let (row, _) = state.cursor.pos();
 
                     let src = row;
                     let dst = min(row + pn, self.sz.rows);
                     let count = self.sz.rows - dst;
 
                     if count > 0 {
-                        buf.copy_lines((src, src + count - 1), dst);
+                        state.copy_lines((src, src + count - 1), dst);
                     }
-                    for line in buf.lines.range_mut(src..dst) {
+                    for line in state.lines.range_mut(src..dst) {
                         line.erase_all();
                     }
                 }
@@ -1144,16 +1144,16 @@ impl Engine {
                         pn = 1;
                     }
 
-                    let (row, _) = buf.cursor.pos();
+                    let (row, _) = state.cursor.pos();
 
                     let src = min(row + pn, self.sz.rows);
                     let dst = row;
                     let count = self.sz.rows - src;
 
                     if count > 0 {
-                        buf.copy_lines((src, src + count - 1), dst);
+                        state.copy_lines((src, src + count - 1), dst);
                     }
-                    for line in buf.lines.range_mut(dst + count..) {
+                    for line in state.lines.range_mut(dst + count..) {
                         line.erase_all();
                     }
                 }
@@ -1209,40 +1209,40 @@ impl Engine {
 
                     if let Some(width @ 1..) = ch_width {
                         // If there is no space for new character, move cursor to the next line.
-                        if buf.cursor.right_space() < width {
-                            let (row, col) = buf.cursor.pos();
-                            if !buf.cursor.end {
-                                buf.lines[row].erase(col..);
+                        if state.cursor.right_space() < width {
+                            let (row, col) = state.cursor.pos();
+                            if !state.cursor.end {
+                                state.lines[row].erase(col..);
                             }
-                            buf.lines[row].linewrap = true;
+                            state.lines[row].linewrap = true;
 
-                            buffer_scroll_up_if_needed(&mut buf, self.cell_sz);
-                            buf.cursor = buf.cursor.next_row().first_col();
+                            buffer_scroll_up_if_needed(&mut state, self.cell_sz);
+                            state.cursor = state.cursor.next_row().first_col();
                         }
 
-                        let (row, col) = buf.cursor.pos();
+                        let (row, col) = state.cursor.pos();
                         let cell = Cell {
                             ch,
                             width: width as u16,
                             backlink: 0,
                             attr: self.attr,
                         };
-                        buf.lines[row].put(col, cell);
+                        state.lines[row].put(col, cell);
 
                         for _ in 0..width {
-                            buf.cursor = buf.cursor.next_col();
+                            state.cursor = state.cursor.next_col();
                         }
                     }
                 }
 
                 SixelImage(image) => {
                     log::debug!("image: {}x{}", image.width, image.height);
-                    let (cursor_row, cursor_col) = buf.cursor.pos();
+                    let (cursor_row, cursor_col) = state.cursor.pos();
 
                     let cell_w = self.cell_sz.w as u64;
                     let cell_h = self.cell_sz.h as u64;
 
-                    let (row, col) = if buf.mode.sixel_scrolling {
+                    let (row, col) = if state.mode.sixel_scrolling {
                         (cursor_row as isize, cursor_col as isize)
                     } else {
                         (0, 0)
@@ -1256,29 +1256,29 @@ impl Engine {
                         data: image.data,
                     };
 
-                    buf.images.retain(|img| !overwrap(&new_image, img));
-                    buf.images.push(new_image);
+                    state.images.retain(|img| !overwrap(&new_image, img));
+                    state.images.push(new_image);
 
-                    log::debug!("total {} images", buf.images.len());
+                    log::debug!("total {} images", state.images.len());
 
-                    if buf.mode.sixel_scrolling {
+                    if state.mode.sixel_scrolling {
                         let advance_h = (image.width + cell_w - 1) / cell_w;
                         let advance_v = (image.height + cell_h - 1) / cell_h - 1;
 
                         for _ in 0..advance_h {
-                            buf.cursor = buf.cursor.next_col();
+                            state.cursor = state.cursor.next_col();
                         }
                         for _ in 0..advance_v {
-                            buffer_scroll_up_if_needed(&mut buf, self.cell_sz);
-                            buf.cursor = buf.cursor.next_row();
+                            buffer_scroll_up_if_needed(&mut state, self.cell_sz);
+                            state.cursor = state.cursor.next_row();
                         }
                     }
                 }
 
                 SelectCursorStyle(ps) => match ps {
-                    2 => buf.cursor.style = CursorStyle::Block,
-                    4 => buf.cursor.style = CursorStyle::Underline,
-                    6 => buf.cursor.style = CursorStyle::Bar,
+                    2 => state.cursor.style = CursorStyle::Block,
+                    4 => state.cursor.style = CursorStyle::Underline,
+                    6 => state.cursor.style = CursorStyle::Bar,
                     _ => {
                         log::warn!("unknown cursor shape: {}", ps);
                     }
@@ -1290,41 +1290,41 @@ impl Engine {
                     for p in ps {
                         match p {
                             25 => {
-                                buf.mode.cursor_visible = true;
+                                state.mode.cursor_visible = true;
                             }
 
                             80 => {
-                                buf.mode.sixel_scrolling = true;
+                                state.mode.sixel_scrolling = true;
                                 log::debug!("Sixel Scrolling Mode Enabled");
                             }
 
                             // FIXME : I'm not sure that 1002 is equivalent to 1000 but it works
                             1000 | 1002 => {
-                                buf.mode.mouse_track = true;
+                                state.mode.mouse_track = true;
                                 log::debug!("Mouse Tracking Mode Enabled");
                             }
 
                             1006 => {
-                                buf.mode.sgr_ext_mouse_track = true;
+                                state.mode.sgr_ext_mouse_track = true;
                                 log::debug!("SGR Extended Mode Mouse Tracking Enabled");
                             }
 
                             1049 => {
                                 // save current cursor
-                                self.saved_cursor = buf.cursor;
+                                self.saved_cursor = state.cursor;
                                 self.saved_attr = self.attr;
 
                                 // clear the alternative buffers
-                                for line in buf.alt_lines.iter_mut() {
+                                for line in state.alt_lines.iter_mut() {
                                     line.erase_all();
                                 }
-                                buf.alt_images.clear();
+                                state.alt_images.clear();
 
-                                buf.swap_screen_buffers();
+                                state.swap_screen_buffers();
                             }
 
                             2004 => {
-                                buf.mode.bracketed_paste = true;
+                                state.mode.bracketed_paste = true;
                                 log::debug!("Bracketed Paste Mode Enabled");
                             }
 
@@ -1342,34 +1342,34 @@ impl Engine {
                     for p in ps {
                         match p {
                             25 => {
-                                buf.mode.cursor_visible = false;
+                                state.mode.cursor_visible = false;
                             }
 
                             80 => {
-                                buf.mode.sixel_scrolling = false;
+                                state.mode.sixel_scrolling = false;
                                 log::debug!("Sixel Scrolling Mode Disabled");
                             }
 
                             // FIXME : I'm not sure that 1002 is equivalent to 1000 but it works
                             1000 | 1002 => {
-                                buf.mode.mouse_track = false;
+                                state.mode.mouse_track = false;
                                 log::debug!("Mouse Tracking Mode Disabled");
                             }
 
                             1006 => {
-                                buf.mode.sgr_ext_mouse_track = false;
+                                state.mode.sgr_ext_mouse_track = false;
                                 log::debug!("SGR Extended Mode Mouse Tracking Disabled");
                             }
 
                             1049 => {
                                 // restore cursor and switch back to the primary screen buffer
-                                buf.cursor = self.saved_cursor;
+                                state.cursor = self.saved_cursor;
                                 self.attr = self.saved_attr;
-                                buf.swap_screen_buffers();
+                                state.swap_screen_buffers();
                             }
 
                             2004 => {
-                                buf.mode.bracketed_paste = false;
+                                state.mode.bracketed_paste = false;
                                 log::debug!("Bracketed Paste Mode Disabled");
                             }
 
@@ -1610,19 +1610,19 @@ fn parse_color(prefix: u16, ps: &mut impl Iterator<Item = u16>) -> Option<Color>
     }
 }
 
-fn buffer_scroll_up_if_needed(buf: &mut Buffer, cell_sz: CellSize) {
-    if buf.cursor.row + 1 == buf.cursor.sz.rows {
-        buf.scroll_up();
+fn buffer_scroll_up_if_needed(state: &mut State, cell_sz: CellSize) {
+    if state.cursor.row + 1 == state.cursor.sz.rows {
+        state.scroll_up();
 
-        if !buf.images.is_empty() {
-            for img in buf.images.iter_mut() {
+        if !state.images.is_empty() {
+            for img in state.images.iter_mut() {
                 img.row -= 1;
             }
-            buf.images.retain(|img| {
+            state.images.retain(|img| {
                 let v_cells = ((img.height as u32 + cell_sz.h - 1) / cell_sz.h) as isize;
                 (-v_cells) < img.row
             });
-            log::debug!("{} images retained", buf.images.len());
+            log::debug!("{} images retained", state.images.len());
         }
     }
 }
