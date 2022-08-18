@@ -31,14 +31,6 @@ fn overwrap(outer: &PositionedImage, inner: &PositionedImage) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum CursorStyle {
-    #[default]
-    Block,
-    Underline,
-    Bar,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TerminalSize {
     pub rows: usize,
     pub cols: usize,
@@ -366,16 +358,15 @@ impl Default for Mode {
 
 #[derive(Debug, Clone)]
 pub struct Buffer {
-    lines: VecDeque<Line>,
     history: VecDeque<Line>,
+    lines: VecDeque<Line>,
     alt_lines: VecDeque<Line>,
     images: Vec<PositionedImage>,
     alt_images: Vec<PositionedImage>,
+    cursor: Cursor,
 
     pub size: TerminalSize,
     pub history_size: usize,
-    pub cursor: (usize, usize),
-    pub cursor_style: CursorStyle,
     pub mode: Mode,
 
     pub updated: bool,
@@ -388,32 +379,42 @@ impl Buffer {
     pub fn new(sz: TerminalSize) -> Self {
         assert!(sz.rows > 0 && sz.cols > 0);
 
+        let history: VecDeque<_> = std::iter::repeat_with(|| Line::new(sz.cols))
+            .take(Self::HISTORY_CAPACITY)
+            .collect();
+
         let lines: VecDeque<_> = std::iter::repeat_with(|| Line::new(sz.cols))
             .take(sz.rows)
             .collect();
 
         let alt_lines = lines.clone();
 
-        let history: VecDeque<_> = std::iter::repeat_with(|| Line::new(sz.cols))
-            .take(Self::HISTORY_CAPACITY)
-            .collect();
+        let cursor = Cursor {
+            sz,
+            ..Cursor::default()
+        };
 
         Self {
-            lines,
             history,
+            lines,
             alt_lines,
             images: Vec::new(),
             alt_images: Vec::new(),
 
             size: sz,
             history_size: 0,
-            cursor: (0, 0),
-            cursor_style: CursorStyle::Block,
+            cursor,
             mode: Mode::default(),
 
             updated: true,
             closed: false,
         }
+    }
+
+    pub fn cursor(&self) -> (usize, usize, CursorStyle) {
+        let (row, col) = self.cursor.pos();
+        let col = self.lines[row].get_head_pos(col);
+        (row, col, self.cursor.style)
     }
 
     pub fn clear_history(&mut self) {
@@ -449,12 +450,16 @@ impl Buffer {
     fn resize(&mut self, sz: TerminalSize) {
         self.size = sz;
 
-        self.lines.resize_with(sz.rows, || Line::new(sz.cols));
-        for line in self.lines.iter_mut() {
+        let (row, col) = self.cursor.pos();
+        self.cursor.sz = sz;
+        self.cursor = self.cursor.exact(row, col);
+
+        for line in self.history.iter_mut() {
             line.resize(sz.cols);
         }
 
-        for line in self.history.iter_mut() {
+        self.lines.resize_with(sz.rows, || Line::new(sz.cols));
+        for line in self.lines.iter_mut() {
             line.resize(sz.cols);
         }
 
@@ -568,12 +573,21 @@ impl Terminal {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 struct Cursor {
     sz: TerminalSize,
     row: usize,
     col: usize,
     end: bool,
+    style: CursorStyle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CursorStyle {
+    #[default]
+    Block,
+    Underline,
+    Bar,
 }
 
 impl Cursor {
@@ -646,7 +660,6 @@ struct Engine {
     sz: TerminalSize,
     cell_sz: CellSize,
     buffer: Arc<Mutex<Buffer>>,
-    cursor: Cursor,
     parser: control_function::Parser,
     tabstops: Vec<usize>,
     attr: GraphicAttribute,
@@ -680,6 +693,8 @@ impl Engine {
     ) -> Self {
         Self::set_term_window_size(&pty, sz).unwrap();
 
+        let buffer = Arc::new(Mutex::new(Buffer::new(sz)));
+
         // Initialize tabulation stops
         let mut tabstops = Vec::new();
         for i in 0..sz.cols {
@@ -688,13 +703,9 @@ impl Engine {
             }
         }
 
-        let buffer = Arc::new(Mutex::new(Buffer::new(sz)));
-
-        let cursor = Cursor {
+        let saved_cursor = Cursor {
             sz,
-            row: 0,
-            col: 0,
-            end: false,
+            ..Cursor::default()
         };
 
         Self {
@@ -705,11 +716,10 @@ impl Engine {
             sz,
             cell_sz,
             buffer,
-            cursor,
             parser: control_function::Parser::default(),
             tabstops,
             attr: GraphicAttribute::default(),
-            saved_cursor: cursor,
+            saved_cursor,
             saved_attr: GraphicAttribute::default(),
         }
     }
@@ -734,20 +744,14 @@ impl Engine {
             }
         }
 
-        let (row, col) = self.cursor.pos();
-        self.cursor.sz = sz;
-        self.cursor = self.cursor.exact(row, col);
-
         let (row, col) = self.saved_cursor.pos();
         self.saved_cursor.sz = sz;
         self.saved_cursor = self.saved_cursor.exact(row, col);
 
         let mut buf = self.buffer.lock().unwrap();
         buf.resize(sz);
-        buf.cursor = self.cursor.pos();
 
         debug_assert_eq!(self.sz, buf.size);
-        debug_assert_eq!(self.sz, self.cursor.sz);
         debug_assert_eq!(self.sz, self.saved_cursor.sz);
     }
 
@@ -862,20 +866,20 @@ impl Engine {
                 }
 
                 LF | VT | FF => {
-                    buffer_scroll_up_if_needed(&mut buf, self.cursor, self.cell_sz);
-                    self.cursor = self.cursor.next_row();
+                    buffer_scroll_up_if_needed(&mut buf, self.cell_sz);
+                    buf.cursor = buf.cursor.next_row();
                 }
 
                 CR => {
-                    self.cursor = self.cursor.first_col();
+                    buf.cursor = buf.cursor.first_col();
                 }
 
                 BS => {
-                    self.cursor = self.cursor.prev_col();
+                    buf.cursor = buf.cursor.prev_col();
                 }
 
                 HT => {
-                    let (row, col) = self.cursor.pos();
+                    let (row, col) = buf.cursor.pos();
 
                     // If the cursor is already at the end, do nothing
                     if col == self.sz.cols - 1 {
@@ -900,7 +904,7 @@ impl Engine {
                     buf.lines[row].put(col, tab);
 
                     for _ in 0..advance {
-                        self.cursor = self.cursor.next_col();
+                        buf.cursor = buf.cursor.next_col();
                     }
                 }
 
@@ -910,10 +914,10 @@ impl Engine {
                         pn = 1
                     }
 
-                    let (row, _) = self.cursor.pos();
+                    let (row, _) = buf.cursor.pos();
                     let up = min(pn, row);
                     for _ in 0..up {
-                        self.cursor = self.cursor.prev_row();
+                        buf.cursor = buf.cursor.prev_row();
                     }
                 }
 
@@ -923,10 +927,10 @@ impl Engine {
                         pn = 1
                     }
 
-                    let (row, _) = self.cursor.pos();
+                    let (row, _) = buf.cursor.pos();
                     let down = min(pn, self.sz.rows - 1 - row);
                     for _ in 0..down {
-                        self.cursor = self.cursor.next_row();
+                        buf.cursor = buf.cursor.next_row();
                     }
                 }
 
@@ -936,10 +940,10 @@ impl Engine {
                         pn = 1
                     }
 
-                    let (_, col) = self.cursor.pos();
+                    let (_, col) = buf.cursor.pos();
                     let right = min(pn, self.sz.cols - 1 - col);
                     for _ in 0..right {
-                        self.cursor = self.cursor.next_col();
+                        buf.cursor = buf.cursor.next_col();
                     }
                 }
 
@@ -949,10 +953,10 @@ impl Engine {
                         pn = 1
                     }
 
-                    let (_, col) = self.cursor.pos();
+                    let (_, col) = buf.cursor.pos();
                     let left = min(pn, col);
                     for _ in 0..left {
-                        self.cursor = self.cursor.prev_col();
+                        buf.cursor = buf.cursor.prev_col();
                     }
                 }
 
@@ -967,7 +971,7 @@ impl Engine {
                         pn2 -= 1;
                     }
 
-                    self.cursor = self.cursor.exact(pn1, pn2);
+                    buf.cursor = buf.cursor.exact(pn1, pn2);
                 }
 
                 CHA(pn) => {
@@ -976,8 +980,8 @@ impl Engine {
                         pn -= 1;
                     }
 
-                    let (row, _) = self.cursor.pos();
-                    self.cursor = self.cursor.exact(row, pn);
+                    let (row, _) = buf.cursor.pos();
+                    buf.cursor = buf.cursor.exact(row, pn);
                 }
 
                 VPA(pn) => {
@@ -986,9 +990,9 @@ impl Engine {
                         pn -= 1;
                     }
 
-                    let (_, col) = self.cursor.pos();
+                    let (_, col) = buf.cursor.pos();
                     let row = min(pn, self.sz.rows - 1);
-                    self.cursor = self.cursor.exact(row, col);
+                    buf.cursor = buf.cursor.exact(row, col);
                 }
 
                 ECH(pn) => {
@@ -997,14 +1001,14 @@ impl Engine {
                         pn = 1;
                     }
 
-                    let (row, col) = self.cursor.pos();
+                    let (row, col) = buf.cursor.pos();
                     buf.lines[row].erase(col..col + pn);
                 }
 
                 ED(ps) => match ps {
                     0 => {
                         // clear from the the cursor position to the end (inclusive)
-                        let (row, col) = self.cursor.pos();
+                        let (row, col) = buf.cursor.pos();
                         buf.lines[row].erase(col..);
                         for line in buf.lines.range_mut(row + 1..) {
                             line.erase_all();
@@ -1021,7 +1025,7 @@ impl Engine {
                     }
                     1 => {
                         // clear from the beginning to the cursor position (inclusive)
-                        let (row, col) = self.cursor.pos();
+                        let (row, col) = buf.cursor.pos();
                         for line in buf.lines.range_mut(0..row) {
                             line.erase_all();
                         }
@@ -1046,17 +1050,17 @@ impl Engine {
                 EL(ps) => match ps {
                     0 => {
                         // clear from the cursor position to the line end (inclusive)
-                        let (row, col) = self.cursor.pos();
+                        let (row, col) = buf.cursor.pos();
                         buf.lines[row].erase(col..);
                     }
                     1 => {
                         // clear from the line beginning to the cursor position (inclusive)
-                        let (row, col) = self.cursor.pos();
+                        let (row, col) = buf.cursor.pos();
                         buf.lines[row].erase(0..=col);
                     }
                     2 => {
                         // clear line
-                        let row = self.cursor.row;
+                        let row = buf.cursor.row;
                         buf.lines[row].erase_all();
                     }
                     _ => unreachable!(),
@@ -1069,7 +1073,7 @@ impl Engine {
                         FdIo(&self.pty).write_all(b"\x1b[0\x6E").unwrap();
                     }
                     6 => {
-                        let (row, col) = self.cursor.pos();
+                        let (row, col) = buf.cursor.pos();
 
                         // a report of the active position
                         use std::io::Write as _;
@@ -1086,7 +1090,7 @@ impl Engine {
                         pn = 1;
                     }
 
-                    let (row, col) = self.cursor.pos();
+                    let (row, col) = buf.cursor.pos();
                     let line = &mut buf.lines[row];
 
                     let src = col;
@@ -1103,7 +1107,7 @@ impl Engine {
                         pn = 1;
                     }
 
-                    let (row, col) = self.cursor.pos();
+                    let (row, col) = buf.cursor.pos();
                     let line = &mut buf.lines[row];
 
                     let src = min(col + pn, self.sz.cols);
@@ -1120,7 +1124,7 @@ impl Engine {
                         pn = 1;
                     }
 
-                    let (row, _) = self.cursor.pos();
+                    let (row, _) = buf.cursor.pos();
 
                     let src = row;
                     let dst = min(row + pn, self.sz.rows);
@@ -1140,7 +1144,7 @@ impl Engine {
                         pn = 1;
                     }
 
-                    let (row, _) = self.cursor.pos();
+                    let (row, _) = buf.cursor.pos();
 
                     let src = min(row + pn, self.sz.rows);
                     let dst = row;
@@ -1205,18 +1209,18 @@ impl Engine {
 
                     if let Some(width @ 1..) = ch_width {
                         // If there is no space for new character, move cursor to the next line.
-                        if self.cursor.right_space() < width {
-                            let (row, col) = self.cursor.pos();
-                            if !self.cursor.end {
+                        if buf.cursor.right_space() < width {
+                            let (row, col) = buf.cursor.pos();
+                            if !buf.cursor.end {
                                 buf.lines[row].erase(col..);
                             }
                             buf.lines[row].linewrap = true;
 
-                            buffer_scroll_up_if_needed(&mut buf, self.cursor, self.cell_sz);
-                            self.cursor = self.cursor.next_row().first_col();
+                            buffer_scroll_up_if_needed(&mut buf, self.cell_sz);
+                            buf.cursor = buf.cursor.next_row().first_col();
                         }
 
-                        let (row, col) = self.cursor.pos();
+                        let (row, col) = buf.cursor.pos();
                         let cell = Cell {
                             ch,
                             width: width as u16,
@@ -1226,14 +1230,14 @@ impl Engine {
                         buf.lines[row].put(col, cell);
 
                         for _ in 0..width {
-                            self.cursor = self.cursor.next_col();
+                            buf.cursor = buf.cursor.next_col();
                         }
                     }
                 }
 
                 SixelImage(image) => {
                     log::debug!("image: {}x{}", image.width, image.height);
-                    let (cursor_row, cursor_col) = self.cursor.pos();
+                    let (cursor_row, cursor_col) = buf.cursor.pos();
 
                     let cell_w = self.cell_sz.w as u64;
                     let cell_h = self.cell_sz.h as u64;
@@ -1262,19 +1266,19 @@ impl Engine {
                         let advance_v = (image.height + cell_h - 1) / cell_h - 1;
 
                         for _ in 0..advance_h {
-                            self.cursor = self.cursor.next_col();
+                            buf.cursor = buf.cursor.next_col();
                         }
                         for _ in 0..advance_v {
-                            buffer_scroll_up_if_needed(&mut buf, self.cursor, self.cell_sz);
-                            self.cursor = self.cursor.next_row();
+                            buffer_scroll_up_if_needed(&mut buf, self.cell_sz);
+                            buf.cursor = buf.cursor.next_row();
                         }
                     }
                 }
 
                 SelectCursorStyle(ps) => match ps {
-                    2 => buf.cursor_style = CursorStyle::Block,
-                    4 => buf.cursor_style = CursorStyle::Underline,
-                    6 => buf.cursor_style = CursorStyle::Bar,
+                    2 => buf.cursor.style = CursorStyle::Block,
+                    4 => buf.cursor.style = CursorStyle::Underline,
+                    6 => buf.cursor.style = CursorStyle::Bar,
                     _ => {
                         log::warn!("unknown cursor shape: {}", ps);
                     }
@@ -1307,7 +1311,7 @@ impl Engine {
 
                             1049 => {
                                 // save current cursor
-                                self.saved_cursor = self.cursor;
+                                self.saved_cursor = buf.cursor;
                                 self.saved_attr = self.attr;
 
                                 // clear the alternative buffers
@@ -1359,7 +1363,7 @@ impl Engine {
 
                             1049 => {
                                 // restore cursor and switch back to the primary screen buffer
-                                self.cursor = self.saved_cursor;
+                                buf.cursor = self.saved_cursor;
                                 self.attr = self.saved_attr;
                                 buf.swap_screen_buffers();
                             }
@@ -1507,10 +1511,6 @@ impl Engine {
                 SCP => ignore!(),
             }
         }
-
-        let (row, col) = self.cursor.pos();
-        let col = buf.lines[row].get_head_pos(col);
-        buf.cursor = (row, col);
     }
 }
 
@@ -1610,8 +1610,8 @@ fn parse_color(prefix: u16, ps: &mut impl Iterator<Item = u16>) -> Option<Color>
     }
 }
 
-fn buffer_scroll_up_if_needed(buf: &mut Buffer, cursor: Cursor, cell_sz: CellSize) {
-    if cursor.row + 1 == cursor.sz.rows {
+fn buffer_scroll_up_if_needed(buf: &mut Buffer, cell_sz: CellSize) {
+    if buf.cursor.row + 1 == buf.cursor.sz.rows {
         buf.scroll_up();
 
         if !buf.images.is_empty() {

@@ -615,8 +615,8 @@ impl TerminalWindow {
                     .collect();
 
                 if self.history_head >= 0 && buf.mode.cursor_visible {
-                    let (row, col) = buf.cursor;
-                    contents.cursor = Some((row, col, buf.cursor_style, self.focused));
+                    let (row, col, style) = buf.cursor();
+                    contents.cursor = Some((row, col, style, self.focused));
 
                     self.display
                         .gl_window()
