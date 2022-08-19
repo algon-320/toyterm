@@ -249,7 +249,7 @@ impl TerminalView {
             };
             let fg = Color::White;
             let bg = self.bg_color;
-            let vs = cell_vertices(rect, fg, bg);
+            let vs = rect_vertices(rect, fg, bg);
             self.vertices_bg.extend_from_slice(&vs);
         }
 
@@ -259,32 +259,26 @@ impl TerminalView {
             if config.scroll_bar_width > 0 {
                 let sb_width = config.scroll_bar_width;
 
-                let rect = PixelRect {
+                let mut rect = PixelRect {
                     x: viewport.w.saturating_sub(sb_width) as i32,
                     y: 0,
                     w: sb_width,
                     h: viewport.h,
-                }
-                .to_gl(viewport);
+                };
                 let fg = Color::White;
                 let bg = Color::Rgb {
                     rgba: config.scroll_bar_bg_color,
                 };
-                let vs = cell_vertices(rect, fg, bg);
+                let vs = rect_vertices(rect.to_gl(viewport), fg, bg);
                 self.vertices_bg.extend_from_slice(&vs);
 
-                let rect = PixelRect {
-                    x: viewport.w.saturating_sub(sb_width) as i32,
-                    y: sb_origin as i32,
-                    w: sb_width,
-                    h: sb_length,
-                }
-                .to_gl(viewport);
+                rect.y = sb_origin as i32;
+                rect.h = sb_length;
                 let fg = Color::White;
                 let bg = Color::Rgb {
                     rgba: config.scroll_bar_fg_color,
                 };
-                let vs = cell_vertices(rect, fg, bg);
+                let vs = rect_vertices(rect.to_gl(viewport), fg, bg);
                 self.vertices_bg.extend_from_slice(&vs);
             }
         }
@@ -354,7 +348,7 @@ impl TerminalView {
                         h: cell_size.h,
                     };
 
-                    let vs = cell_vertices(rect.to_gl(viewport), fg, bg);
+                    let vs = rect_vertices(rect.to_gl(viewport), fg, bg);
                     self.vertices_bg.extend_from_slice(&vs);
                 }
 
@@ -442,7 +436,7 @@ impl TerminalView {
 
                 let fg = Color::Black;
                 let bg = Color::White;
-                let vs = cell_vertices(rect.to_gl(viewport), fg, bg);
+                let vs = rect_vertices(rect.to_gl(viewport), fg, bg);
                 self.vertices_fg.extend_from_slice(&vs);
             }
         }
@@ -705,8 +699,8 @@ fn glyph_vertices(
     [/* A */ v(0), v(1), v(2), /* B */ v(2), v(3), v(0)]
 }
 
-/// Generate vertices for a single cell (background)
-fn cell_vertices(gl_rect: GlRect, fg_color: Color, bg_color: Color) -> [CellVertex; 6] {
+/// Generate vertices for a rectangle
+fn rect_vertices(gl_rect: GlRect, fg_color: Color, bg_color: Color) -> [CellVertex; 6] {
     let GlRect { x, y, w, h } = gl_rect;
 
     // top-left, bottom-left, bottom-right, top-right
