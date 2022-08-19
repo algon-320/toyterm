@@ -266,7 +266,7 @@ impl TerminalWindow {
                     }
                 }
 
-                // tripple click (or more): line selection
+                // triple click (or more): line selection
                 _ => {
                     s_col = 0;
                     e_col = terminal_size.cols - 1;
@@ -423,7 +423,7 @@ impl TerminalWindow {
                                 MouseButton::Right => 2,
                                 MouseButton::Other(button_id) => {
                                     // FIXME : Support multi button mouse?
-                                    log::warn!("unkown mouse button : {}", button_id);
+                                    log::warn!("unknown mouse button : {}", button_id);
                                     0
                                 }
                             },
