@@ -197,7 +197,7 @@ impl TerminalView {
         self.updated = true;
     }
 
-    fn update(&mut self) {
+    fn rebuild_draw_queries(&mut self) {
         let viewport = self.viewport();
         let cell_size = self.cell_size;
 
@@ -460,7 +460,7 @@ impl TerminalView {
 
     pub fn draw(&mut self, surface: &mut glium::Frame) {
         if self.updated {
-            self.update();
+            self.rebuild_draw_queries();
         }
 
         let elapsed = self.clock.elapsed().as_millis() as f32;
