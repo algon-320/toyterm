@@ -59,12 +59,12 @@ impl TerminalWindow {
         );
 
         let terminal = {
+            let cell_size = view.cell_size();
             let scroll_bar_width = crate::TOYTERM_CONFIG.scroll_bar_width;
             let size = TerminalSize {
-                rows: (viewport.h / view.cell_size.h) as usize,
-                cols: ((viewport.w - scroll_bar_width) / view.cell_size.w) as usize,
+                rows: (viewport.h / cell_size.h) as usize,
+                cols: ((viewport.w - scroll_bar_width) / cell_size.w) as usize,
             };
-            let cell_size = view.cell_size;
             let parent_cwd = std::env::current_dir().expect("cwd");
             let child_cwd = cwd.unwrap_or(&parent_cwd);
             Terminal::new(size, cell_size, child_cwd)
@@ -111,7 +111,7 @@ impl TerminalWindow {
 
     // Returns true if the PTY is closed, false otherwise
     fn check_update(&mut self) -> bool {
-        let cell_size = self.view.cell_size;
+        let cell_size = self.view.cell_size();
 
         let contents_updated: bool;
         let mouse_track_mode_changed: bool;
@@ -319,13 +319,14 @@ impl TerminalWindow {
         let scroll_bar_width = crate::TOYTERM_CONFIG.scroll_bar_width;
         let width = viewport.w.saturating_sub(scroll_bar_width);
 
-        let rows = (viewport.h / self.view.cell_size.h) as usize;
-        let cols = (width / self.view.cell_size.w) as usize;
+        let cell_size = self.view.cell_size();
+        let rows = (viewport.h / cell_size.h) as usize;
+        let cols = (width / cell_size.w) as usize;
         let buff_size = TerminalSize {
             rows: rows.max(1),
             cols: cols.max(1),
         };
-        self.terminal.request_resize(buff_size, self.view.cell_size);
+        self.terminal.request_resize(buff_size, cell_size);
     }
 
     pub fn focus_changed(&mut self, gain: bool) {
@@ -435,8 +436,9 @@ impl TerminalWindow {
                         |   if self.modifiers.ctrl()  { 0b00010000 } else { 0 };
 
                         let (x, y) = self.mouse.cursor_pos;
-                        let col = x.round() as u32 / self.view.cell_size.w + 1;
-                        let row = y.round() as u32 / self.view.cell_size.h + 1;
+                        let cell_size = self.view.cell_size();
+                        let col = x.round() as u32 / cell_size.w + 1;
+                        let row = y.round() as u32 / cell_size.h + 1;
 
                         if self.mode.sgr_ext_mouse_track {
                             self.sgr_ext_mouse_report(button + mods, col, row, state);

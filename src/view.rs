@@ -40,9 +40,8 @@ impl Viewport {
 pub struct TerminalView {
     fonts: FontSet,
     cache: GlyphCache,
-
     viewport: Viewport,
-    pub cell_size: CellSize,
+    cell_size: CellSize,
     cell_max_over: i32,
 
     pub lines: Vec<Line>,
@@ -174,6 +173,10 @@ impl TerminalView {
         self.draw_params.viewport = Some(self.viewport.to_glium_rect(inner_size));
 
         self.updated = true;
+    }
+
+    pub fn cell_size(&self) -> CellSize {
+        self.cell_size
     }
 
     pub fn increase_font_size(&mut self, size_diff: i32) {

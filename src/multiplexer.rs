@@ -724,7 +724,7 @@ impl Multiplexer {
     }
 
     fn status_bar_height(&self) -> u32 {
-        self.status_view.cell_size.h
+        self.status_view.cell_size().h
     }
 
     fn update_status_bar(&mut self) {
@@ -761,7 +761,7 @@ impl Multiplexer {
             }
         }
 
-        let cols = (self.viewport.w / self.status_view.cell_size.w) as usize;
+        let cols = (self.viewport.w / self.status_view.cell_size().w) as usize;
         let mut cells = Vec::new();
 
         let tab_layout = self.tab_layout();
