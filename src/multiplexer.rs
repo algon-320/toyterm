@@ -681,7 +681,7 @@ impl Multiplexer {
         };
 
         let font_size = crate::TOYTERM_CONFIG.status_bar_font_size;
-        let status_view = TerminalView::with_viewport(display.clone(), viewport, font_size);
+        let status_view = TerminalView::with_viewport(display.clone(), viewport, font_size, None);
 
         let main_layout = {
             let window = TerminalWindow::new(display.clone(), None);

@@ -418,6 +418,7 @@ impl State {
     }
 
     pub fn clear_history(&mut self) {
+        self.updated = true;
         self.history_size = 0;
         for line in self.history.iter_mut() {
             line.erase_all();

@@ -31,6 +31,10 @@ pub struct Config {
     pub color_bright_cyan: u32,
     pub color_bright_white: u32,
 
+    pub scroll_bar_width: u32,
+    pub scroll_bar_fg_color: u32,
+    pub scroll_bar_bg_color: u32,
+
     pub east_asian_width_ambiguous: u8,
 }
 
@@ -52,6 +56,10 @@ impl Default for Config {
 
             #[cfg(feature = "multiplex")]
             status_bar_font_size: 32,
+
+            scroll_bar_width: 5,
+            scroll_bar_fg_color: 0x606060FF,
+            scroll_bar_bg_color: 0x202020FF,
 
             color_black: 0x000000FF,
             color_red: 0xFF0000FF,

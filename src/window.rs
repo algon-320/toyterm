@@ -59,6 +59,7 @@ pub struct TerminalView {
     cell_max_over: i32,
     clock: std::time::Instant,
     pub bg_color: Color,
+    pub scroll_bar: Option<(u32, u32)>,
     pub contents: Contents,
     pub updated: bool,
 
@@ -79,7 +80,12 @@ struct DrawQuery<V: glium::vertex::Vertex> {
 }
 
 impl TerminalView {
-    pub fn with_viewport(display: Display, viewport: Viewport, font_size: u32) -> Self {
+    pub fn with_viewport(
+        display: Display,
+        viewport: Viewport,
+        font_size: u32,
+        scroll_bar: Option<(u32, u32)>,
+    ) -> Self {
         let fonts = build_font_set(font_size);
 
         let (cell_size, cell_max_over) = calculate_cell_size(&fonts);
@@ -133,6 +139,7 @@ impl TerminalView {
             cell_size,
             cell_max_over,
             bg_color: Color::Black,
+            scroll_bar,
             clock: std::time::Instant::now(),
             contents: Contents::default(),
             updated: false,
@@ -158,7 +165,7 @@ impl TerminalView {
         self.viewport = new_viewport;
 
         let inner_size = self.display.gl_window().window().inner_size();
-        self.draw_params.viewport = Some(new_viewport.to_glium_rect(inner_size));
+        self.draw_params.viewport = Some(self.viewport.to_glium_rect(inner_size));
 
         self.updated = true;
     }
@@ -235,6 +242,43 @@ impl TerminalView {
             let bg = self.bg_color;
             let vs = cell_vertices(rect, fg, bg);
             self.vertices_bg.extend_from_slice(&vs);
+        }
+
+        // scroll bar
+        if let Some((sb_origin, sb_length)) = self.scroll_bar {
+            let config = &crate::TOYTERM_CONFIG;
+            if config.scroll_bar_width > 0 {
+                let viewport = self.viewport;
+                let sb_width = config.scroll_bar_width;
+
+                let rect = PixelRect {
+                    x: viewport.w.saturating_sub(sb_width) as i32,
+                    y: 0,
+                    w: sb_width,
+                    h: viewport.h,
+                }
+                .to_gl(viewport);
+                let fg = Color::White;
+                let bg = Color::Rgb {
+                    rgba: config.scroll_bar_bg_color,
+                };
+                let vs = cell_vertices(rect, fg, bg);
+                self.vertices_bg.extend_from_slice(&vs);
+
+                let rect = PixelRect {
+                    x: viewport.w.saturating_sub(sb_width) as i32,
+                    y: sb_origin as i32,
+                    w: sb_width,
+                    h: sb_length,
+                }
+                .to_gl(viewport);
+                let fg = Color::White;
+                let bg = Color::Rgb {
+                    rgba: config.scroll_bar_fg_color,
+                };
+                let vs = cell_vertices(rect, fg, bg);
+                self.vertices_bg.extend_from_slice(&vs);
+            }
         }
 
         let mut baseline: u32 = self.cell_max_over as u32;
@@ -505,12 +549,18 @@ impl TerminalWindow {
         cwd: Option<&std::path::Path>,
     ) -> Self {
         let font_size = crate::TOYTERM_CONFIG.font_size;
-        let view = TerminalView::with_viewport(display.clone(), viewport, font_size);
+        let view = TerminalView::with_viewport(
+            display.clone(),
+            viewport,
+            font_size,
+            Some((0, viewport.h)),
+        );
 
         let terminal = {
+            let scroll_bar_width = crate::TOYTERM_CONFIG.scroll_bar_width;
             let size = TerminalSize {
                 rows: (viewport.h / view.cell_size.h) as usize,
-                cols: (viewport.w / view.cell_size.w) as usize,
+                cols: ((viewport.w - scroll_bar_width) / view.cell_size.w) as usize,
             };
             let cell_size = view.cell_size;
             let parent_cwd = std::env::current_dir().expect("cwd");
@@ -585,6 +635,19 @@ impl TerminalWindow {
             terminal_size = state.size;
 
             if contents_updated {
+                // update scroll bar
+                {
+                    let hist_rows = state.history_size;
+                    let rows = state.size.rows;
+                    let viewport_height = self.viewport().h;
+
+                    let total = hist_rows + rows;
+                    let r = (hist_rows as isize + self.history_head) as f64 / total as f64;
+                    let origin = (viewport_height as f64 * r) as u32;
+                    let length = ((viewport_height as f64) * rows as f64 / total as f64) as u32;
+                    self.view.scroll_bar = Some((origin, length));
+                }
+
                 let contents = &mut self.view.contents;
 
                 let mut lines = std::mem::take(&mut contents.lines);
@@ -744,8 +807,12 @@ impl TerminalWindow {
         self.mouse.released_pos = None;
 
         let viewport = self.view.viewport();
+
+        let scroll_bar_width = crate::TOYTERM_CONFIG.scroll_bar_width;
+        let width = viewport.w.saturating_sub(scroll_bar_width);
+
         let rows = (viewport.h / self.view.cell_size.h) as usize;
-        let cols = (viewport.w / self.view.cell_size.w) as usize;
+        let cols = (width / self.view.cell_size.w) as usize;
         let buff_size = TerminalSize {
             rows: rows.max(1),
             cols: cols.max(1),
