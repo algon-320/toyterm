@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::terminal::{Cell, Color};
-use crate::window::{TerminalView, TerminalWindow, Viewport};
+use crate::view::{TerminalView, Viewport};
+use crate::window::TerminalWindow;
 
 type Event = glutin::event::Event<'static, ()>;
 type CursorPosition = PhysicalPosition<f64>;
@@ -738,8 +739,6 @@ impl Multiplexer {
             cell
         }
 
-        self.status_view.bg_color = BG;
-
         struct Tab {
             i: usize,
             focus: bool,
@@ -800,13 +799,13 @@ impl Multiplexer {
             }
         }
 
-        let contents = &mut self.status_view.contents;
-        contents.lines = vec![cells.into_iter().collect()];
-        contents.images = Vec::new();
-        contents.cursor = None;
-        contents.selection_range = None;
-
-        self.status_view.updated = true;
+        self.status_view.update_contents(|view| {
+            view.bg_color = BG;
+            view.lines = vec![cells.into_iter().collect()];
+            view.images = Vec::new();
+            view.cursor = None;
+            view.selection_range = None;
+        });
 
         self.last_updated = std::time::Instant::now();
     }

@@ -6,6 +6,7 @@ mod pipe_channel;
 mod sixel;
 mod terminal;
 mod utils;
+mod view;
 mod window;
 
 #[cfg(feature = "multiplex")]
