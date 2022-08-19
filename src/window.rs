@@ -1,12 +1,15 @@
 use glium::{glutin, Display};
 use glutin::{
     dpi::PhysicalPosition,
-    event::{ElementState, Event, ModifiersState, MouseButton, VirtualKeyCode, WindowEvent},
+    event::{ElementState, ModifiersState, MouseButton, VirtualKeyCode, WindowEvent},
     event_loop::ControlFlow,
 };
 
 use crate::terminal::{Mode, Terminal, TerminalSize};
 use crate::view::{TerminalView, Viewport};
+
+type Event = glutin::event::Event<'static, ()>;
+type CursorPosition = PhysicalPosition<f64>;
 
 pub struct TerminalWindow {
     display: Display,
@@ -25,9 +28,9 @@ pub struct TerminalWindow {
 struct MouseState {
     wheel_delta_x: f32,
     wheel_delta_y: f32,
-    cursor_pos: (f64, f64),
-    pressed_pos: Option<(f64, f64)>,
-    released_pos: Option<(f64, f64)>,
+    cursor_pos: CursorPosition,
+    pressed_pos: Option<CursorPosition>,
+    released_pos: Option<CursorPosition>,
     click_count: usize,
     last_clicked: std::time::Instant,
 }
@@ -90,7 +93,7 @@ impl TerminalWindow {
             mouse: MouseState {
                 wheel_delta_x: 0.0,
                 wheel_delta_y: 0.0,
-                cursor_pos: (0.0, 0.0),
+                cursor_pos: CursorPosition::default(),
                 pressed_pos: None,
                 released_pos: None,
                 click_count: 0,
@@ -176,17 +179,17 @@ impl TerminalWindow {
                     .collect();
 
                 let cursor = if self.history_head >= 0 && state.mode.cursor_visible {
-                    let (row, col, style) = state.cursor();
+                    let cursor = state.cursor();
 
                     self.display
                         .gl_window()
                         .window()
                         .set_ime_position(PhysicalPosition {
-                            x: col as u32 * cell_size.w,
-                            y: (row + 1) as u32 * cell_size.h,
+                            x: cursor.col as u32 * cell_size.w,
+                            y: (cursor.row + 1) as u32 * cell_size.h,
                         });
 
-                    Some((row, col, style))
+                    Some(cursor)
                 } else {
                     None
                 };
@@ -208,8 +211,9 @@ impl TerminalWindow {
         }
 
         // Update text selection
-        if let Some((sx, sy)) = self.mouse.pressed_pos {
-            let (ex, ey) = self.mouse.released_pos.unwrap_or(self.mouse.cursor_pos);
+        if let Some(CursorPosition { x: sx, y: sy }) = self.mouse.pressed_pos {
+            let CursorPosition { x: ex, y: ey } =
+                self.mouse.released_pos.unwrap_or(self.mouse.cursor_pos);
 
             let lines = &self.view.lines;
 
@@ -342,7 +346,7 @@ impl TerminalWindow {
         }
     }
 
-    pub fn on_event(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
+    pub fn on_event(&mut self, event: &Event, control_flow: &mut ControlFlow) {
         match event {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => {
@@ -397,14 +401,14 @@ impl TerminalWindow {
                     let viewport = self.viewport();
                     let x = position.x - viewport.x as f64;
                     let y = position.y - viewport.y as f64;
-                    self.mouse.cursor_pos = (x, y);
+                    self.mouse.cursor_pos = CursorPosition { x, y };
                 }
 
                 WindowEvent::MouseInput { state, button, .. } => {
                     let is_inner = {
                         let viewport = self.viewport();
                         let (w, h) = (viewport.w as f64, viewport.h as f64);
-                        let (x, y) = self.mouse.cursor_pos;
+                        let CursorPosition { x, y } = self.mouse.cursor_pos;
                         0.0 <= x && x < w && 0.0 <= y && y < h
                     };
 
@@ -435,7 +439,7 @@ impl TerminalWindow {
                         |   if self.modifiers.alt()   { 0b00001000 } else { 0 }
                         |   if self.modifiers.ctrl()  { 0b00010000 } else { 0 };
 
-                        let (x, y) = self.mouse.cursor_pos;
+                        let CursorPosition { x, y } = self.mouse.cursor_pos;
                         let cell_size = self.view.cell_size();
                         let col = x.round() as u32 / cell_size.w + 1;
                         let row = y.round() as u32 / cell_size.h + 1;

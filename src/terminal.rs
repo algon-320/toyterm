@@ -411,10 +411,11 @@ impl State {
         }
     }
 
-    pub fn cursor(&self) -> (usize, usize, CursorStyle) {
-        let (row, col) = self.cursor.pos();
-        let col = self.lines[row].get_head_pos(col);
-        (row, col, self.cursor.style)
+    pub fn cursor(&self) -> Cursor {
+        let mut cursor = self.cursor;
+        let (row, col) = cursor.pos();
+        cursor.col = self.lines[row].get_head_pos(col);
+        cursor
     }
 
     pub fn clear_history(&mut self) {
@@ -575,12 +576,12 @@ impl Terminal {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-struct Cursor {
+pub struct Cursor {
     sz: TerminalSize,
-    row: usize,
-    col: usize,
+    pub row: usize,
+    pub col: usize,
     end: bool,
-    style: CursorStyle,
+    pub style: CursorStyle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

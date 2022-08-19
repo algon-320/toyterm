@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use crate::cache::{GlyphCache, GlyphRegion};
 use crate::font::{Font, FontSet, FontStyle};
-use crate::terminal::{CellSize, Color, CursorStyle, Line, PositionedImage};
+use crate::terminal::{CellSize, Color, Cursor, CursorStyle, Line, PositionedImage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Viewport {
@@ -46,7 +46,7 @@ pub struct TerminalView {
 
     pub lines: Vec<Line>,
     pub images: Vec<PositionedImage>,
-    pub cursor: Option<(usize, usize, CursorStyle)>,
+    pub cursor: Option<Cursor>,
     pub selection_range: Option<(usize, usize)>,
     pub scroll_bar: Option<(u32, u32)>,
     pub bg_color: Color,
@@ -198,7 +198,7 @@ impl TerminalView {
     }
 
     fn rebuild_draw_queries(&mut self) {
-        let viewport = self.viewport();
+        let viewport = self.viewport;
         let cell_size = self.cell_size;
 
         self.draw_queries_img.clear();
@@ -257,7 +257,6 @@ impl TerminalView {
         if let Some((sb_origin, sb_length)) = self.scroll_bar {
             let config = &crate::TOYTERM_CONFIG;
             if config.scroll_bar_width > 0 {
-                let viewport = self.viewport;
                 let sb_width = config.scroll_bar_width;
 
                 let rect = PixelRect {
@@ -312,8 +311,11 @@ impl TerminalView {
                 let (fg, bg) = {
                     let is_inversed = cell.attr.inversed;
 
-                    let on_cursor = if let Some((row, col, CursorStyle::Block)) = self.cursor {
-                        i == row && j == col && self.view_focused
+                    let on_cursor = if let Some(cursor) = self.cursor {
+                        self.view_focused
+                            && cursor.style == CursorStyle::Block
+                            && i == cursor.row
+                            && j == cursor.col
                     } else {
                         false
                     };
@@ -418,19 +420,21 @@ impl TerminalView {
             baseline += cell_size.h;
         }
 
-        if let Some((row, col, style)) = self.cursor {
-            if self.view_focused && matches!(style, CursorStyle::Underline | CursorStyle::Bar) {
-                let rect = if style == CursorStyle::Underline {
+        if let Some(cursor) = self.cursor {
+            if self.view_focused
+                && matches!(cursor.style, CursorStyle::Underline | CursorStyle::Bar)
+            {
+                let rect = if cursor.style == CursorStyle::Underline {
                     PixelRect {
-                        x: col as i32 * cell_size.w as i32,
-                        y: (row + 1) as i32 * cell_size.h as i32 - 4,
+                        x: cursor.col as i32 * cell_size.w as i32,
+                        y: (cursor.row + 1) as i32 * cell_size.h as i32 - 4,
                         w: cell_size.w,
                         h: 4,
                     }
                 } else {
                     PixelRect {
-                        x: col as i32 * cell_size.w as i32,
-                        y: row as i32 * cell_size.h as i32,
+                        x: cursor.col as i32 * cell_size.w as i32,
+                        y: cursor.row as i32 * cell_size.h as i32,
                         w: 4,
                         h: cell_size.h,
                     }
