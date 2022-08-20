@@ -17,6 +17,7 @@ arboard = { version = "2.1.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 config = { version = "0.13.1", default-features = false, features = ["toml"] }
 lazy_static = "1.4.0"
+lru = { version = "0.7.8", default-features = false }
 
 chrono = { optional = true, version = "0.4.22", default-features = false, features = ["clock"] }
 serde_json = { optional = true, version = "1.0.83" }

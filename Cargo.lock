@@ -673,6 +673,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lru"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e999beba7b6e8345721bd280141ed958096a2e4abdf74f67ff4ce49b4b54e47a"
+
+[[package]]
 name = "malloc_buf"
 version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1211,6 +1217,7 @@ dependencies = [
  "glium",
  "lazy_static",
  "log",
+ "lru",
  "nix 0.24.1",
  "serde",
  "serde_json",

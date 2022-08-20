@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::max;
 use std::rc::Rc;
 
-use crate::cache::{GlyphCache, GlyphRegion};
+use crate::cache::GlyphCache;
 use crate::font::{Font, FontSet, FontStyle};
 use crate::terminal::{CellSize, Color, Cursor, CursorStyle, Line, PositionedImage};
 
@@ -200,6 +200,7 @@ impl TerminalView {
     fn rebuild_draw_queries(&mut self) {
         let viewport = self.viewport;
         let cell_size = self.cell_size;
+        let timestamp = self.clock.elapsed().as_millis() as u64;
 
         self.draw_queries_img.clear();
         for img in self.images.iter() {
@@ -283,6 +284,8 @@ impl TerminalView {
             }
         }
 
+        let texture = self.cache.texture();
+
         let mut baseline: u32 = self.cell_max_over as u32;
         for (i, row) in self.lines.iter().enumerate() {
             let cols = row.columns();
@@ -352,61 +355,73 @@ impl TerminalView {
                     self.vertices_bg.extend_from_slice(&vs);
                 }
 
-                if let Some((region, metrics)) = self.cache.get(cell.ch, style) {
-                    if !region.is_empty() {
-                        let bearing_x = (metrics.horiBearingX >> 6) as u32;
-                        let bearing_y = (metrics.horiBearingY >> 6) as u32;
+                match self
+                    .cache
+                    .get_or_insert(cell.ch, style, &self.fonts, timestamp)
+                {
+                    Ok(Some((region, metrics))) => {
+                        if !region.is_empty() {
+                            let bearing_x = (metrics.horiBearingX >> 6) as u32;
+                            let bearing_y = (metrics.horiBearingY >> 6) as u32;
 
-                        let rect = PixelRect {
-                            x: leftline as i32 + bearing_x as i32,
-                            y: baseline as i32 - bearing_y as i32,
-                            w: region.px_w,
-                            h: region.px_h,
-                        };
+                            let rect = PixelRect {
+                                x: leftline as i32 + bearing_x as i32,
+                                y: baseline as i32 - bearing_y as i32,
+                                w: region.w,
+                                h: region.h,
+                            };
+                            let gl_rect = rect.to_gl(viewport);
+                            let uv_rect = region.to_uv(texture.width(), texture.height());
 
-                        let vs = glyph_vertices(rect.to_gl(viewport), region, fg, bg, blinking);
-                        self.vertices_fg.extend_from_slice(&vs);
+                            let vs = glyph_vertices(gl_rect, uv_rect, fg, bg, blinking);
+                            self.vertices_fg.extend_from_slice(&vs);
+                        }
                     }
-                } else if let Some((glyph_image, metrics)) = self.fonts.render(cell.ch, style) {
-                    // for non-ASCII characters
-                    if !glyph_image.data.is_empty() {
-                        let bearing_x = (metrics.horiBearingX >> 6) as u32;
-                        let bearing_y = (metrics.horiBearingY >> 6) as u32;
-
-                        let rect = PixelRect {
-                            x: leftline as i32 + bearing_x as i32,
-                            y: baseline as i32 - bearing_y as i32,
-                            w: glyph_image.width,
-                            h: glyph_image.height,
-                        };
-
-                        let region = GlyphRegion {
-                            px_w: glyph_image.width,
-                            px_h: glyph_image.height,
-                            tx_x: 0.0,
-                            tx_y: 0.0,
-                            tx_w: 1.0,
-                            tx_h: 1.0,
-                        };
-
-                        let vs = glyph_vertices(rect.to_gl(viewport), region, fg, bg, blinking);
-
-                        let vertex_buffer = glium::VertexBuffer::new(&self.display, &vs).unwrap();
-
-                        let single_glyph_texture = texture::Texture2d::with_mipmaps(
-                            &self.display,
-                            glyph_image,
-                            texture::MipmapsOption::NoMipmap,
-                        )
-                        .expect("Failed to create texture");
-
-                        self.draw_queries_fg.push(DrawQuery {
-                            vertices: vertex_buffer,
-                            texture: Rc::new(single_glyph_texture),
-                        });
+                    Ok(None) => {
+                        log::trace!("undefined glyph: {:?}", cell.ch);
                     }
-                } else {
-                    log::trace!("undefined glyph: {:?}", cell.ch);
+                    Err(_) => {
+                        if let Some((glyph_image, metrics)) = self.fonts.render(cell.ch, style) {
+                            if glyph_image.width > 0 {
+                                log::info!("draw separetely");
+                                let bearing_x = (metrics.horiBearingX >> 6) as u32;
+                                let bearing_y = (metrics.horiBearingY >> 6) as u32;
+
+                                let rect = PixelRect {
+                                    x: leftline as i32 + bearing_x as i32,
+                                    y: baseline as i32 - bearing_y as i32,
+                                    w: glyph_image.width,
+                                    h: glyph_image.height,
+                                };
+                                let gl_rect = rect.to_gl(viewport);
+                                let uv_rect = UvRect {
+                                    x: 0.0,
+                                    y: 0.0,
+                                    w: 1.0,
+                                    h: 1.0,
+                                };
+
+                                let vs = glyph_vertices(gl_rect, uv_rect, fg, bg, blinking);
+
+                                let vertex_buffer =
+                                    glium::VertexBuffer::new(&self.display, &vs).unwrap();
+
+                                let single_glyph_texture = texture::Texture2d::with_mipmaps(
+                                    &self.display,
+                                    glyph_image,
+                                    texture::MipmapsOption::NoMipmap,
+                                )
+                                .expect("Failed to create texture");
+
+                                self.draw_queries_fg.push(DrawQuery {
+                                    vertices: vertex_buffer,
+                                    texture: Rc::new(single_glyph_texture),
+                                });
+                            }
+                        } else {
+                            log::trace!("undefined glyph: {:?}", cell.ch);
+                        }
+                    }
                 }
 
                 leftline += cell_width_px;
@@ -444,13 +459,13 @@ impl TerminalView {
         let vb_fg = glium::VertexBuffer::new(&self.display, &self.vertices_fg).unwrap();
         self.draw_queries_fg.push(DrawQuery {
             vertices: vb_fg,
-            texture: self.cache.texture(),
+            texture: texture.clone(),
         });
 
         let vb_bg = glium::VertexBuffer::new(&self.display, &self.vertices_bg).unwrap();
         self.draw_queries_bg.push(DrawQuery {
             vertices: vb_bg,
-            texture: self.cache.texture(),
+            texture,
         });
 
         self.updated = false;
@@ -621,28 +636,49 @@ fn color_to_rgba(color: Color) -> u32 {
 }
 
 #[derive(Clone, Copy)]
-struct PixelRect {
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
+pub struct PixelRect {
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
 }
 
 #[derive(Clone, Copy)]
-struct GlRect {
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+pub struct GlRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+#[derive(Clone, Copy)]
+pub struct UvRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
 }
 
 impl PixelRect {
-    fn to_gl(self, vp: Viewport) -> GlRect {
+    pub fn is_empty(&self) -> bool {
+        self.w == 0 || self.h == 0
+    }
+
+    pub fn to_gl(self, vp: Viewport) -> GlRect {
         GlRect {
             x: (self.x as f32 / vp.w as f32) * 2.0 - 1.0,
             y: -(self.y as f32 / vp.h as f32) * 2.0 + 1.0,
             w: (self.w as f32 / vp.w as f32) * 2.0,
             h: (self.h as f32 / vp.h as f32) * 2.0,
+        }
+    }
+
+    pub fn to_uv(self, w: u32, h: u32) -> UvRect {
+        UvRect {
+            x: self.x as f32 / w as f32,
+            y: self.y as f32 / h as f32,
+            w: self.w as f32 / w as f32,
+            h: self.h as f32 / h as f32,
         }
     }
 }
@@ -660,7 +696,7 @@ glium::implement_vertex!(CellVertex, position, tex_coords, color, is_bg, blinkin
 /// Generate vertices for a single glyph image
 fn glyph_vertices(
     gl_rect: GlRect,
-    region: GlyphRegion,
+    uv_rect: UvRect,
     fg_color: Color,
     bg_color: Color,
     blinking: u8,
@@ -672,16 +708,16 @@ fn glyph_vertices(
         [gl_rect.x + gl_rect.w, gl_rect.y - gl_rect.h],
         [gl_rect.x + gl_rect.w, gl_rect.y],
     ];
-    let tx_ps = [
-        [region.tx_x, region.tx_y],
-        [region.tx_x, region.tx_y + region.tx_h],
-        [region.tx_x + region.tx_w, region.tx_y + region.tx_h],
-        [region.tx_x + region.tx_w, region.tx_y],
+    let uv_ps = [
+        [uv_rect.x, uv_rect.y],
+        [uv_rect.x, uv_rect.y + uv_rect.h],
+        [uv_rect.x + uv_rect.w, uv_rect.y + uv_rect.h],
+        [uv_rect.x + uv_rect.w, uv_rect.y],
     ];
 
     let v = |idx| CellVertex {
         position: gl_ps[idx],
-        tex_coords: tx_ps[idx],
+        tex_coords: uv_ps[idx],
         color: [color_to_rgba(bg_color), color_to_rgba(fg_color)],
         is_bg: 0,
         blinking: blinking as u32,
