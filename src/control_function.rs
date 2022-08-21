@@ -391,8 +391,10 @@ fn parse_control_sequence<'b>(
                 (0, '\x45', _) => Some(CNL),
                 (0, '\x46', _) => Some(CPL),
                 (0, '\x47', &[pn]) => Some(CHA(pn)),
+
                 (0, '\x48', &[pn1, pn2]) => Some(CUP(pn1, pn2)),
                 (0, '\x48', &[pn]) => Some(CUP(pn, 1)),
+
                 (0, '\x49', _) => Some(CHT),
                 (0, '\x4A', &[ps @ (0 | 1 | 2)]) => Some(ED(ps)),
                 (0, '\x4B', &[ps @ (0 | 1 | 2)]) => Some(EL(ps)),
@@ -422,7 +424,10 @@ fn parse_control_sequence<'b>(
                 (0, '\x63', _) => Some(DA),
                 (0, '\x64', &[pn]) => Some(VPA(pn)),
                 (0, '\x65', _) => Some(VPR),
+
                 (0, '\x66', &[pn1, pn2]) => Some(HVP(pn1, pn2)),
+                (0, '\x66', &[pn1]) => Some(HVP(pn1, 1)),
+
                 (0, '\x67', _) => Some(TBC),
                 (0, '\x68', ps) => {
                     let private = buf.private.unwrap_or(0);
