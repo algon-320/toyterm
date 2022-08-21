@@ -364,6 +364,7 @@ pub struct State {
     images: Vec<PositionedImage>,
     alt_images: Vec<PositionedImage>,
     cursor: Cursor,
+    attr: GraphicAttribute,
 
     pub size: TerminalSize,
     pub history_size: usize,
@@ -400,10 +401,11 @@ impl State {
             alt_lines,
             images: Vec::new(),
             alt_images: Vec::new(),
+            cursor,
+            attr: GraphicAttribute::default(),
 
             size: sz,
             history_size: 0,
-            cursor,
             mode: Mode::default(),
 
             updated: true,
@@ -664,7 +666,6 @@ struct Engine {
     state: Arc<Mutex<State>>,
     parser: control_function::Parser,
     tabstops: Vec<usize>,
-    attr: GraphicAttribute,
     saved_cursor: Cursor,
     saved_attr: GraphicAttribute,
 }
@@ -720,7 +721,6 @@ impl Engine {
             state,
             parser: control_function::Parser::default(),
             tabstops,
-            attr: GraphicAttribute::default(),
             saved_cursor,
             saved_attr: GraphicAttribute::default(),
         }
@@ -901,7 +901,7 @@ impl Engine {
                         ch: '\t',
                         width: advance as u16,
                         backlink: 0,
-                        attr: self.attr,
+                        attr: state.attr,
                     };
                     state.lines[row].put(col, tab);
 
@@ -1164,37 +1164,37 @@ impl Engine {
                     let mut iter = pss.iter().copied().peekable();
                     while let Some(ps) = iter.next() {
                         match ps {
-                            0 => self.attr = GraphicAttribute::default(),
+                            0 => state.attr = GraphicAttribute::default(),
 
-                            1 => self.attr.bold = 1,
-                            2 => self.attr.bold = -1,
-                            22 => self.attr.bold = 0,
+                            1 => state.attr.bold = 1,
+                            2 => state.attr.bold = -1,
+                            22 => state.attr.bold = 0,
 
-                            5 => self.attr.blinking = 1,
-                            6 => self.attr.blinking = 2,
-                            25 => self.attr.blinking = 0,
+                            5 => state.attr.blinking = 1,
+                            6 => state.attr.blinking = 2,
+                            25 => state.attr.blinking = 0,
 
-                            7 => self.attr.inversed = true,
-                            27 => self.attr.inversed = false,
+                            7 => state.attr.inversed = true,
+                            27 => state.attr.inversed = false,
 
-                            8 => self.attr.concealed = true,
-                            28 => self.attr.concealed = false,
+                            8 => state.attr.concealed = true,
+                            28 => state.attr.concealed = false,
 
                             x @ (30..=37 | 38 | 90..=97) => {
                                 if let Some(color) = parse_color(x - 30, &mut iter) {
-                                    self.attr.fg = color;
+                                    state.attr.fg = color;
                                 }
                             }
-                            70 => self.attr.fg = Color::Special,
-                            39 => self.attr.fg = GraphicAttribute::default().fg,
+                            70 => state.attr.fg = Color::Special,
+                            39 => state.attr.fg = GraphicAttribute::default().fg,
 
                             x @ (40..=47 | 48 | 100..=107) => {
                                 if let Some(color) = parse_color(x - 40, &mut iter) {
-                                    self.attr.bg = color;
+                                    state.attr.bg = color;
                                 }
                             }
-                            80 => self.attr.bg = Color::Special,
-                            49 => self.attr.bg = GraphicAttribute::default().bg,
+                            80 => state.attr.bg = Color::Special,
+                            49 => state.attr.bg = GraphicAttribute::default().bg,
 
                             _ => {}
                         }
@@ -1227,7 +1227,7 @@ impl Engine {
                             ch,
                             width: width as u16,
                             backlink: 0,
-                            attr: self.attr,
+                            attr: state.attr,
                         };
                         state.lines[row].put(col, cell);
 
@@ -1314,7 +1314,7 @@ impl Engine {
                             1049 => {
                                 // save current cursor
                                 self.saved_cursor = state.cursor;
-                                self.saved_attr = self.attr;
+                                self.saved_attr = state.attr;
 
                                 // clear the alternative buffers
                                 for line in state.alt_lines.iter_mut() {
@@ -1366,7 +1366,7 @@ impl Engine {
                             1049 => {
                                 // restore cursor and switch back to the primary screen buffer
                                 state.cursor = self.saved_cursor;
-                                self.attr = self.saved_attr;
+                                state.attr = self.saved_attr;
                                 state.swap_screen_buffers();
                             }
 
@@ -1387,12 +1387,12 @@ impl Engine {
                 SaveCursor => {
                     // save current cursor position and graphics rendition
                     self.saved_cursor = state.cursor;
-                    self.saved_attr = self.attr;
+                    self.saved_attr = state.attr;
                 }
                 RestoreCursor => {
                     // restore saved cursor and graphics rendition
                     state.cursor = self.saved_cursor;
-                    self.attr = self.saved_attr;
+                    state.attr = self.saved_attr;
                 }
 
                 ESC => {
