@@ -152,6 +152,11 @@ Currently toyterm supports the following functions.
 - DCS `q` (sixel string...) ST
     - see <https://www.vt100.net/docs/vt3xx-gp/chapter14.html> for the representation
 
+### Other Sequences
+
+- SaveCursor (DECSC): `\e7`
+- RestoreCursor (DECRC): `\e8`
+
 ## Modes
 
 toyterm supports the following modes.

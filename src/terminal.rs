@@ -1384,6 +1384,17 @@ impl Engine {
 
                 RM(..) => ignore!(),
 
+                SaveCursor => {
+                    // save current cursor position and graphics rendition
+                    self.saved_cursor = state.cursor;
+                    self.saved_attr = self.attr;
+                }
+                RestoreCursor => {
+                    // restore saved cursor and graphics rendition
+                    state.cursor = self.saved_cursor;
+                    self.attr = self.saved_attr;
+                }
+
                 ESC => {
                     unreachable!();
                 }

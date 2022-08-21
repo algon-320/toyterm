@@ -166,6 +166,8 @@ pub enum Function<'p> {
     // private
     SixelImage(sixel::Image),
     SelectCursorStyle(u16),
+    SaveCursor,
+    RestoreCursor,
 }
 
 enum State {
@@ -325,6 +327,10 @@ fn parse_escape_sequence<'b>(state: &mut State, ch: char) -> Option<Function<'b>
 
         // Independent control functions (ECMA-48 5th-edition 5.5)
         '\x60'..='\x7F' => Some(Function::Unsupported),
+
+        // Private
+        '\x37' => Some(Function::SaveCursor),
+        '\x38' => Some(Function::RestoreCursor),
 
         _ => Some(Function::Invalid),
     }

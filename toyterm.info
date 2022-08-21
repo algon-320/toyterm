@@ -118,12 +118,16 @@ toyterm-256color|toyterm (a toy terminal emulator),
     nel=\r\n,
 ## set default pair to its original value
     op=\E[39;49m,
+## restore cursor
+    rc=\E8,
 ## turn on reverse video mode
     rev=\E[7m,
 ## string to end programs using cup
     rmcup=\E[?1049l,
 ## exit standout mode
     rmso=\E[27m,
+## save cursor
+    sc=\E7,
 ## set background color to #1
     setab=\E[%?%p1%{8}%<%t4%p1%d%e48;2;%p1%{65536}%/%d;%p1%{256}%/%{255}%&%d;%p1%{255}%&%d%;m,
 ## set foreground color to #1
