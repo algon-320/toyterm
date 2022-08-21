@@ -661,7 +661,6 @@ struct Engine {
     pty: OwnedFd,
     control_req: pipe_channel::Receiver<Command>,
     control_res: pipe_channel::Sender<i32>,
-    sz: TerminalSize,
     cell_sz: CellSize,
     state: Arc<Mutex<State>>,
     parser: control_function::Parser,
@@ -716,7 +715,6 @@ impl Engine {
             pty,
             control_req,
             control_res,
-            sz,
             cell_sz,
             state,
             parser: control_function::Parser::default(),
@@ -735,12 +733,11 @@ impl Engine {
 
         Self::set_term_window_size(&self.pty, sz).unwrap();
 
-        self.sz = sz;
         self.cell_sz = cell_sz;
 
         // Update tabulation stops
         self.tabstops.clear();
-        for i in 0..self.sz.cols {
+        for i in 0..sz.cols {
             if i % 8 == 0 {
                 self.tabstops.push(i);
             }
@@ -752,9 +749,6 @@ impl Engine {
 
         let mut state = self.state.lock().unwrap();
         state.resize(sz);
-
-        debug_assert_eq!(self.sz, state.size);
-        debug_assert_eq!(self.sz, self.saved_cursor.sz);
     }
 
     fn start(mut self) {
@@ -842,8 +836,10 @@ impl Engine {
     fn process(&mut self, input: &str) {
         log::trace!("process: {:?}", input);
         let mut state = self.state.lock().unwrap();
-
         state.updated = true;
+
+        let term_rows = state.size.rows;
+        let term_cols = state.size.cols;
 
         for ch in input.chars() {
             let func = match self.parser.feed(ch) {
@@ -884,7 +880,7 @@ impl Engine {
                     let (row, col) = state.cursor.pos();
 
                     // If the cursor is already at the end, do nothing
-                    if col == self.sz.cols - 1 {
+                    if col == term_cols - 1 {
                         return;
                     }
 
@@ -892,7 +888,7 @@ impl Engine {
                     let next = match self.tabstops.binary_search(&(col + 1)) {
                         Ok(i) => self.tabstops[i],
                         Err(i) if i < self.tabstops.len() => self.tabstops[i],
-                        _ => self.sz.cols - 1,
+                        _ => term_cols - 1,
                     };
                     let advance = next - col;
                     debug_assert!(advance > 0);
@@ -930,7 +926,7 @@ impl Engine {
                     }
 
                     let (row, _) = state.cursor.pos();
-                    let down = min(pn, self.sz.rows - 1 - row);
+                    let down = min(pn, term_rows - 1 - row);
                     for _ in 0..down {
                         state.cursor = state.cursor.next_row();
                     }
@@ -943,7 +939,7 @@ impl Engine {
                     }
 
                     let (_, col) = state.cursor.pos();
-                    let right = min(pn, self.sz.cols - 1 - col);
+                    let right = min(pn, term_cols - 1 - col);
                     for _ in 0..right {
                         state.cursor = state.cursor.next_col();
                     }
@@ -993,8 +989,7 @@ impl Engine {
                     }
 
                     let (_, col) = state.cursor.pos();
-                    let row = min(pn, self.sz.rows - 1);
-                    state.cursor = state.cursor.exact(row, col);
+                    state.cursor = state.cursor.exact(pn, col);
                 }
 
                 ECH(pn) => {
@@ -1096,8 +1091,8 @@ impl Engine {
                     let line = &mut state.lines[row];
 
                     let src = col;
-                    let dst = min(src + pn, self.sz.cols);
-                    let count = self.sz.cols - dst;
+                    let dst = min(src + pn, term_cols);
+                    let count = term_cols - dst;
 
                     line.copy_within(src..src + count, dst);
                     line.erase(src..dst);
@@ -1112,9 +1107,9 @@ impl Engine {
                     let (row, col) = state.cursor.pos();
                     let line = &mut state.lines[row];
 
-                    let src = min(col + pn, self.sz.cols);
+                    let src = min(col + pn, term_cols);
                     let dst = col;
-                    let count = self.sz.cols - src;
+                    let count = term_cols - src;
 
                     line.copy_within(src..src + count, dst);
                     line.erase(dst + count..);
@@ -1129,8 +1124,8 @@ impl Engine {
                     let (row, _) = state.cursor.pos();
 
                     let src = row;
-                    let dst = min(row + pn, self.sz.rows);
-                    let count = self.sz.rows - dst;
+                    let dst = min(row + pn, term_rows);
+                    let count = term_rows - dst;
 
                     if count > 0 {
                         state.copy_lines((src, src + count - 1), dst);
@@ -1148,9 +1143,9 @@ impl Engine {
 
                     let (row, _) = state.cursor.pos();
 
-                    let src = min(row + pn, self.sz.rows);
+                    let src = min(row + pn, term_rows);
                     let dst = row;
-                    let count = self.sz.rows - src;
+                    let count = term_rows - src;
 
                     if count > 0 {
                         state.copy_lines((src, src + count - 1), dst);
