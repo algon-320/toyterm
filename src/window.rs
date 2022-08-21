@@ -185,8 +185,8 @@ impl TerminalWindow {
                         .gl_window()
                         .window()
                         .set_ime_position(PhysicalPosition {
-                            x: cursor.col as u32 * cell_size.w,
-                            y: (cursor.row + 1) as u32 * cell_size.h,
+                            x: self.viewport().x + cursor.col as u32 * cell_size.w,
+                            y: self.viewport().y + (cursor.row + 1) as u32 * cell_size.h,
                         });
 
                     Some(cursor)
