@@ -127,19 +127,19 @@ impl TerminalWindow {
                 return true;
             }
 
-            mouse_track_mode_changed = self.mode.mouse_track != state.mode.mouse_track;
-            self.mode = state.mode;
+            mouse_track_mode_changed = self.mode.mouse_track != state.mode().mouse_track;
+            self.mode = state.mode();
 
             contents_updated = state.updated || self.last_history_head != self.history_head;
             self.last_history_head = self.history_head;
 
-            terminal_size = state.size;
+            terminal_size = state.size();
 
             if contents_updated {
                 // update scroll bar
                 let scroll_bar_position = {
-                    let hist_rows = state.history_size;
-                    let rows = state.size.rows;
+                    let hist_rows = state.history_size();
+                    let rows = state.size().rows;
                     let viewport_height = self.viewport().h;
 
                     let total = hist_rows + rows;
@@ -178,7 +178,7 @@ impl TerminalWindow {
                     })
                     .collect();
 
-                let cursor = if self.history_head >= 0 && state.mode.cursor_visible {
+                let cursor = if self.history_head >= 0 && state.mode().cursor_visible {
                     let cursor = state.cursor();
 
                     self.display
@@ -490,7 +490,7 @@ impl TerminalWindow {
                     if self.modifiers.shift() {
                         // Scroll up history
                         let state = self.terminal.state.lock().unwrap();
-                        let min = -(state.history_size as isize);
+                        let min = -(state.history_size() as isize);
                         self.history_head = (self.history_head - vertical).clamp(min, 0);
                     } else {
                         // Send Up/Down key

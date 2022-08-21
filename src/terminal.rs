@@ -365,10 +365,9 @@ pub struct State {
     alt_images: Vec<PositionedImage>,
     cursor: Cursor,
     attr: GraphicAttribute,
-
-    pub size: TerminalSize,
-    pub history_size: usize,
-    pub mode: Mode,
+    size: TerminalSize,
+    history_size: usize,
+    mode: Mode,
 
     pub updated: bool,
     pub closed: bool,
@@ -403,7 +402,6 @@ impl State {
             alt_images: Vec::new(),
             cursor,
             attr: GraphicAttribute::default(),
-
             size: sz,
             history_size: 0,
             mode: Mode::default(),
@@ -418,6 +416,18 @@ impl State {
         let (row, col) = cursor.pos();
         cursor.col = self.lines[row].get_head_pos(col);
         cursor
+    }
+
+    pub fn size(&self) -> TerminalSize {
+        self.size
+    }
+
+    pub fn history_size(&self) -> usize {
+        self.history_size
+    }
+
+    pub fn mode(&self) -> Mode {
+        self.mode
     }
 
     pub fn clear_history(&mut self) {
