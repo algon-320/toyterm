@@ -368,6 +368,7 @@ pub struct State {
     size: TerminalSize,
     history_size: usize,
     mode: Mode,
+    scroll_region: (usize, usize),
 
     pub updated: bool,
     pub closed: bool,
@@ -405,6 +406,7 @@ impl State {
             size: sz,
             history_size: 0,
             mode: Mode::default(),
+            scroll_region: (0, sz.rows - 1),
 
             updated: true,
             closed: false,
@@ -481,17 +483,21 @@ impl State {
         for line in self.alt_lines.iter_mut() {
             line.resize(sz.cols);
         }
+
+        self.scroll_region = (0, sz.rows - 1);
     }
 
     /// Scroll up the buffer by 1 line
     fn scroll_up(&mut self) {
-        let line = self.lines.pop_front().unwrap();
+        let (top, bottom) = self.scroll_region;
+
+        let line = self.lines.remove(top).unwrap();
         self.history.push_back(line);
         self.history_size = min(self.history_size + 1, Self::HISTORY_CAPACITY);
 
         let mut line = self.history.pop_front().unwrap();
         line.erase_all();
-        self.lines.push_back(line);
+        self.lines.insert(bottom, line);
     }
 
     /// Copy lines[src.0..=src.1] to lines[dst..]
@@ -875,7 +881,9 @@ impl Engine {
 
                 LF | VT | FF => {
                     buffer_scroll_up_if_needed(&mut state, self.cell_sz);
-                    state.cursor = state.cursor.next_row();
+                    if state.cursor.row != state.scroll_region.1 {
+                        state.cursor = state.cursor.next_row();
+                    }
                 }
 
                 CR => {
@@ -1132,10 +1140,11 @@ impl Engine {
                     }
 
                     let (row, _) = state.cursor.pos();
+                    let bottom = state.scroll_region.1 + 1;
 
                     let src = row;
-                    let dst = min(row + pn, term_rows);
-                    let count = term_rows - dst;
+                    let dst = min(row + pn, bottom);
+                    let count = bottom - dst;
 
                     if count > 0 {
                         state.copy_lines((src, src + count - 1), dst);
@@ -1152,15 +1161,16 @@ impl Engine {
                     }
 
                     let (row, _) = state.cursor.pos();
+                    let bottom = state.scroll_region.1 + 1;
 
-                    let src = min(row + pn, term_rows);
+                    let src = min(row + pn, bottom);
                     let dst = row;
-                    let count = term_rows - src;
+                    let count = bottom - src;
 
                     if count > 0 {
                         state.copy_lines((src, src + count - 1), dst);
                     }
-                    for line in state.lines.range_mut(dst + count..) {
+                    for line in state.lines.range_mut(dst + count..bottom) {
                         line.erase_all();
                     }
                 }
@@ -1224,7 +1234,10 @@ impl Engine {
                             state.lines[row].linewrap = true;
 
                             buffer_scroll_up_if_needed(&mut state, self.cell_sz);
-                            state.cursor = state.cursor.next_row().first_col();
+                            if state.cursor.row != state.scroll_region.1 {
+                                state.cursor = state.cursor.next_row();
+                            }
+                            state.cursor = state.cursor.first_col();
                         }
 
                         let (row, col) = state.cursor.pos();
@@ -1277,7 +1290,9 @@ impl Engine {
                         }
                         for _ in 0..advance_v {
                             buffer_scroll_up_if_needed(&mut state, self.cell_sz);
-                            state.cursor = state.cursor.next_row();
+                            if state.cursor.row != state.scroll_region.1 {
+                                state.cursor = state.cursor.next_row();
+                            }
                         }
                     }
                 }
@@ -1398,6 +1413,26 @@ impl Engine {
                     // restore saved cursor and graphics rendition
                     state.cursor = self.saved_cursor;
                     state.attr = self.saved_attr;
+                }
+
+                SetScrollRegion(pn1, pn2) => {
+                    let mut pn1 = pn1 as usize;
+                    if pn1 == 0 {
+                        pn1 = 1;
+                    }
+
+                    let mut pn2 = pn2 as usize;
+                    if pn2 == 0 || pn2 > term_rows {
+                        pn2 = term_rows;
+                    }
+
+                    if pn1 >= pn2 {
+                        pn1 = 1;
+                        pn2 = term_rows;
+                    }
+
+                    state.scroll_region = (pn1 - 1, pn2 - 1);
+                    state.cursor = state.cursor.exact(0, 0);
                 }
 
                 ESC => {
@@ -1629,7 +1664,7 @@ fn parse_color(prefix: u16, ps: &mut impl Iterator<Item = u16>) -> Option<Color>
 }
 
 fn buffer_scroll_up_if_needed(state: &mut State, cell_sz: CellSize) {
-    if state.cursor.row + 1 == state.cursor.sz.rows {
+    if state.cursor.row == state.scroll_region.1 {
         state.scroll_up();
 
         if !state.images.is_empty() {

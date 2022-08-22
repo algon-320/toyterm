@@ -46,6 +46,8 @@ toyterm-256color|toyterm (a toy terminal emulator),
     cnorm=\E[?25h,
 ## carriage return
     cr=\r,
+## change scroll region
+    csr=\E[%i%p1%d;%p2%dr
 ## move #1 characters to the left
     cub=\E[%p1%dD,
 ## move left one space

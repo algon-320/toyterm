@@ -168,6 +168,7 @@ pub enum Function<'p> {
     SelectCursorStyle(u16),
     SaveCursor,
     RestoreCursor,
+    SetScrollRegion(u16, u16),
 }
 
 enum State {
@@ -443,9 +444,14 @@ fn parse_control_sequence<'b>(
                 (0, '\x6D', ps) => Some(SGR(ps)),
                 (0, '\x6E', &[ps @ (5 | 6)]) => Some(DSR(ps)),
                 (0, '\x6F', _) => Some(DAQ),
+
+                // private sequences
+                (0, '\x72', &[pn1, pn2]) => Some(SetScrollRegion(pn1, pn2)),
+                (0, '\x72', &[pn1]) => Some(SetScrollRegion(pn1, 0)),
+
                 (0, '\x70'..='\x7E', params) => {
                     log::trace!(
-                        "undefined private sequence: i=N/A, final=0x{:X}, params={:?}",
+                        "unsupported private sequence: i=N/A, final=0x{:X}, params={:?}",
                         ch as u8,
                         params
                     );
@@ -506,7 +512,7 @@ fn parse_control_sequence<'b>(
                 (b'\x20', '\x71', &[ps]) => Some(SelectCursorStyle(ps)),
                 (b'\x20', '\x70'..='\x7E', params) => {
                     log::trace!(
-                        "undefined private sequence: i=0x20, final=0x{:X}, params={:?}",
+                        "unsupported private sequence: i=0x20, final=0x{:X}, params={:?}",
                         ch as u8,
                         params,
                     );

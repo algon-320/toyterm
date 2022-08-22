@@ -142,6 +142,7 @@ Currently toyterm supports the following functions.
 - SM
 - VPA
 
+- SetScrollRegion (DECSTBM): `\e[{top};{bottom}r`
 - SelectCursorStyle:
     - Block: `\e[2 q`
     - Underline: `\e[4 q`
