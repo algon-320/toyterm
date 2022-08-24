@@ -29,6 +29,7 @@ enum Command {
     AddNewTab,
     SetMaximize,
     ResetMaximize,
+    Close,
 
     SaveLayout,
     RestoreLayout,
@@ -866,19 +867,7 @@ impl Multiplexer {
         self.main_layout.on_event(&self.display, event, &mut cf);
 
         if cf == ControlFlow::Exit {
-            self.main_layout.close();
-            if self.tab_layout().tabs.is_empty() {
-                *control_flow = ControlFlow::Exit;
-                self.finished = true;
-            } else {
-                // FIXME
-                self.controller.maximized = false;
-                self.main_layout
-                    .process_command(&self.display, Command::ResetMaximize);
-
-                self.refresh_layout();
-                self.update_status_bar();
-            }
+            self.close_focused_window();
         }
     }
 
@@ -959,6 +948,27 @@ impl Multiplexer {
                 self.main_layout.process_command(&self.display, cmd);
                 self.update_status_bar();
             }
+
+            Command::Close => {
+                self.close_focused_window();
+            }
+        }
+    }
+
+    fn close_focused_window(&mut self) {
+        self.main_layout.close();
+        self.update_status_bar();
+
+        if self.tab_layout().tabs.is_empty() {
+            self.finished = true;
+        } else {
+            // FIXME
+            self.controller.maximized = false;
+            self.main_layout
+                .process_command(&self.display, Command::ResetMaximize);
+
+            self.refresh_layout();
+            self.update_status_bar();
         }
     }
 }
@@ -1045,6 +1055,7 @@ impl Controller {
                         Some(Command::ResetMaximize)
                     }
                 }
+                'x' => Some(Command::Close),
                 _ => Some(Command::Nop),
             }
         }

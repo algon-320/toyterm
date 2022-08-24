@@ -77,6 +77,7 @@ If feature `multiplex` is enalbed:
 |Ctrl + `a`, `z` |Maximize current pane|
 |Ctrl + `a`, `s` |Save current layout|
 |Ctrl + `a`, `r` |Restore saved layout|
+|Ctrl + `a`, `x` |Close currently focused pane|
 |Ctrl + `a`, Up/Down/Left/Right |Focus up/down/left/right pane|
 |Ctrl + `a`, Ctrl + `a` |Send `\x01` (Ctrl + `a`)|
 
