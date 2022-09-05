@@ -26,6 +26,10 @@ enum Command {
     FocusPrevTab,
     SplitVertical,
     SplitHorizontal,
+    ResizeIncreaseLeft,
+    ResizeDecreaseLeft,
+    ResizeIncreaseUp,
+    ResizeDecreaseUp,
     AddNewTab,
     SetMaximize,
     ResetMaximize,
@@ -360,6 +364,46 @@ impl BinaryLayout {
                 }
                 consumed
             }
+
+            Command::ResizeIncreaseUp
+            | Command::ResizeDecreaseUp
+            | Command::ResizeIncreaseLeft
+            | Command::ResizeDecreaseLeft => {
+                let resizable = match cmd {
+                    Command::ResizeIncreaseUp | Command::ResizeDecreaseUp => {
+                        self.partition == Partition::Horizontal
+                    }
+                    Command::ResizeIncreaseLeft | Command::ResizeDecreaseLeft => {
+                        self.partition == Partition::Vertical
+                    }
+                    _ => unreachable!(),
+                };
+
+                let mut consumed = self.focused_mut().process_command(display, cmd);
+                if !consumed && resizable {
+                    let new_ratio = match cmd {
+                        Command::ResizeIncreaseUp | Command::ResizeIncreaseLeft => {
+                            self.ratio + 0.05 // +5%
+                        }
+                        Command::ResizeDecreaseUp | Command::ResizeDecreaseLeft => {
+                            self.ratio - 0.05 // -5%
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    let viewport = self.viewport;
+                    let min_r = (Self::GAP * 2) as f64 / (viewport.h as f64);
+                    self.ratio = new_ratio.clamp(min_r, 1.0 - min_r);
+
+                    let (vp_x, vp_y) = self.split_viewport();
+                    self.x_mut().set_viewport(vp_x);
+                    self.y_mut().set_viewport(vp_y);
+
+                    consumed = true;
+                }
+                consumed
+            }
+
             Command::SetMaximize => {
                 self.focused_mut().process_command(display, cmd);
                 self.maximized = true;
@@ -933,7 +977,11 @@ impl Multiplexer {
             | Command::FocusLeft
             | Command::FocusRight
             | Command::SplitVertical
-            | Command::SplitHorizontal => {
+            | Command::SplitHorizontal
+            | Command::ResizeIncreaseUp
+            | Command::ResizeDecreaseUp
+            | Command::ResizeIncreaseLeft
+            | Command::ResizeDecreaseLeft => {
                 if self.controller.maximized {
                     self.controller.maximized = false;
                     self.main_layout
@@ -1064,6 +1112,7 @@ impl Controller {
     fn on_key_press(&mut self, keycode: VirtualKeyCode) -> Option<Command> {
         use ModifiersState as Mod;
         const EMPTY: u32 = Mod::empty().bits();
+        const CTRL: u32 = Mod::CTRL.bits();
 
         if self.consume {
             let cmd = match (self.modifiers.bits(), keycode) {
@@ -1071,6 +1120,10 @@ impl Controller {
                 (EMPTY, VirtualKeyCode::Down) => Command::FocusDown,
                 (EMPTY, VirtualKeyCode::Left) => Command::FocusLeft,
                 (EMPTY, VirtualKeyCode::Right) => Command::FocusRight,
+                (CTRL, VirtualKeyCode::Up) => Command::ResizeDecreaseUp,
+                (CTRL, VirtualKeyCode::Down) => Command::ResizeIncreaseUp,
+                (CTRL, VirtualKeyCode::Left) => Command::ResizeDecreaseLeft,
+                (CTRL, VirtualKeyCode::Right) => Command::ResizeIncreaseLeft,
                 _ => return None,
             };
 

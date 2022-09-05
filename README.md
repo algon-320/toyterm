@@ -79,6 +79,10 @@ If feature `multiplex` is enalbed:
 |Ctrl + `a`, `r` |Restore saved layout|
 |Ctrl + `a`, `x` |Close currently focused pane|
 |Ctrl + `a`, Up/Down/Left/Right |Focus up/down/left/right pane|
+|Ctrl + `a`, Ctrl + Up |Move the partition up (i.e. Decrease the width of upper pane)|
+|Ctrl + `a`, Ctrl + Down |Move the partition down (i.e. Increase the width of upper pane)|
+|Ctrl + `a`, Ctrl + Left |Move the partition left (i.e. Decrease the width of left pane)|
+|Ctrl + `a`, Ctrl + Right |Move the partition right (i.e. Increase the width of right pane)|
 |Ctrl + `a`, Ctrl + `a` |Send `\x01` (Ctrl + `a`)|
 
 ## Control Functions
