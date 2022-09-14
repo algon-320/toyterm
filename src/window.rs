@@ -628,6 +628,55 @@ impl TerminalWindow {
                 state.clear_history();
             }
 
+            (EMPTY, VirtualKeyCode::F1) => {
+                self.terminal.pty_write(b"\x1BOP");
+            }
+            (EMPTY, VirtualKeyCode::F2) => {
+                self.terminal.pty_write(b"\x1BOQ");
+            }
+            (EMPTY, VirtualKeyCode::F3) => {
+                self.terminal.pty_write(b"\x1BOR");
+            }
+            (EMPTY, VirtualKeyCode::F4) => {
+                self.terminal.pty_write(b"\x1BOS");
+            }
+            (EMPTY, VirtualKeyCode::F5) => {
+                self.terminal.pty_write(b"\x1B[15~");
+            }
+            (EMPTY, VirtualKeyCode::F6) => {
+                self.terminal.pty_write(b"\x1B[17~");
+            }
+            (EMPTY, VirtualKeyCode::F7) => {
+                self.terminal.pty_write(b"\x1B[18~");
+            }
+            (EMPTY, VirtualKeyCode::F8) => {
+                self.terminal.pty_write(b"\x1B[19~");
+            }
+            (EMPTY, VirtualKeyCode::F9) => {
+                self.terminal.pty_write(b"\x1B[20~");
+            }
+            (EMPTY, VirtualKeyCode::F10) => {
+                self.terminal.pty_write(b"\x1B[21~");
+            }
+            (EMPTY, VirtualKeyCode::F11) => {
+                self.terminal.pty_write(b"\x1B[23~");
+            }
+            (EMPTY, VirtualKeyCode::F12) => {
+                self.terminal.pty_write(b"\x1B[24~");
+            }
+            (EMPTY, VirtualKeyCode::F13) => {
+                self.terminal.pty_write(b"\x1B[1;2P");
+            }
+            (EMPTY, VirtualKeyCode::F14) => {
+                self.terminal.pty_write(b"\x1B[1;2Q");
+            }
+            (EMPTY, VirtualKeyCode::F15) => {
+                self.terminal.pty_write(b"\x1B[1;2R");
+            }
+            (EMPTY, VirtualKeyCode::F16) => {
+                self.terminal.pty_write(b"\x1B[1;2S");
+            }
+
             (_, keycode) => {
                 log::trace!("key pressed: ({:?}) {:?}", self.modifiers, keycode);
 
