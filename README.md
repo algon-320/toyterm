@@ -149,6 +149,7 @@ Currently toyterm supports the following functions.
 
 - SetScrollRegion (DECSTBM): `\e[{top};{bottom}r`
 - SelectCursorStyle:
+    - Default (Block): `\e[0 q`
     - Block: `\e[2 q`
     - Underline: `\e[4 q`
     - Bar: `\e[6 q`

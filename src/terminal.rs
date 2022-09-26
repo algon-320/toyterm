@@ -1298,6 +1298,7 @@ impl Engine {
                 }
 
                 SelectCursorStyle(ps) => match ps {
+                    0 => state.cursor.style = CursorStyle::default(),
                     2 => state.cursor.style = CursorStyle::Block,
                     4 => state.cursor.style = CursorStyle::Underline,
                     6 => state.cursor.style = CursorStyle::Bar,
