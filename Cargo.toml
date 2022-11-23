@@ -4,7 +4,9 @@ version = "0.2.0"
 authors = ["algon-320 <algon.0320@gmail.com>"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "toyterm"
+path = "src/main.rs"
 
 [dependencies]
 log = { version = "0.4.17", features = ["release_max_level_warn"] }

@@ -1,24 +1,6 @@
-mod cache;
-mod config;
-mod control_function;
-mod font;
-mod pipe_channel;
-mod sixel;
-mod terminal;
-mod utils;
-mod view;
-mod window;
-
-#[cfg(feature = "multiplex")]
-mod multiplexer;
-
-lazy_static::lazy_static! {
-    pub static ref TOYTERM_CONFIG: crate::config::Config = crate::config::build();
-}
-
 fn main() {
     // Make sure that configuration errors are detected earlier
-    lazy_static::initialize(&TOYTERM_CONFIG);
+    lazy_static::initialize(&toyterm::TOYTERM_CONFIG);
 
     // Setup env_logger
     let our_logs = concat!(module_path!(), "=debug");
@@ -38,10 +20,10 @@ fn main() {
     };
 
     #[cfg(not(feature = "multiplex"))]
-    let mut term = window::TerminalWindow::new(display, None);
+    let mut term = toyterm::window::TerminalWindow::new(display, None);
 
     #[cfg(feature = "multiplex")]
-    let mut term = multiplexer::Multiplexer::new(display);
+    let mut term = toyterm::multiplexer::Multiplexer::new(display);
 
     event_loop.run(move |event, _, control_flow| {
         if let Some(event) = event.to_static() {
