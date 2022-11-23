@@ -192,4 +192,4 @@ toyterm supports the following modes.
 This software is licensed under MIT License.
 
 The embedded fonts (M PLUS 1 Code) are redistributed under the Open Font License (OFL).
-See also `font/OFL.txt` for more details.
+See also `src/font/OFL.txt` for more details.

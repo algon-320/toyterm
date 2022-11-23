@@ -560,13 +560,13 @@ fn build_font_set(font_size: u32) -> FontSet {
 
     // Add embedded fonts
     {
-        let regular_font = Font::new(include_bytes!("../fonts/Mplus1Code-Regular.ttf"), 0);
+        let regular_font = Font::new(include_bytes!("fonts/Mplus1Code-Regular.ttf"), 0);
         fonts.add(FontStyle::Regular, regular_font);
 
-        let bold_font = Font::new(include_bytes!("../fonts/Mplus1Code-SemiBold.ttf"), 0);
+        let bold_font = Font::new(include_bytes!("fonts/Mplus1Code-SemiBold.ttf"), 0);
         fonts.add(FontStyle::Bold, bold_font);
 
-        let faint_font = Font::new(include_bytes!("../fonts/Mplus1Code-Thin.ttf"), 0);
+        let faint_font = Font::new(include_bytes!("fonts/Mplus1Code-Thin.ttf"), 0);
         fonts.add(FontStyle::Faint, faint_font);
     }
 
