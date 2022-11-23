@@ -1729,20 +1729,18 @@ fn init_pty(cwd: &std::path::Path) -> Result<(OwnedFd, Pid)> {
 
 /// Setup process states and execute shell
 fn exec_shell() -> Result<()> {
-    use std::ffi::{CStr, CString};
+    use std::ffi::CString;
 
     // Restore the default handler for SIGPIPE (terminate)
     use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
     let sigdfl = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
     unsafe { sigaction(Signal::SIGPIPE, &sigdfl).expect("sigaction") };
 
-    let shell = {
-        let mut shell_string = crate::TOYTERM_CONFIG.shell[0].clone();
-        shell_string.push('\0');
-        CString::from_vec_with_nul(shell_string.into_bytes()).unwrap()
-    };
-
-    let args: [&CStr; 1] = [&shell];
+    let args: Vec<CString> = crate::TOYTERM_CONFIG
+        .shell
+        .iter()
+        .map(|arg| CString::new(arg.to_owned()).unwrap())
+        .collect();
 
     let mut vars: std::collections::HashMap<String, String> = std::env::vars().collect();
 
@@ -1756,6 +1754,6 @@ fn exec_shell() -> Result<()> {
         })
         .collect();
 
-    nix::unistd::execve(args[0], &args, &envs)?;
+    nix::unistd::execve(&args[0], &args, &envs)?;
     unreachable!();
 }
