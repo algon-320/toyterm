@@ -371,7 +371,7 @@ pub struct State {
     scroll_region: (usize, usize),
 
     pub updated: bool,
-    pub closed: bool,
+    pub exit_status: Option<i32>,
 }
 
 impl State {
@@ -409,7 +409,7 @@ impl State {
             scroll_region: (0, sz.rows - 1),
 
             updated: true,
-            closed: false,
+            exit_status: None,
         }
     }
 
@@ -535,6 +535,7 @@ enum Command {
         buff_sz: TerminalSize,
         cell_sz: CellSize,
     },
+    SendSigterm,
 }
 
 #[derive(Debug)]
@@ -582,6 +583,16 @@ impl Terminal {
         log::debug!("request_resize: {}x{} (cell)", buff_sz.rows, buff_sz.cols);
         self.control_req.send(Command::Resize { buff_sz, cell_sz });
         self.control_res.recv();
+    }
+
+    pub fn send_sigterm(&mut self) {
+        self.control_req.send(Command::SendSigterm);
+        self.control_res.recv();
+    }
+
+    pub fn exit_status(&self) -> Option<i32> {
+        let state = self.state.lock().unwrap();
+        state.exit_status
     }
 
     #[cfg(feature = "multiplex")]
@@ -778,12 +789,15 @@ impl Engine {
         ];
 
         loop {
+            use nix::sys::signal::{kill, Signal};
+
             log::trace!("polling");
             if let Err(err) = poll(&mut fds, -1) {
                 if let Errno::EINTR | Errno::EAGAIN = err {
                     continue;
                 }
                 log::error!("poll failed: {err}");
+                let _ = kill(self.pid, Signal::SIGHUP);
                 break;
             }
 
@@ -797,8 +811,14 @@ impl Engine {
                             self.resize(buff_sz, cell_sz);
                             self.control_res.send(0);
                         }
+                        Command::SendSigterm => {
+                            self.control_res.send(0);
+                            let _ = kill(self.pid, Signal::SIGTERM);
+                            break;
+                        }
                     }
                 } else if flags.contains(PollFlags::POLLERR) || flags.contains(PollFlags::POLLHUP) {
+                    let _ = kill(self.pid, Signal::SIGHUP);
                     break;
                 }
             }
@@ -833,17 +853,21 @@ impl Engine {
                     buf.copy_within((end - rem_len)..end, 0);
                     begin = rem_len;
                 } else if flags.contains(PollFlags::POLLERR) || flags.contains(PollFlags::POLLHUP) {
+                    let _ = kill(self.pid, Signal::SIGHUP);
                     break;
                 }
             }
         }
 
-        let mut state = self.state.lock().unwrap();
-        state.closed = true;
+        use nix::sys::wait::WaitStatus;
+        let status = match nix::sys::wait::waitpid(self.pid, None).unwrap() {
+            WaitStatus::Exited(_, status) => status,
+            WaitStatus::Signaled(_, sig, _) => 128 + (sig as i32),
+            _ => 1,
+        };
 
-        use nix::sys::signal::{kill, Signal};
-        let _ = kill(self.pid, Signal::SIGHUP);
-        let _ = nix::sys::wait::waitpid(self.pid, None);
+        let mut state = self.state.lock().unwrap();
+        state.exit_status = Some(status);
     }
 
     fn process(&mut self, input: &str) {

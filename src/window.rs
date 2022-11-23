@@ -102,6 +102,28 @@ impl TerminalWindow {
         }
     }
 
+    pub fn reset_pty(&mut self) -> Option<i32> {
+        let last_status = self.terminal.exit_status();
+
+        self.terminal = {
+            let viewport = self.view.viewport();
+            let cell_size = self.view.cell_size();
+            let scroll_bar_width = crate::TOYTERM_CONFIG.scroll_bar_width;
+            let size = TerminalSize {
+                rows: (viewport.h / cell_size.h) as usize,
+                cols: ((viewport.w - scroll_bar_width) / cell_size.w) as usize,
+            };
+            let cwd = std::env::current_dir().expect("cwd");
+            Terminal::new(size, cell_size, &cwd)
+        };
+
+        last_status
+    }
+
+    pub fn close_pty(&mut self) {
+        self.terminal.send_sigterm();
+    }
+
     // Change cursor icon according to the current mouse_track mode
     pub fn refresh_cursor_icon(&mut self) {
         let icon = if self.mode.mouse_track {
@@ -123,7 +145,7 @@ impl TerminalWindow {
             // hold the lock while copying states
             let mut state = self.terminal.state.lock().unwrap();
 
-            if state.closed {
+            if state.exit_status.is_some() {
                 return true;
             }
 
