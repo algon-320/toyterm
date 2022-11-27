@@ -105,6 +105,10 @@ impl TerminalWindow {
     pub fn reset_pty(&mut self) -> Option<i32> {
         let last_status = self.terminal.exit_status();
 
+        if last_status.is_none() {
+            self.terminal.send_sigterm();
+        }
+
         self.terminal = {
             let viewport = self.view.viewport();
             let cell_size = self.view.cell_size();
@@ -116,6 +120,9 @@ impl TerminalWindow {
             let cwd = std::env::current_dir().expect("cwd");
             Terminal::new(size, cell_size, &cwd)
         };
+
+        // Invalidate rendering cache
+        self.view.update_contents(|_| {});
 
         last_status
     }
