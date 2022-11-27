@@ -812,8 +812,9 @@ impl Engine {
                             self.control_res.send(0);
                         }
                         Command::SendSigterm => {
-                            self.control_res.send(0);
                             let _ = kill(self.pid, Signal::SIGTERM);
+                            let _ = nix::sys::wait::waitpid(self.pid, None).unwrap();
+                            self.control_res.send(0);
                             break;
                         }
                     }
@@ -860,9 +861,9 @@ impl Engine {
         }
 
         use nix::sys::wait::WaitStatus;
-        let status = match nix::sys::wait::waitpid(self.pid, None).unwrap() {
-            WaitStatus::Exited(_, status) => status,
-            WaitStatus::Signaled(_, sig, _) => 128 + (sig as i32),
+        let status = match nix::sys::wait::waitpid(self.pid, None) {
+            Ok(WaitStatus::Exited(_, status)) => status,
+            Ok(WaitStatus::Signaled(_, sig, _)) => 128 + (sig as i32),
             _ => 1,
         };
 
