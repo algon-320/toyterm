@@ -306,7 +306,12 @@ impl TerminalView {
                 };
 
                 let (fg, bg) = {
-                    let is_inversed = cell.attr.inversed;
+                    let mut fg = cell.attr.fg;
+                    let mut bg = cell.attr.bg;
+
+                    if cell.attr.inversed {
+                        std::mem::swap(&mut fg, &mut bg);
+                    }
 
                     let on_cursor = if let Some(cursor) = self.cursor {
                         self.view_focused
@@ -326,11 +331,8 @@ impl TerminalView {
                         None => false,
                     };
 
-                    let mut fg = cell.attr.fg;
-                    let mut bg = cell.attr.bg;
-
-                    if is_inversed ^ on_cursor ^ is_selected {
-                        std::mem::swap(&mut fg, &mut bg);
+                    if on_cursor ^ is_selected {
+                        bg = Color::Selection;
                     }
 
                     if cell.attr.concealed {
@@ -450,7 +452,7 @@ impl TerminalView {
                 };
 
                 let fg = Color::Black;
-                let bg = Color::White;
+                let bg = Color::Selection;
                 let vs = rect_vertices(rect.to_gl(viewport), fg, bg);
                 self.vertices_fg.extend_from_slice(&vs);
             }
@@ -632,6 +634,10 @@ fn color_to_rgba(color: Color) -> u32 {
         Color::BrightMagenta => config.color_bright_magenta,
         Color::BrightCyan => config.color_bright_cyan,
         Color::BrightWhite => config.color_bright_white,
+
+        Color::Foreground => config.color_foreground,
+        Color::Background => config.color_background,
+        Color::Selection => config.color_selection,
     }
 }
 

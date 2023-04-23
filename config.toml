@@ -26,6 +26,9 @@
 # Colors in RRGGBBAA format
 # (Note that colors with AA = 00 are reserved for internal usage.)
 #
+# color_foreground     = 0x000000FF
+# color_background     = 0xFFFFFFFF
+# color_selection      = 0x505050FF
 # color_black          = 0x000000FF
 # color_red            = 0xFF0000FF
 # color_green          = 0x00FF00FF

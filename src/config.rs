@@ -14,6 +14,9 @@ pub struct Config {
     pub status_bar_font_size: u32,
 
     // RRGGBBAA
+    pub color_background: u32,
+    pub color_foreground: u32,
+    pub color_selection: u32,
     pub color_black: u32,
     pub color_red: u32,
     pub color_green: u32,
@@ -61,6 +64,9 @@ impl Default for Config {
             scroll_bar_fg_color: 0x606060FF,
             scroll_bar_bg_color: 0x202020FF,
 
+            color_background: 0x000000FF,
+            color_foreground: 0xFFFFFFFF,
+            color_selection: 0x505050FF,
             color_black: 0x000000FF,
             color_red: 0xFF0000FF,
             color_green: 0x00FF00FF,

@@ -101,6 +101,9 @@ pub enum Color {
     BrightWhite,
     Rgb { rgba: u32 },
     Special,
+    Foreground,
+    Background,
+    Selection,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -116,8 +119,8 @@ pub struct GraphicAttribute {
 impl GraphicAttribute {
     const fn default() -> Self {
         GraphicAttribute {
-            fg: Color::White,
-            bg: Color::Black,
+            fg: Color::Foreground,
+            bg: Color::Background,
             bold: 0,
             inversed: false,
             blinking: 0,
