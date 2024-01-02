@@ -24,6 +24,7 @@ enum Command {
     FocusRight,
     FocusNextTab,
     FocusPrevTab,
+    FocusTab(usize),
     SplitVertical,
     SplitHorizontal,
     ResizeIncreaseLeft,
@@ -466,6 +467,12 @@ impl TabbedLayout {
                 self.focused_mut().focused_window_mut().focus_changed(false);
                 self.focus = self.tabs.len() + self.focus - 1;
                 self.focus %= self.tabs.len();
+                self.focused_mut().focused_window_mut().focus_changed(true);
+                true
+            }
+            Command::FocusTab(n) => {
+                self.focused_mut().focused_window_mut().focus_changed(false);
+                self.focus = n % self.tabs.len();
                 self.focused_mut().focused_window_mut().focus_changed(true);
                 true
             }
@@ -992,7 +999,10 @@ impl Multiplexer {
                 self.main_layout.process_command(&self.display, cmd);
             }
 
-            Command::FocusNextTab | Command::FocusPrevTab | Command::AddNewTab => {
+            Command::FocusNextTab
+            | Command::FocusPrevTab
+            | Command::FocusTab(_)
+            | Command::AddNewTab => {
                 self.main_layout.process_command(&self.display, cmd);
                 self.update_status_bar();
             }
@@ -1091,6 +1101,10 @@ impl Controller {
                 'c' => Some(Command::AddNewTab),
                 'n' => Some(Command::FocusNextTab),
                 'p' => Some(Command::FocusPrevTab),
+                digit @ ('0'..='9') => {
+                    let n = digit as u32 - '0' as u32;
+                    Some(Command::FocusTab(n as usize))
+                }
                 '%' => Some(Command::SplitVertical),
                 '"' => Some(Command::SplitHorizontal),
                 's' => Some(Command::SaveLayout),
